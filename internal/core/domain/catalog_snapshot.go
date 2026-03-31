@@ -2,7 +2,7 @@ package domain
 
 import "time"
 
-// CatalogItem is one Stremio catalog entry (movie) backed by a torrent/magnet link.
+// CatalogItem is one Stremio catalog entry (type "anime") backed by a torrent/magnet link.
 type CatalogItem struct {
 	ID           string `json:"id"`
 	Type         string `json:"type"`

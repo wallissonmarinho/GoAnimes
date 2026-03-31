@@ -58,7 +58,7 @@ func ParseFeed(body []byte) ([]domain.CatalogItem, error) {
 		}
 		out = append(out, domain.CatalogItem{
 			ID:           StremioIDPrefix + ":" + id,
-			Type:         "movie",
+			Type:         "anime",
 			Name:         name,
 			MagnetURL:    magnet,
 			TorrentURL:   torrent,
@@ -240,7 +240,7 @@ func parseFallbackXML(body []byte) ([]domain.CatalogItem, error) {
 		}
 		out = append(out, domain.CatalogItem{
 			ID:           StremioIDPrefix + ":" + id,
-			Type:         "movie",
+			Type:         "anime",
 			Name:         name,
 			MagnetURL:    magnet,
 			TorrentURL:   torrent,

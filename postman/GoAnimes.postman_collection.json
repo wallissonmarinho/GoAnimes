@@ -35,11 +35,11 @@
           }
         },
         {
-          "name": "Catalog movie / goanimes",
+          "name": "Catalog anime / goanimes",
           "request": {
             "method": "GET",
             "header": [],
-            "url": "{{baseUrl}}/catalog/movie/goanimes.json"
+            "url": "{{baseUrl}}/catalog/anime/goanimes.json"
           }
         }
       ]
