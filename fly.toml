@@ -10,6 +10,10 @@ primary_region = "gru"
 
 [env]
   GIN_MODE = "release"
+  # AniList posters: no secret/API key. Only set to disable:
+  # GOANIMES_ANILIST_DISABLED = "true"
+  # Long syncs (many series): if posters never fill, try min_machines_running = 1 so the machine
+  # does not stop before POST /api/v1/rebuild background work finishes (see [http_service]).
 
 [http_service]
   internal_port = 8080

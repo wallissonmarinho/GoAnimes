@@ -90,12 +90,33 @@ func prunePosterMap(posters map[string]string, series []domain.CatalogSeries) {
 }
 
 func (s *RSSSyncService) enrichAniListPosters(ctx context.Context, series []domain.CatalogSeries, posters map[string]string) {
-	if s.anilist == nil || len(series) == 0 {
+	if len(series) == 0 {
 		return
 	}
+	if s.anilist == nil {
+		s.log.Info("anilist: skipped (set GOANIMES_ANILIST_DISABLED=true to disable; no client)")
+		return
+	}
+	missing := 0
+	for _, ser := range series {
+		if strings.TrimSpace(posters[ser.ID]) == "" {
+			missing++
+		}
+	}
+	if missing == 0 {
+		s.log.Info("anilist: all series already have cached posters", slog.Int("series", len(series)))
+		return
+	}
+	s.log.Info("anilist: fetching posters (no API key required)",
+		slog.Int("to_fetch", missing),
+		slog.Int("series_total", len(series)),
+		slog.Duration("min_delay_between_requests", s.anilistDelay))
+
+	newPosters, fails := 0, 0
 	for _, ser := range series {
 		select {
 		case <-ctx.Done():
+			s.log.Warn("anilist: stopped early (context done)", slog.Int("new_posters", newPosters), slog.Int("failures", fails))
 			return
 		default:
 		}
@@ -104,16 +125,19 @@ func (s *RSSSyncService) enrichAniListPosters(ctx context.Context, series []doma
 		}
 		res, err := s.anilist.SearchAnimePoster(ctx, ser.Name)
 		if err != nil {
-			s.log.Debug("anilist poster", slog.String("series", ser.Name), slog.Any("err", err))
+			fails++
+			s.log.Warn("anilist poster failed", slog.String("series", ser.Name), slog.Any("err", err))
 			continue
 		}
 		if res.PosterURL != "" {
 			posters[ser.ID] = res.PosterURL
+			newPosters++
 		}
 		if s.anilistDelay > 0 {
 			time.Sleep(s.anilistDelay)
 		}
 	}
+	s.log.Info("anilist: finished", slog.Int("new_posters", newPosters), slog.Int("lookup_failures", fails))
 }
 
 // Run fetches all RSS sources and rebuilds the catalog.
