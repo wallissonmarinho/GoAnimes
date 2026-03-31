@@ -33,6 +33,7 @@ func TestParseFeed_keepsOnlyBRSubtitleItems(t *testing.T) {
 	require.Equal(t, "Show B - 02", items[0].Name)
 	require.Contains(t, items[0].SubtitlesTag, "[br]")
 	require.Equal(t, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", items[0].InfoHash)
+	require.Equal(t, rssadapter.StremioMetaType, items[0].Type)
 }
 
 func TestParseFeed_torrentEnclosure(t *testing.T) {

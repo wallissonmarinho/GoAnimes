@@ -24,7 +24,7 @@ Em **Addons** → **Addon repository URL**:
 
 `http://<teu-host>:8080/manifest.json`
 
-O addon declara tipo **`anime`** no manifest (como o [Anime Kitsu](https://anime-kitsu.strem.fun/manifest.json)), para aparecer na área de anime. Catálogo: `/catalog/anime/goanimes.json`. Depois de atualizar o servidor, remove e volta a instalar o addon no Stremio e corre **`POST /api/v1/rebuild`** para recarregar itens com o tipo novo.
+O catálogo listado na secção **anime** usa `/catalog/anime/goanimes.json` (como o [Anime Kitsu](https://anime-kitsu.strem.fun/manifest.json)). Cada item no JSON tem **`type: "movie"`** para o Stremio pedir **meta/stream** corretamente (só `anime` no meta costumava impedir play). Manifest inclui `types: ["anime","movie"]`. Depois de atualizar: reinstala o addon e **`POST /api/v1/rebuild`**.
 
 ## API admin
 

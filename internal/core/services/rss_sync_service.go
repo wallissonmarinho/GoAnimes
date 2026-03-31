@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/wallissonmarinho/GoAnimes/internal/adapters/btmeta"
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/httpclient"
 	rssadapter "github.com/wallissonmarinho/GoAnimes/internal/adapters/rss"
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/state"
@@ -95,6 +96,26 @@ func (s *RSSSyncService) Run(ctx context.Context) domain.SyncResult {
 	merged := make([]domain.CatalogItem, 0, len(byID))
 	for _, it := range byID {
 		merged = append(merged, it)
+	}
+
+	// Erai often exposes only a .torrent URL. Stremio must get infoHash (or magnet), not a raw .torrent URL,
+	// or playback fails with "unrecognized file format".
+	for i := range merged {
+		it := &merged[i]
+		if it.InfoHash != "" || it.TorrentURL == "" {
+			continue
+		}
+		body, err := s.getter.GetBytes(it.TorrentURL)
+		if err != nil {
+			s.log.Warn("fetch .torrent for info_hash", slog.String("url", it.TorrentURL), slog.Any("err", err))
+			continue
+		}
+		h, err := btmeta.InfoHashHexFromTorrentBody(body)
+		if err != nil {
+			s.log.Warn("parse .torrent", slog.String("url", it.TorrentURL), slog.Any("err", err))
+			continue
+		}
+		it.InfoHash = h
 	}
 
 	msg := fmt.Sprintf("synced %d items from %d feed(s)", len(merged), len(sources))

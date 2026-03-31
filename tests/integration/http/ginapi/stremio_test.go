@@ -21,7 +21,7 @@ func TestStremioRoutes_catalogMetaStream(t *testing.T) {
 		Items: []domain.CatalogItem{
 			{
 				ID:           "goanimes:deadbeef",
-				Type:         "anime",
+				Type:         "movie",
 				Name:         "Episode",
 				InfoHash:     "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
 				SubtitlesTag: "[br]",
@@ -45,13 +45,13 @@ func TestStremioRoutes_catalogMetaStream(t *testing.T) {
 	require.Contains(t, w.Body.String(), "goanimes:deadbeef")
 
 	w = httptest.NewRecorder()
-	req = httptest.NewRequest(http.MethodGet, "/meta/anime/goanimes:deadbeef.json", nil)
+	req = httptest.NewRequest(http.MethodGet, "/meta/movie/goanimes:deadbeef.json", nil)
 	e.ServeHTTP(w, req)
 	require.Equal(t, http.StatusOK, w.Code)
 	require.Contains(t, w.Body.String(), `"meta"`)
 
 	w = httptest.NewRecorder()
-	req = httptest.NewRequest(http.MethodGet, "/stream/anime/goanimes:deadbeef.json", nil)
+	req = httptest.NewRequest(http.MethodGet, "/stream/movie/goanimes:deadbeef.json", nil)
 	e.ServeHTTP(w, req)
 	require.Equal(t, http.StatusOK, w.Code)
 	require.Contains(t, w.Body.String(), `"streams"`)

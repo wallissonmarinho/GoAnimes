@@ -16,6 +16,9 @@ import (
 const (
 	// StremioIDPrefix is the manifest idPrefix for custom meta/stream ids.
 	StremioIDPrefix = "goanimes"
+	// StremioMetaType is the per-item type Stremio uses for meta/stream (playback).
+	// "anime" alone often breaks play; Kitsu uses series/movie in metas while catalog stays anime.
+	StremioMetaType = "movie"
 )
 
 var (
@@ -58,7 +61,7 @@ func ParseFeed(body []byte) ([]domain.CatalogItem, error) {
 		}
 		out = append(out, domain.CatalogItem{
 			ID:           StremioIDPrefix + ":" + id,
-			Type:         "anime",
+			Type:         StremioMetaType,
 			Name:         name,
 			MagnetURL:    magnet,
 			TorrentURL:   torrent,
@@ -240,7 +243,7 @@ func parseFallbackXML(body []byte) ([]domain.CatalogItem, error) {
 		}
 		out = append(out, domain.CatalogItem{
 			ID:           StremioIDPrefix + ":" + id,
-			Type:         "anime",
+			Type:         StremioMetaType,
 			Name:         name,
 			MagnetURL:    magnet,
 			TorrentURL:   torrent,

@@ -11,24 +11,34 @@ import (
 
 const (
 	catalogStremioID = "goanimes"
-	// stremioTypeAnime matches community addons (e.g. Kitsu) so items appear under anime in Stremio.
+	// Catalog is listed under Discover → anime (same URL pattern as Kitsu).
 	stremioTypeAnime = "anime"
+	stremioTypeMovie = "movie"
 )
+
+func stremioMetaOrStreamTypeOK(t string) bool {
+	switch t {
+	case stremioTypeAnime, stremioTypeMovie, "series":
+		return true
+	default:
+		return false
+	}
+}
 
 func (h *handlers) getManifest(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"id":          "org.goanimes",
-		"version":     "1.0.0",
+		"version":     "1.0.1",
 		"name":        "GoAnimes",
 		"description": "RSS anime torrents with pt-BR (Erai [br]) filter",
-		"types":       []string{stremioTypeAnime},
+		"types":       []string{stremioTypeAnime, stremioTypeMovie},
 		"catalogs": []gin.H{
 			{"type": stremioTypeAnime, "id": catalogStremioID, "name": "GoAnimes"},
 		},
 		"resources": []any{
 			"catalog",
-			gin.H{"name": "meta", "types": []string{stremioTypeAnime}, "idPrefixes": []string{rss.StremioIDPrefix}},
-			gin.H{"name": "stream", "types": []string{stremioTypeAnime}, "idPrefixes": []string{rss.StremioIDPrefix}},
+			gin.H{"name": "meta", "types": []string{stremioTypeAnime, stremioTypeMovie}, "idPrefixes": []string{rss.StremioIDPrefix}},
+			gin.H{"name": "stream", "types": []string{stremioTypeAnime, stremioTypeMovie}, "idPrefixes": []string{rss.StremioIDPrefix}},
 		},
 		"idPrefixes": []string{rss.StremioIDPrefix},
 	})
@@ -63,7 +73,7 @@ func (h *handlers) getCatalog(c *gin.Context) {
 func (h *handlers) getMeta(c *gin.Context) {
 	typ := c.Param("type")
 	id := strings.TrimSuffix(c.Param("meta_id"), ".json")
-	if typ != stremioTypeAnime {
+	if !stremioMetaOrStreamTypeOK(typ) {
 		c.JSON(http.StatusNotFound, gin.H{})
 		return
 	}
@@ -92,7 +102,7 @@ func (h *handlers) getMeta(c *gin.Context) {
 func (h *handlers) getStream(c *gin.Context) {
 	typ := c.Param("type")
 	id := strings.TrimSuffix(c.Param("stream_id"), ".json")
-	if typ != stremioTypeAnime {
+	if !stremioMetaOrStreamTypeOK(typ) {
 		c.JSON(http.StatusNotFound, gin.H{})
 		return
 	}
@@ -107,6 +117,7 @@ func (h *handlers) getStream(c *gin.Context) {
 			"name":     "Torrent",
 			"title":    it.Name,
 			"infoHash": it.InfoHash,
+			"fileIdx":  0,
 			"behaviorHints": gin.H{
 				"bingeGroup": it.ID,
 			},
