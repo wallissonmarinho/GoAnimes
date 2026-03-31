@@ -29,13 +29,14 @@ type CatalogItem struct {
 
 // CatalogSnapshot is persisted merge output for hydration after restart.
 type CatalogSnapshot struct {
-	OK         bool
-	Message    string
-	ItemCount  int
-	StartedAt  time.Time
-	FinishedAt time.Time
-	Items      []CatalogItem
-	Series     []CatalogSeries `json:"-"`
+	OK             bool
+	Message        string
+	ItemCount      int
+	StartedAt      time.Time
+	FinishedAt     time.Time
+	Items          []CatalogItem
+	Series         []CatalogSeries `json:"-"`
+	AniListPosters map[string]string `json:"-"` // series Stremio id -> cover URL; persisted in items_json envelope
 }
 
 // SyncResult is the outcome of an RSS sync job.

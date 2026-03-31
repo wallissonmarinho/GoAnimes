@@ -121,32 +121,42 @@ func (r *catalogRepo) DeleteRSSSource(ctx context.Context, id string) error {
 	return nil
 }
 
-func marshalCatalogItemsPayload(items []domain.CatalogItem) ([]byte, error) {
-	return json.Marshal(struct {
-		Items []domain.CatalogItem `json:"items"`
-	}{Items: items})
+type catalogPayload struct {
+	Items           []domain.CatalogItem `json:"items"`
+	AniListPosters  map[string]string    `json:"anilist_posters,omitempty"`
 }
 
-func unmarshalCatalogItemsPayload(raw []byte) ([]domain.CatalogItem, error) {
+func marshalCatalogPayload(snap domain.CatalogSnapshot) ([]byte, error) {
+	p := catalogPayload{Items: snap.Items, AniListPosters: snap.AniListPosters}
+	if len(p.AniListPosters) == 0 {
+		p.AniListPosters = nil
+	}
+	return json.Marshal(p)
+}
+
+func unmarshalCatalogPayload(raw []byte) (domain.CatalogSnapshot, error) {
+	var snap domain.CatalogSnapshot
 	raw = bytes.TrimSpace(raw)
 	if len(raw) == 0 {
-		return nil, nil
+		return snap, nil
 	}
 	if raw[0] == '[' {
-		var items []domain.CatalogItem
-		return items, json.Unmarshal(raw, &items)
+		if err := json.Unmarshal(raw, &snap.Items); err != nil {
+			return domain.CatalogSnapshot{}, err
+		}
+		return snap, nil
 	}
-	var w struct {
-		Items []domain.CatalogItem `json:"items"`
+	var p catalogPayload
+	if err := json.Unmarshal(raw, &p); err != nil {
+		return domain.CatalogSnapshot{}, err
 	}
-	if err := json.Unmarshal(raw, &w); err != nil {
-		return nil, err
-	}
-	return w.Items, nil
+	snap.Items = p.Items
+	snap.AniListPosters = p.AniListPosters
+	return snap, nil
 }
 
 func (r *catalogRepo) SaveCatalogSnapshot(ctx context.Context, snap domain.CatalogSnapshot) error {
-	b, err := marshalCatalogItemsPayload(snap.Items)
+	b, err := marshalCatalogPayload(snap)
 	if err != nil {
 		return err
 	}
@@ -220,16 +230,13 @@ func (r *catalogRepo) LoadCatalogSnapshot(ctx context.Context) (domain.CatalogSn
 			finished = sql.NullTime{Time: t, Valid: true}
 		}
 	}
-	items, err := unmarshalCatalogItemsPayload(rawItems)
+	snap, err := unmarshalCatalogPayload(rawItems)
 	if err != nil {
 		return domain.CatalogSnapshot{}, err
 	}
-	snap := domain.CatalogSnapshot{
-		OK:        ok,
-		Message:   msg,
-		ItemCount: itemCnt,
-		Items:     items,
-	}
+	snap.OK = ok
+	snap.Message = msg
+	snap.ItemCount = itemCnt
 	if started.Valid {
 		snap.StartedAt = started.Time
 	}

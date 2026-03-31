@@ -135,6 +135,18 @@ func seriesFieldsMissing(items []CatalogItem) bool {
 	return false
 }
 
+// ApplyAniListPostersToSeries overwrites Series poster when AniListPosters has an entry for that series id.
+func ApplyAniListPostersToSeries(snap *CatalogSnapshot) {
+	if snap == nil || len(snap.Series) == 0 || len(snap.AniListPosters) == 0 {
+		return
+	}
+	for i := range snap.Series {
+		if u := strings.TrimSpace(snap.AniListPosters[snap.Series[i].ID]); u != "" {
+			snap.Series[i].Poster = u
+		}
+	}
+}
+
 // EnsureSnapshotGrouped fills per-item series fields when missing and rebuilds Series.
 func EnsureSnapshotGrouped(snap *CatalogSnapshot) {
 	if snap == nil {

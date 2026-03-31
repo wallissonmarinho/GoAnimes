@@ -49,10 +49,14 @@ func (c *CatalogStore) SeriesByID(seriesID string) (domain.CatalogSeries, bool) 
 	}
 	for _, it := range c.snap.Items {
 		if it.SeriesID == seriesID {
+			poster := domain.SeriesPosterURL(it.SeriesName)
+			if u := c.snap.AniListPosters[seriesID]; u != "" {
+				poster = u
+			}
 			return domain.CatalogSeries{
 				ID:     seriesID,
 				Name:   it.SeriesName,
-				Poster: domain.SeriesPosterURL(it.SeriesName),
+				Poster: poster,
 			}, true
 		}
 	}

@@ -2,7 +2,9 @@ package ginapi
 
 import (
 	"net/http"
+	"net/url"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -27,10 +29,41 @@ func stremioMetaOrStreamTypeOK(t string) bool {
 	}
 }
 
+// Stremio requires each series video object to include "released" as ISO 8601; missing → "no metadata" in the app.
+func stremioVideoReleasedISO(raw string) string {
+	s := strings.TrimSpace(raw)
+	if s == "" {
+		return "1970-01-01T00:00:00.000Z"
+	}
+	if strings.Contains(s, "T") {
+		return s
+	}
+	if len(s) == 10 && s[4] == '-' && s[7] == '-' {
+		return s + "T12:00:00.000Z"
+	}
+	for _, layout := range []string{time.RFC1123Z, time.RFC1123, time.UnixDate, "Mon, 02 Jan 2006 15:04:05 -0700"} {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t.UTC().Format(time.RFC3339Nano)
+		}
+	}
+	return "1970-01-01T00:00:00.000Z"
+}
+
+func stremioUnescapePathParam(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return s
+	}
+	if u, err := url.PathUnescape(s); err == nil {
+		return u
+	}
+	return s
+}
+
 func (h *handlers) getManifest(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"id":          "org.goanimes",
-		"version":     "1.0.2",
+		"version":     "1.0.4",
 		"name":        "GoAnimes",
 		"description": "RSS anime torrents with pt-BR (Erai [br]) filter",
 		"types":       []string{stremioTypeAnime, stremioTypeMovie, stremioTypeSeries},
@@ -72,7 +105,7 @@ func (h *handlers) getCatalog(c *gin.Context) {
 
 func (h *handlers) getMeta(c *gin.Context) {
 	typ := c.Param("type")
-	id := strings.TrimSuffix(c.Param("meta_id"), ".json")
+	id := stremioUnescapePathParam(strings.TrimSuffix(c.Param("meta_id"), ".json"))
 	if !stremioMetaOrStreamTypeOK(typ) {
 		c.JSON(http.StatusNotFound, gin.H{})
 		return
@@ -92,13 +125,11 @@ func (h *handlers) getMeta(c *gin.Context) {
 				epNum = 0
 			}
 			v := gin.H{
-				"id":      it.ID,
-				"title":   domain.EpisodeVideoTitle(it),
-				"season":  it.Season,
-				"episode": epNum,
-			}
-			if it.Released != "" {
-				v["released"] = it.Released
+				"id":       it.ID,
+				"title":    domain.EpisodeVideoTitle(it),
+				"released": stremioVideoReleasedISO(it.Released),
+				"season":   it.Season,
+				"episode":  epNum,
 			}
 			videos = append(videos, v)
 		}
@@ -138,7 +169,7 @@ func (h *handlers) getMeta(c *gin.Context) {
 
 func (h *handlers) getStream(c *gin.Context) {
 	typ := c.Param("type")
-	id := strings.TrimSuffix(c.Param("stream_id"), ".json")
+	id := stremioUnescapePathParam(strings.TrimSuffix(c.Param("stream_id"), ".json"))
 	if !stremioMetaOrStreamTypeOK(typ) {
 		c.JSON(http.StatusNotFound, gin.H{})
 		return

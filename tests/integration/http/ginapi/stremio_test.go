@@ -57,6 +57,8 @@ func TestStremioRoutes_catalogMetaStream(t *testing.T) {
 	require.Contains(t, w.Body.String(), `"meta"`)
 	require.Contains(t, w.Body.String(), `"videos"`)
 	require.Contains(t, w.Body.String(), epID)
+	require.Contains(t, w.Body.String(), `"released"`)
+	require.Regexp(t, `"released":"\d{4}-\d{2}-\d{2}T`, w.Body.String())
 
 	w = httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodGet, "/stream/series/"+epID+".json", nil)

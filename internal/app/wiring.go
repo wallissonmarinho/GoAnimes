@@ -3,7 +3,11 @@ package app
 import (
 	"context"
 	"os"
+	"strings"
+	"time"
 
+	"github.com/wallissonmarinho/GoAnimes/internal/adapters/anilist"
+	"github.com/wallissonmarinho/GoAnimes/internal/adapters/httpclient"
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/state"
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/storage"
 	"github.com/wallissonmarinho/GoAnimes/internal/core/domain"
@@ -23,6 +27,7 @@ func HydrateCatalogStore(ctx context.Context, repo ports.CatalogRepository, mem 
 		return
 	}
 	domain.EnsureSnapshotGrouped(&snap)
+	domain.ApplyAniListPostersToSeries(&snap)
 	mem.Set(snap)
 }
 
@@ -33,7 +38,29 @@ func NewRSSSourceAdmin(repo *storage.Catalog) *services.RSSSourceAdminService {
 
 // NewRSSSyncService builds sync with concrete deps.
 func NewRSSSyncService(repo *storage.Catalog, mem *state.CatalogStore, o services.RSSSyncRuntimeOptions) *services.RSSSyncService {
+	if !anilistDisabled() {
+		// Smaller cap for JSON POST bodies; AniList responses are tiny.
+		g := httpclient.NewGetter(o.HTTPTimeout, o.UserAgent, 2<<20)
+		o.AniList = anilist.NewClient(g)
+		if o.AniListMinDelay <= 0 {
+			if d, err := time.ParseDuration(getenv("GOANIMES_ANILIST_MIN_DELAY", "750ms")); err == nil {
+				o.AniListMinDelay = d
+			}
+		}
+	}
 	return services.NewRSSSyncService(repo, mem, o, nil)
+}
+
+func anilistDisabled() bool {
+	v := strings.ToLower(strings.TrimSpace(os.Getenv("GOANIMES_ANILIST_DISABLED")))
+	return v == "1" || v == "true" || v == "yes"
+}
+
+func getenv(k, def string) string {
+	if v := os.Getenv(k); v != "" {
+		return v
+	}
+	return def
 }
 
 // AdminAPIKey returns GOANIMES_ADMIN_API_KEY or ADMIN_API_KEY.

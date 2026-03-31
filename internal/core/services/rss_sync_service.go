@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/wallissonmarinho/GoAnimes/internal/adapters/anilist"
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/btmeta"
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/httpclient"
 	rssadapter "github.com/wallissonmarinho/GoAnimes/internal/adapters/rss"
@@ -17,18 +19,22 @@ import (
 
 // RSSSyncRuntimeOptions configures outbound fetch.
 type RSSSyncRuntimeOptions struct {
-	HTTPTimeout  time.Duration
-	MaxBodyBytes int64
-	UserAgent    string
+	HTTPTimeout       time.Duration
+	MaxBodyBytes      int64
+	UserAgent         string
+	AniList           *anilist.Client
+	AniListMinDelay   time.Duration // sleep between AniList calls (rate limit); 0 → default 750ms
 }
 
 // RSSSyncService fetches RSS sources, filters pt-BR (Erai [br]), updates memory + DB snapshot.
 type RSSSyncService struct {
-	repo   ports.CatalogRepository
-	mem    *state.CatalogStore
-	getter *httpclient.Getter
-	log    *slog.Logger
-	mu     sync.Mutex
+	repo         ports.CatalogRepository
+	mem          *state.CatalogStore
+	getter       *httpclient.Getter
+	anilist      *anilist.Client
+	anilistDelay time.Duration
+	log          *slog.Logger
+	mu           sync.Mutex
 }
 
 func NewRSSSyncService(repo ports.CatalogRepository, mem *state.CatalogStore, o RSSSyncRuntimeOptions, log *slog.Logger) *RSSSyncService {
@@ -44,11 +50,69 @@ func NewRSSSyncService(repo ports.CatalogRepository, mem *state.CatalogStore, o 
 	if o.UserAgent == "" {
 		o.UserAgent = "GoAnimes/1.0"
 	}
+	dly := o.AniListMinDelay
+	if dly <= 0 {
+		dly = 750 * time.Millisecond
+	}
 	return &RSSSyncService{
-		repo:   repo,
-		mem:    mem,
-		getter: httpclient.NewGetter(o.HTTPTimeout, o.UserAgent, o.MaxBodyBytes),
-		log:    log,
+		repo:         repo,
+		mem:          mem,
+		getter:       httpclient.NewGetter(o.HTTPTimeout, o.UserAgent, o.MaxBodyBytes),
+		anilist:      o.AniList,
+		anilistDelay: dly,
+		log:          log,
+	}
+}
+
+func clonePosterMap(m map[string]string) map[string]string {
+	out := make(map[string]string)
+	if m == nil {
+		return out
+	}
+	for k, v := range m {
+		if strings.TrimSpace(v) != "" {
+			out[k] = v
+		}
+	}
+	return out
+}
+
+func prunePosterMap(posters map[string]string, series []domain.CatalogSeries) {
+	want := make(map[string]struct{}, len(series))
+	for _, s := range series {
+		want[s.ID] = struct{}{}
+	}
+	for id := range posters {
+		if _, ok := want[id]; !ok {
+			delete(posters, id)
+		}
+	}
+}
+
+func (s *RSSSyncService) enrichAniListPosters(ctx context.Context, series []domain.CatalogSeries, posters map[string]string) {
+	if s.anilist == nil || len(series) == 0 {
+		return
+	}
+	for _, ser := range series {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+		if strings.TrimSpace(posters[ser.ID]) != "" {
+			continue
+		}
+		res, err := s.anilist.SearchAnimePoster(ctx, ser.Name)
+		if err != nil {
+			s.log.Debug("anilist poster", slog.String("series", ser.Name), slog.Any("err", err))
+			continue
+		}
+		if res.PosterURL != "" {
+			posters[ser.ID] = res.PosterURL
+		}
+		if s.anilistDelay > 0 {
+			time.Sleep(s.anilistDelay)
+		}
 	}
 }
 
@@ -58,19 +122,24 @@ func (s *RSSSyncService) Run(ctx context.Context) domain.SyncResult {
 	defer s.mu.Unlock()
 
 	started := time.Now().UTC()
+	prevSnap, _ := s.repo.LoadCatalogSnapshot(ctx)
+	posterCache := clonePosterMap(prevSnap.AniListPosters)
+
 	sources, err := s.repo.ListRSSSources(ctx)
 	if err != nil {
 		return domain.SyncResult{Message: "list sources failed", Errors: []string{err.Error()}}
 	}
 	if len(sources) == 0 {
 		snap := domain.CatalogSnapshot{
-			OK:         true,
-			Message:    "no rss sources configured",
-			ItemCount:  0,
-			StartedAt:  started,
-			FinishedAt: time.Now().UTC(),
-			Items:      nil,
+			OK:             true,
+			Message:        "no rss sources configured",
+			ItemCount:      0,
+			StartedAt:      started,
+			FinishedAt:     time.Now().UTC(),
+			Items:          nil,
+			AniListPosters: posterCache,
 		}
+		domain.EnsureSnapshotGrouped(&snap)
 		s.mem.Set(snap)
 		_ = s.repo.SaveCatalogSnapshot(ctx, snap)
 		return domain.SyncResult{Message: snap.Message}
@@ -126,6 +195,10 @@ func (s *RSSSyncService) Run(ctx context.Context) domain.SyncResult {
 		Items:      merged,
 	}
 	domain.EnsureSnapshotGrouped(&snap)
+	s.enrichAniListPosters(ctx, snap.Series, posterCache)
+	prunePosterMap(posterCache, snap.Series)
+	snap.AniListPosters = posterCache
+	domain.ApplyAniListPostersToSeries(&snap)
 	snap.Message = fmt.Sprintf("synced %d episodes in %d series from %d feed(s)", len(merged), len(snap.Series), len(sources))
 	s.mem.Set(snap)
 	if saveErr := s.repo.SaveCatalogSnapshot(ctx, snap); saveErr != nil {

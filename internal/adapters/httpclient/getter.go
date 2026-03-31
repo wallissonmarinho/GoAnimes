@@ -1,6 +1,7 @@
 package httpclient
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"net/http"
@@ -31,6 +32,37 @@ func (g *Getter) GetBytes(url string) ([]byte, error) {
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
+	}
+	if g.UserAgent != "" {
+		req.Header.Set("User-Agent", g.UserAgent)
+	}
+	resp, err := g.Client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("http %d", resp.StatusCode)
+	}
+	r := io.LimitReader(resp.Body, g.MaxBodyBytes+1)
+	b, err := io.ReadAll(r)
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(b)) > g.MaxBodyBytes {
+		return nil, fmt.Errorf("body exceeds max bytes")
+	}
+	return b, nil
+}
+
+// PostBytes sends a POST with a body and returns the response body (capped).
+func (g *Getter) PostBytes(url string, contentType string, body []byte) ([]byte, error) {
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
 	}
 	if g.UserAgent != "" {
 		req.Header.Set("User-Agent", g.UserAgent)
