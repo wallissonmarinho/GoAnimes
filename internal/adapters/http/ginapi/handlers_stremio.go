@@ -64,7 +64,7 @@ func stremioUnescapePathParam(s string) string {
 func (h *handlers) getManifest(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"id":          "org.goanimes",
-		"version":     "1.0.7",
+		"version":     "1.0.8",
 		"name":        "GoAnimes",
 		"description": "RSS anime torrents with pt-BR (Erai [br]) filter",
 		"types":       []string{stremioTypeAnime, stremioTypeMovie, stremioTypeSeries},
@@ -121,6 +121,7 @@ func (h *handlers) getMeta(c *gin.Context) {
 		snap := h.deps.Store.Snapshot()
 		groups := domain.GroupItemsByEpisode(snap.Items, id)
 		keys := domain.OrderedEpisodeKeys(groups)
+		en := h.deps.Store.AniListEnrichment(ser.ID)
 		videos := make([]gin.H, 0, len(keys))
 		for _, k := range keys {
 			group := groups[k]
@@ -134,7 +135,7 @@ func (h *handlers) getMeta(c *gin.Context) {
 			}
 			videos = append(videos, gin.H{
 				"id":       vid,
-				"title":    domain.EpisodeListTitle(k.Season, k.Episode, k.Special),
+				"title":    domain.EpisodeListTitle(k.Episode, k.Special, en.EpisodeTitleByNum),
 				"released": stremioVideoReleasedISO(domain.LatestReleased(group)),
 				"season":   k.Season,
 				"episode":  epNum,
@@ -149,7 +150,7 @@ func (h *handlers) getMeta(c *gin.Context) {
 			"description": "Torrent releases with pt-BR subtitles (Erai).",
 			"videos":      videos,
 		}
-		mergeAniListSeriesMeta(meta, h.deps.Store.AniListEnrichment(ser.ID))
+		mergeAniListSeriesMeta(meta, en)
 		c.JSON(http.StatusOK, gin.H{"meta": meta})
 		return
 	}

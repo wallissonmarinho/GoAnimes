@@ -36,3 +36,22 @@ func TestEpisodeVideoStremioID_stable(t *testing.T) {
 	require.Equal(t, v1, v2)
 	require.True(t, domain.IsEpisodeVideoStremioID(v1))
 }
+
+func TestEpisodeTitlesFromStreamingList(t *testing.T) {
+	m := domain.EpisodeTitlesFromStreamingList([]string{
+		"Episode 1 - The Journey's End",
+		"Episode 2 - It Didn't Have to Be Magic...",
+		"garbage",
+	})
+	require.Equal(t, "The Journey's End", m[1])
+	require.Equal(t, "It Didn't Have to Be Magic...", m[2])
+	require.Len(t, m, 2)
+}
+
+func TestEpisodeListTitle_withAniListTitles(t *testing.T) {
+	titles := map[int]string{3: "Killing Magic"}
+	require.Equal(t, "E3 · Killing Magic", domain.EpisodeListTitle(3, false, titles))
+	require.Equal(t, "E3", domain.EpisodeListTitle(3, false, nil))
+	require.Equal(t, "E3", domain.EpisodeListTitle(3, false, map[int]string{5: "other"}))
+	require.Equal(t, "Special", domain.EpisodeListTitle(0, true, titles))
+}

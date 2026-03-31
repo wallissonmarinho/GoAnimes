@@ -83,12 +83,49 @@ func LatestReleased(items []CatalogItem) string {
 	return best
 }
 
+var streamingEpTitleRe = regexp.MustCompile(`(?i)^Episode\s+(\d+)\s*(?:-|–|—)\s*(.+)$`)
+
+// EpisodeTitlesFromStreamingList builds episode number → title from AniList streamingEpisodes titles
+// (e.g. "Episode 5 - Phantoms of the Dead").
+func EpisodeTitlesFromStreamingList(rawTitles []string) map[int]string {
+	out := make(map[int]string)
+	for _, raw := range rawTitles {
+		t := strings.TrimSpace(raw)
+		m := streamingEpTitleRe.FindStringSubmatch(t)
+		if len(m) != 3 {
+			continue
+		}
+		n, err := strconv.Atoi(m[1])
+		if err != nil || n < 1 {
+			continue
+		}
+		name := strings.TrimSpace(m[2])
+		if name == "" {
+			continue
+		}
+		if _, ok := out[n]; !ok {
+			out[n] = name
+		}
+	}
+	return out
+}
+
 // EpisodeListTitle is the Stremio row label without quality (qualities show as stream choices).
-func EpisodeListTitle(season, episode int, isSpecial bool) string {
+// epTitles is optional AniList streaming episode titles keyed by episode number (season 1 assumed).
+func EpisodeListTitle(episode int, isSpecial bool, epTitles map[int]string) string {
 	if isSpecial {
 		return "Special"
 	}
-	return "E" + strconv.Itoa(episode)
+	base := "E" + strconv.Itoa(episode)
+	if epTitles != nil {
+		if t, ok := epTitles[episode]; ok {
+			t = strings.TrimSpace(t)
+			if t != "" {
+				return base + " · " + t
+			}
+		}
+	}
+	return base
 }
 
 // StreamQualityRank higher = preferred default ordering in the stream picker.

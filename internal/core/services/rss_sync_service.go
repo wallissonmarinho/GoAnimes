@@ -123,15 +123,20 @@ func (s *RSSSyncService) enrichAniListSeries(ctx context.Context, series []domai
 			s.log.Warn("anilist lookup failed", slog.String("series", ser.Name), slog.Any("err", err))
 			continue
 		}
+		epTitles := det.EpisodeTitleByNum
+		if epTitles == nil {
+			epTitles = map[int]string{}
+		}
 		cache[ser.ID] = domain.AniListSeriesEnrichment{
-			PosterURL:        det.PosterURL,
-			BackgroundURL:    det.BackgroundURL,
-			Description:      det.Description,
-			Genres:           det.Genres,
-			StartYear:        det.StartYear,
-			EpisodeLengthMin: det.EpisodeLengthMin,
-			TrailerYouTubeID: det.TrailerYouTubeID,
-			TitlePreferred:   det.Title,
+			PosterURL:         det.PosterURL,
+			BackgroundURL:     det.BackgroundURL,
+			Description:       det.Description,
+			Genres:            det.Genres,
+			StartYear:         det.StartYear,
+			EpisodeLengthMin:  det.EpisodeLengthMin,
+			TrailerYouTubeID:  det.TrailerYouTubeID,
+			TitlePreferred:    det.Title,
+			EpisodeTitleByNum: epTitles,
 		}
 		newN++
 		if s.anilistDelay > 0 {

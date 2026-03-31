@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/httpclient"
+	"github.com/wallissonmarinho/GoAnimes/internal/core/domain"
 )
 
 const defaultEndpoint = "https://graphql.anilist.co"
@@ -42,14 +43,15 @@ func NewClient(g *httpclient.Getter, opts ...Option) *Client {
 
 // MediaDetails is the best search match for a free-text title.
 type MediaDetails struct {
-	PosterURL        string
-	BackgroundURL    string
-	Title            string
-	Description      string
-	Genres           []string
-	StartYear        int
-	EpisodeLengthMin int
-	TrailerYouTubeID string
+	PosterURL         string
+	BackgroundURL     string
+	Title             string
+	Description       string
+	Genres            []string
+	StartYear         int
+	EpisodeLengthMin  int
+	TrailerYouTubeID  string
+	EpisodeTitleByNum map[int]string
 }
 
 type gqlRequest struct {
@@ -75,15 +77,20 @@ type gqlPage struct {
 }
 
 type gqlMedia struct {
-	Title       gqlTitle       `json:"title"`
-	CoverImage   gqlCoverImage   `json:"coverImage"`
-	BannerImage  *gqlCoverImage  `json:"bannerImage"`
-	Description  *string         `json:"description"`
-	Genres      []string       `json:"genres"`
-	SeasonYear  *int           `json:"seasonYear"`
-	StartDate   *gqlFuzzyDate  `json:"startDate"`
-	Duration    *int           `json:"duration"`
-	Trailer     *gqlTrailer    `json:"trailer"`
+	Title              gqlTitle               `json:"title"`
+	CoverImage         gqlCoverImage          `json:"coverImage"`
+	BannerImage        *gqlCoverImage         `json:"bannerImage"`
+	Description        *string                `json:"description"`
+	Genres             []string               `json:"genres"`
+	SeasonYear         *int                   `json:"seasonYear"`
+	StartDate          *gqlFuzzyDate          `json:"startDate"`
+	Duration           *int                   `json:"duration"`
+	Trailer            *gqlTrailer            `json:"trailer"`
+	StreamingEpisodes  []gqlStreamingEpisode  `json:"streamingEpisodes"`
+}
+
+type gqlStreamingEpisode struct {
+	Title string `json:"title"`
 }
 
 type gqlFuzzyDate struct {
@@ -118,6 +125,7 @@ const searchMediaQuery = `query ($search: String) {
       startDate { year }
       duration
       trailer { id site }
+      streamingEpisodes { title }
     }
   }
 }`
@@ -189,7 +197,14 @@ func (c *Client) SearchAnimeMedia(ctx context.Context, title string) (MediaDetai
 			out.TrailerYouTubeID = id
 		}
 	}
-	if out.PosterURL == "" && out.BackgroundURL == "" && out.Description == "" && out.Title == "" && out.EpisodeLengthMin == 0 && len(out.Genres) == 0 && out.StartYear == 0 && out.TrailerYouTubeID == "" {
+	if len(m.StreamingEpisodes) > 0 {
+		raw := make([]string, 0, len(m.StreamingEpisodes))
+		for _, se := range m.StreamingEpisodes {
+			raw = append(raw, se.Title)
+		}
+		out.EpisodeTitleByNum = domain.EpisodeTitlesFromStreamingList(raw)
+	}
+	if out.PosterURL == "" && out.BackgroundURL == "" && out.Description == "" && out.Title == "" && out.EpisodeLengthMin == 0 && len(out.Genres) == 0 && out.StartYear == 0 && out.TrailerYouTubeID == "" && len(out.EpisodeTitleByNum) == 0 {
 		return zero, errors.New("anilist: empty media payload")
 	}
 	return out, nil
