@@ -72,12 +72,10 @@ docker run -p 8080:8080 -v "$(pwd)/data:/app/data" goanimes
 
 ## GitHub Actions
 
-- **`ci`** — só `go test` (+ build) em push/PR; **não** faz deploy na Fly.
-- **`fly-deploy`** — igual ao GoTV: job **`test`** e job **`deploy`** (`flyctl deploy` após testes passarem). Só corre em push para `main`/`master` (ou manualmente).
+- **`ci`** — `go test` + build em **PRs** para `main`/`master` e em **push** para outras branches. **Não** corre em push direto em `main`/`master` (evita duplicar testes com o fly-deploy).
+- **`fly-deploy`** — job **`test`** + job **`deploy`** em push para `main`/`master` (ou manual). É o único workflow que corre ao merges na branch principal.
 
-Secret obrigatório para o deploy: **`FLY_API_TOKEN`** em **Settings → Secrets and variables → Actions** (`fly tokens create deploy -x 999999h`).
-
-**Actions → fly-deploy** deve mostrar **2 jobs** na mesma execução. Se só vês um, abre o workflow **fly-deploy**, não o **ci**.
+Secret do deploy: **`FLY_API_TOKEN`** (`fly tokens create deploy -x 999999h`).
 
 ## Migrations
 

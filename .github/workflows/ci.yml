@@ -1,9 +1,11 @@
-# CI em PR/push (sem deploy Fly — ver fly-deploy.yml).
+# CI em branches de trabalho e PRs. Push em main/master NÃO dispara isto — o fly-deploy já corre test+deploy.
 name: ci
 
 on:
   push:
-    branches: [main, master]
+    branches-ignore:
+      - main
+      - master
   pull_request:
     branches: [main, master]
 
