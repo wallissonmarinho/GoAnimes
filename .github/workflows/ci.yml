@@ -1,4 +1,4 @@
-# CI: testes em push e pull request
+# CI em PR/push (sem deploy Fly — ver fly-deploy.yml).
 name: ci
 
 on:

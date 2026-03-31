@@ -68,6 +68,15 @@ docker run -p 8080:8080 -v "$(pwd)/data:/app/data" goanimes
 3. `fly secrets set GOANIMES_ADMIN_API_KEY=...`
 4. `fly deploy`
 
+## GitHub Actions
+
+- **`ci`** — só `go test` (+ build) em push/PR; **não** faz deploy na Fly.
+- **`fly-deploy`** — igual ao GoTV: job **`test`** e job **`deploy`** (`flyctl deploy` após testes passarem). Só corre em push para `main`/`master` (ou manualmente).
+
+Secret obrigatório para o deploy: **`FLY_API_TOKEN`** em **Settings → Secrets and variables → Actions** (`fly tokens create deploy -x 999999h`).
+
+**Actions → fly-deploy** deve mostrar **2 jobs** na mesma execução. Se só vês um, abre o workflow **fly-deploy**, não o **ci**.
+
 ## Migrations
 
 ```bash

@@ -1,5 +1,5 @@
 # Deploy na Fly.io após push na branch principal.
-# Secret: FLY_API_TOKEN (fly tokens create deploy -x 999999h)
+# Secret no repositório: FLY_API_TOKEN (fly tokens create deploy -x 999999h)
 name: fly-deploy
 
 on:
@@ -22,7 +22,7 @@ jobs:
           go-version-file: go.mod
 
       - name: Test
-        run: go test ./... -count=1
+        run: go test ./...
 
   deploy:
     needs: test
