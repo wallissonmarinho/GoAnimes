@@ -36,6 +36,13 @@ Autenticação: `Authorization: Bearer <chave>` ou `X-Admin-API-Key: <chave>`.
 | POST | `/api/v1/rebuild` | Sincroniza feeds agora (202) |
 | GET | `/api/v1/sync-status` | Último estado do sync |
 
+## Postman
+
+1. **Import** → ficheiro [`postman/GoAnimes.postman_collection.json`](postman/GoAnimes.postman_collection.json).
+2. (Opcional) **Import** do ambiente [`postman/GoAnimes.local.postman_environment.json`](postman/GoAnimes.local.postman_environment.json) e seleciona-o no canto superior direito.
+3. Ajusta `baseUrl`, `adminApiKey` e `sampleRssUrl` (variáveis da coleção ou do ambiente).
+4. Se o servidor **não** tiver chave admin, na pasta **Admin** define **Authorization** → **No Auth**.
+
 ## Variáveis de ambiente
 
 | Variável | Descrição |

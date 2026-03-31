@@ -1,0 +1,136 @@
+{
+  "info": {
+    "_postman_id": "a1b2c3d4-goanimes-api",
+    "name": "GoAnimes",
+    "description": "GoAnimes — admin API + URLs úteis do addon Stremio.\n\n**Variáveis:** `baseUrl`, `adminApiKey`, `rssSourceId`, `sampleRssUrl`\n\nSe **não** usares `GOANIMES_ADMIN_API_KEY`, no Postman abre a pasta **Admin**, edita **Authorization** → Type **No Auth** (ou apaga o Bearer).\n\nO pedido **Create RSS source** grava o `id` devolvido em `rssSourceId` para usar no **Delete**.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://127.0.0.1:8080" },
+    { "key": "adminApiKey", "value": "" },
+    { "key": "rssSourceId", "value": "" },
+    {
+      "key": "sampleRssUrl",
+      "value": "https://www.erai-raws.info/feed/?type=torrent&token=SEU_TOKEN_AQUI"
+    }
+  ],
+  "item": [
+    {
+      "name": "Public (Stremio / health)",
+      "item": [
+        {
+          "name": "Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/health"
+          }
+        },
+        {
+          "name": "Manifest (addon Stremio)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/manifest.json"
+          }
+        },
+        {
+          "name": "Catalog movie / goanimes",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/catalog/movie/goanimes.json"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin",
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{adminApiKey}}",
+            "type": "string"
+          }
+        ]
+      },
+      "item": [
+        {
+          "name": "RSS sources",
+          "item": [
+            {
+              "name": "Create RSS source",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "if (pm.response.code === 201) {",
+                      "  const j = pm.response.json();",
+                      "  if (j && j.id) pm.collectionVariables.set('rssSourceId', j.id);",
+                      "}"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"url\": \"{{sampleRssUrl}}\",\n  \"label\": \"Erai\"\n}"
+                },
+                "url": "{{baseUrl}}/api/v1/rss-sources"
+              }
+            },
+            {
+              "name": "List RSS sources",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/v1/rss-sources"
+              }
+            },
+            {
+              "name": "Delete RSS source",
+              "request": {
+                "method": "DELETE",
+                "header": [],
+                "url": "{{baseUrl}}/api/v1/rss-sources/{{rssSourceId}}"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Sync",
+          "item": [
+            {
+              "name": "Rebuild (sync now)",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": "{{baseUrl}}/api/v1/rebuild"
+              }
+            },
+            {
+              "name": "Sync status",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/v1/sync-status"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
