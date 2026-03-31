@@ -40,10 +40,16 @@ func NewClient(g *httpclient.Getter, opts ...Option) *Client {
 	return c
 }
 
-// SearchResult is the best match for a free-text title.
-type SearchResult struct {
-	PosterURL string
-	Title     string
+// MediaDetails is the best search match for a free-text title.
+type MediaDetails struct {
+	PosterURL        string
+	BackgroundURL    string
+	Title            string
+	Description      string
+	Genres           []string
+	StartYear        int
+	EpisodeLengthMin int
+	TrailerYouTubeID string
 }
 
 type gqlRequest struct {
@@ -70,7 +76,23 @@ type gqlPage struct {
 
 type gqlMedia struct {
 	Title       gqlTitle       `json:"title"`
-	CoverImage  gqlCoverImage  `json:"coverImage"`
+	CoverImage   gqlCoverImage   `json:"coverImage"`
+	BannerImage  *gqlCoverImage  `json:"bannerImage"`
+	Description  *string         `json:"description"`
+	Genres      []string       `json:"genres"`
+	SeasonYear  *int           `json:"seasonYear"`
+	StartDate   *gqlFuzzyDate  `json:"startDate"`
+	Duration    *int           `json:"duration"`
+	Trailer     *gqlTrailer    `json:"trailer"`
+}
+
+type gqlFuzzyDate struct {
+	Year *int `json:"year"`
+}
+
+type gqlTrailer struct {
+	ID   string `json:"id"`
+	Site string `json:"site"`
 }
 
 type gqlTitle struct {
@@ -84,18 +106,25 @@ type gqlCoverImage struct {
 	Large      string `json:"large"`
 }
 
-const searchQuery = `query ($search: String) {
+const searchMediaQuery = `query ($search: String) {
   Page(page: 1, perPage: 1) {
     media(search: $search, type: ANIME, sort: SEARCH_MATCH, isAdult: false) {
       title { userPreferred romaji english }
       coverImage { extraLarge large }
+      bannerImage { large }
+      description(asHtml: false)
+      genres
+      seasonYear
+      startDate { year }
+      duration
+      trailer { id site }
     }
   }
 }`
 
-// SearchAnimePoster returns the cover image URL for the best search match.
-func (c *Client) SearchAnimePoster(ctx context.Context, title string) (SearchResult, error) {
-	var zero SearchResult
+// SearchAnimeMedia returns Stremio-relevant metadata for the best AniList match.
+func (c *Client) SearchAnimeMedia(ctx context.Context, title string) (MediaDetails, error) {
+	var zero MediaDetails
 	if c == nil || c.getter == nil {
 		return zero, errors.New("anilist: nil client")
 	}
@@ -107,7 +136,7 @@ func (c *Client) SearchAnimePoster(ctx context.Context, title string) (SearchRes
 		return zero, err
 	}
 	body, err := json.Marshal(gqlRequest{
-		Query: searchQuery,
+		Query: searchMediaQuery,
 		Variables: map[string]any{
 			"search": q,
 		},
@@ -130,19 +159,52 @@ func (c *Client) SearchAnimePoster(ctx context.Context, title string) (SearchRes
 		return zero, errors.New("anilist: no results")
 	}
 	m := resp.Data.Page.Media[0]
-	poster := strings.TrimSpace(m.CoverImage.ExtraLarge)
-	if poster == "" {
-		poster = strings.TrimSpace(m.CoverImage.Large)
+	out := MediaDetails{}
+	out.PosterURL = strings.TrimSpace(m.CoverImage.ExtraLarge)
+	if out.PosterURL == "" {
+		out.PosterURL = strings.TrimSpace(m.CoverImage.Large)
 	}
-	if poster == "" {
-		return zero, errors.New("anilist: no cover image")
+	if m.BannerImage != nil {
+		out.BackgroundURL = strings.TrimSpace(m.BannerImage.Large)
 	}
-	outTitle := strings.TrimSpace(m.Title.UserPreferred)
-	if outTitle == "" {
-		outTitle = strings.TrimSpace(m.Title.Romaji)
+	out.Title = pickTitle(m.Title)
+	if m.Description != nil {
+		out.Description = NormalizeDescription(*m.Description)
 	}
-	if outTitle == "" {
-		outTitle = strings.TrimSpace(m.Title.English)
+	if len(m.Genres) > 0 {
+		out.Genres = append(out.Genres, m.Genres...)
 	}
-	return SearchResult{PosterURL: poster, Title: outTitle}, nil
+	if m.SeasonYear != nil && *m.SeasonYear > 0 {
+		out.StartYear = *m.SeasonYear
+	} else if m.StartDate != nil && m.StartDate.Year != nil && *m.StartDate.Year > 0 {
+		out.StartYear = *m.StartDate.Year
+	}
+	if m.Duration != nil && *m.Duration > 0 {
+		out.EpisodeLengthMin = *m.Duration
+	}
+	if m.Trailer != nil {
+		site := strings.ToLower(strings.TrimSpace(m.Trailer.Site))
+		id := strings.TrimSpace(m.Trailer.ID)
+		if id != "" && (site == "youtube" || site == "youtu_be") {
+			out.TrailerYouTubeID = id
+		}
+	}
+	if out.PosterURL == "" && out.BackgroundURL == "" && out.Description == "" && out.Title == "" && out.EpisodeLengthMin == 0 && len(out.Genres) == 0 && out.StartYear == 0 && out.TrailerYouTubeID == "" {
+		return zero, errors.New("anilist: empty media payload")
+	}
+	return out, nil
+}
+
+func pickTitle(t gqlTitle) string {
+	for _, s := range []string{t.UserPreferred, t.Romaji, t.English} {
+		if strings.TrimSpace(s) != "" {
+			return strings.TrimSpace(s)
+		}
+	}
+	return ""
+}
+
+// SearchAnimePoster is a thin wrapper (poster + title only) for backward compatibility.
+func (c *Client) SearchAnimePoster(ctx context.Context, title string) (MediaDetails, error) {
+	return c.SearchAnimeMedia(ctx, title)
 }

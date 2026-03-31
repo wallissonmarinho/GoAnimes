@@ -35,8 +35,8 @@ type CatalogSnapshot struct {
 	StartedAt      time.Time
 	FinishedAt     time.Time
 	Items          []CatalogItem
-	Series         []CatalogSeries `json:"-"`
-	AniListPosters map[string]string `json:"-"` // series Stremio id -> cover URL; persisted in items_json envelope
+	Series          []CatalogSeries                        `json:"-"`
+	AniListBySeries map[string]AniListSeriesEnrichment `json:"-"` // persisted as anilist_series (+ legacy anilist_posters)
 }
 
 // SyncResult is the outcome of an RSS sync job.

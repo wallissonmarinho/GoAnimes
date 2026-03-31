@@ -1,6 +1,7 @@
 package ginapi
 
 import (
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -63,7 +64,7 @@ func stremioUnescapePathParam(s string) string {
 func (h *handlers) getManifest(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"id":          "org.goanimes",
-		"version":     "1.0.5",
+		"version":     "1.0.7",
 		"name":        "GoAnimes",
 		"description": "RSS anime torrents with pt-BR (Erai [br]) filter",
 		"types":       []string{stremioTypeAnime, stremioTypeMovie, stremioTypeSeries},
@@ -148,6 +149,7 @@ func (h *handlers) getMeta(c *gin.Context) {
 			"description": "Torrent releases with pt-BR subtitles (Erai).",
 			"videos":      videos,
 		}
+		mergeAniListSeriesMeta(meta, h.deps.Store.AniListEnrichment(ser.ID))
 		c.JSON(http.StatusOK, gin.H{"meta": meta})
 		return
 	}
@@ -253,4 +255,37 @@ func streamFromCatalogItem(it domain.CatalogItem, bingeGroup string) gin.H {
 
 func (h *handlers) getHealth(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+func mergeAniListSeriesMeta(meta gin.H, en domain.AniListSeriesEnrichment) {
+	if strings.TrimSpace(en.Description) != "" {
+		meta["description"] = en.Description
+	}
+	if len(en.Genres) > 0 {
+		meta["genres"] = en.Genres
+	}
+	if en.StartYear > 0 {
+		meta["releaseInfo"] = fmt.Sprintf("%d-", en.StartYear)
+	}
+	if en.EpisodeLengthMin > 0 {
+		meta["runtime"] = fmt.Sprintf("~%dm per episode", en.EpisodeLengthMin)
+	}
+	bg := strings.TrimSpace(en.BackgroundURL)
+	if bg == "" {
+		bg = strings.TrimSpace(en.PosterURL)
+	}
+	if bg == "" {
+		if p, ok := meta["poster"].(string); ok {
+			bg = strings.TrimSpace(p)
+		}
+	}
+	if bg != "" {
+		meta["background"] = bg
+	}
+	if strings.TrimSpace(en.TrailerYouTubeID) != "" {
+		meta["trailers"] = []gin.H{{"source": en.TrailerYouTubeID, "type": "Trailer"}}
+	}
+	if strings.TrimSpace(en.TitlePreferred) != "" {
+		meta["name"] = en.TitlePreferred
+	}
 }

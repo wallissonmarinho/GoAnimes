@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -122,14 +123,18 @@ func (r *catalogRepo) DeleteRSSSource(ctx context.Context, id string) error {
 }
 
 type catalogPayload struct {
-	Items           []domain.CatalogItem `json:"items"`
-	AniListPosters  map[string]string    `json:"anilist_posters,omitempty"`
+	Items           []domain.CatalogItem                        `json:"items"`
+	AniListPosters  map[string]string                           `json:"anilist_posters,omitempty"` // legacy: poster URL only
+	AniListSeries   map[string]domain.AniListSeriesEnrichment `json:"anilist_series,omitempty"`
 }
 
 func marshalCatalogPayload(snap domain.CatalogSnapshot) ([]byte, error) {
-	p := catalogPayload{Items: snap.Items, AniListPosters: snap.AniListPosters}
-	if len(p.AniListPosters) == 0 {
-		p.AniListPosters = nil
+	p := catalogPayload{
+		Items:         snap.Items,
+		AniListSeries: snap.AniListBySeries,
+	}
+	if len(p.AniListSeries) == 0 {
+		p.AniListSeries = nil
 	}
 	return json.Marshal(p)
 }
@@ -151,7 +156,22 @@ func unmarshalCatalogPayload(raw []byte) (domain.CatalogSnapshot, error) {
 		return domain.CatalogSnapshot{}, err
 	}
 	snap.Items = p.Items
-	snap.AniListPosters = p.AniListPosters
+	snap.AniListBySeries = p.AniListSeries
+	if snap.AniListBySeries == nil {
+		snap.AniListBySeries = make(map[string]domain.AniListSeriesEnrichment)
+	}
+	// Legacy snapshot: only anilist_posters map.
+	for k, url := range p.AniListPosters {
+		url = strings.TrimSpace(url)
+		if url == "" {
+			continue
+		}
+		e := snap.AniListBySeries[k]
+		if e.PosterURL == "" {
+			e.PosterURL = url
+		}
+		snap.AniListBySeries[k] = e
+	}
 	return snap, nil
 }
 

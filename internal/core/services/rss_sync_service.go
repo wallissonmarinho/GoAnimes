@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"strings"
 	"sync"
 	"time"
 
@@ -19,11 +18,11 @@ import (
 
 // RSSSyncRuntimeOptions configures outbound fetch.
 type RSSSyncRuntimeOptions struct {
-	HTTPTimeout       time.Duration
-	MaxBodyBytes      int64
-	UserAgent         string
-	AniList           *anilist.Client
-	AniListMinDelay   time.Duration // sleep between AniList calls (rate limit); 0 → default 750ms
+	HTTPTimeout     time.Duration
+	MaxBodyBytes    int64
+	UserAgent       string
+	AniList         *anilist.Client
+	AniListMinDelay time.Duration // sleep between AniList calls (rate limit); 0 → default 750ms
 }
 
 // RSSSyncService fetches RSS sources, filters pt-BR (Erai [br]), updates memory + DB snapshot.
@@ -64,32 +63,27 @@ func NewRSSSyncService(repo ports.CatalogRepository, mem *state.CatalogStore, o 
 	}
 }
 
-func clonePosterMap(m map[string]string) map[string]string {
-	out := make(map[string]string)
-	if m == nil {
-		return out
-	}
+func cloneAniListCache(m map[string]domain.AniListSeriesEnrichment) map[string]domain.AniListSeriesEnrichment {
+	out := make(map[string]domain.AniListSeriesEnrichment)
 	for k, v := range m {
-		if strings.TrimSpace(v) != "" {
-			out[k] = v
-		}
+		out[k] = v
 	}
 	return out
 }
 
-func prunePosterMap(posters map[string]string, series []domain.CatalogSeries) {
+func pruneAniListCache(m map[string]domain.AniListSeriesEnrichment, series []domain.CatalogSeries) {
 	want := make(map[string]struct{}, len(series))
 	for _, s := range series {
 		want[s.ID] = struct{}{}
 	}
-	for id := range posters {
+	for id := range m {
 		if _, ok := want[id]; !ok {
-			delete(posters, id)
+			delete(m, id)
 		}
 	}
 }
 
-func (s *RSSSyncService) enrichAniListPosters(ctx context.Context, series []domain.CatalogSeries, posters map[string]string) {
+func (s *RSSSyncService) enrichAniListSeries(ctx context.Context, series []domain.CatalogSeries, cache map[string]domain.AniListSeriesEnrichment) {
 	if len(series) == 0 {
 		return
 	}
@@ -99,45 +93,52 @@ func (s *RSSSyncService) enrichAniListPosters(ctx context.Context, series []doma
 	}
 	missing := 0
 	for _, ser := range series {
-		if strings.TrimSpace(posters[ser.ID]) == "" {
+		if domain.AniListNeedsRefetch(cache[ser.ID]) {
 			missing++
 		}
 	}
 	if missing == 0 {
-		s.log.Info("anilist: all series already have cached posters", slog.Int("series", len(series)))
+		s.log.Info("anilist: all series have full cached metadata", slog.Int("series", len(series)))
 		return
 	}
-	s.log.Info("anilist: fetching posters (no API key required)",
+	s.log.Info("anilist: fetching metadata (posters, synopsis, genres, …)",
 		slog.Int("to_fetch", missing),
 		slog.Int("series_total", len(series)),
 		slog.Duration("min_delay_between_requests", s.anilistDelay))
 
-	newPosters, fails := 0, 0
+	newN, fails := 0, 0
 	for _, ser := range series {
 		select {
 		case <-ctx.Done():
-			s.log.Warn("anilist: stopped early (context done)", slog.Int("new_posters", newPosters), slog.Int("failures", fails))
+			s.log.Warn("anilist: stopped early (context done)", slog.Int("new_rows", newN), slog.Int("failures", fails))
 			return
 		default:
 		}
-		if strings.TrimSpace(posters[ser.ID]) != "" {
+		if !domain.AniListNeedsRefetch(cache[ser.ID]) {
 			continue
 		}
-		res, err := s.anilist.SearchAnimePoster(ctx, ser.Name)
+		det, err := s.anilist.SearchAnimeMedia(ctx, ser.Name)
 		if err != nil {
 			fails++
-			s.log.Warn("anilist poster failed", slog.String("series", ser.Name), slog.Any("err", err))
+			s.log.Warn("anilist lookup failed", slog.String("series", ser.Name), slog.Any("err", err))
 			continue
 		}
-		if res.PosterURL != "" {
-			posters[ser.ID] = res.PosterURL
-			newPosters++
+		cache[ser.ID] = domain.AniListSeriesEnrichment{
+			PosterURL:        det.PosterURL,
+			BackgroundURL:    det.BackgroundURL,
+			Description:      det.Description,
+			Genres:           det.Genres,
+			StartYear:        det.StartYear,
+			EpisodeLengthMin: det.EpisodeLengthMin,
+			TrailerYouTubeID: det.TrailerYouTubeID,
+			TitlePreferred:   det.Title,
 		}
+		newN++
 		if s.anilistDelay > 0 {
 			time.Sleep(s.anilistDelay)
 		}
 	}
-	s.log.Info("anilist: finished", slog.Int("new_posters", newPosters), slog.Int("lookup_failures", fails))
+	s.log.Info("anilist: finished", slog.Int("new_or_refreshed", newN), slog.Int("lookup_failures", fails))
 }
 
 // Run fetches all RSS sources and rebuilds the catalog.
@@ -147,7 +148,7 @@ func (s *RSSSyncService) Run(ctx context.Context) domain.SyncResult {
 
 	started := time.Now().UTC()
 	prevSnap, _ := s.repo.LoadCatalogSnapshot(ctx)
-	posterCache := clonePosterMap(prevSnap.AniListPosters)
+	anilistCache := cloneAniListCache(prevSnap.AniListBySeries)
 
 	sources, err := s.repo.ListRSSSources(ctx)
 	if err != nil {
@@ -155,15 +156,16 @@ func (s *RSSSyncService) Run(ctx context.Context) domain.SyncResult {
 	}
 	if len(sources) == 0 {
 		snap := domain.CatalogSnapshot{
-			OK:             true,
-			Message:        "no rss sources configured",
-			ItemCount:      0,
-			StartedAt:      started,
-			FinishedAt:     time.Now().UTC(),
-			Items:          nil,
-			AniListPosters: posterCache,
+			OK:              true,
+			Message:         "no rss sources configured",
+			ItemCount:       0,
+			StartedAt:       started,
+			FinishedAt:      time.Now().UTC(),
+			Items:           nil,
+			AniListBySeries: anilistCache,
 		}
 		domain.EnsureSnapshotGrouped(&snap)
+		domain.ApplyAniListEnrichmentToSeries(&snap)
 		s.mem.Set(snap)
 		_ = s.repo.SaveCatalogSnapshot(ctx, snap)
 		return domain.SyncResult{Message: snap.Message}
@@ -191,8 +193,6 @@ func (s *RSSSyncService) Run(ctx context.Context) domain.SyncResult {
 		merged = append(merged, it)
 	}
 
-	// Erai often exposes only a .torrent URL. Stremio must get infoHash (or magnet), not a raw .torrent URL,
-	// or playback fails with "unrecognized file format".
 	for i := range merged {
 		it := &merged[i]
 		if it.InfoHash != "" || it.TorrentURL == "" {
@@ -219,10 +219,10 @@ func (s *RSSSyncService) Run(ctx context.Context) domain.SyncResult {
 		Items:      merged,
 	}
 	domain.EnsureSnapshotGrouped(&snap)
-	s.enrichAniListPosters(ctx, snap.Series, posterCache)
-	prunePosterMap(posterCache, snap.Series)
-	snap.AniListPosters = posterCache
-	domain.ApplyAniListPostersToSeries(&snap)
+	s.enrichAniListSeries(ctx, snap.Series, anilistCache)
+	pruneAniListCache(anilistCache, snap.Series)
+	snap.AniListBySeries = anilistCache
+	domain.ApplyAniListEnrichmentToSeries(&snap)
 	snap.Message = fmt.Sprintf("synced %d episodes in %d series from %d feed(s)", len(merged), len(snap.Series), len(sources))
 	s.mem.Set(snap)
 	if saveErr := s.repo.SaveCatalogSnapshot(ctx, snap); saveErr != nil {

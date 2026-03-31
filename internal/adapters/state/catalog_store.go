@@ -1,6 +1,7 @@
 package state
 
 import (
+	"strings"
 	"sync"
 
 	"github.com/wallissonmarinho/GoAnimes/internal/core/domain"
@@ -50,8 +51,10 @@ func (c *CatalogStore) SeriesByID(seriesID string) (domain.CatalogSeries, bool) 
 	for _, it := range c.snap.Items {
 		if it.SeriesID == seriesID {
 			poster := domain.SeriesPosterURL(it.SeriesName)
-			if u := c.snap.AniListPosters[seriesID]; u != "" {
-				poster = u
+			if en, ok := c.snap.AniListBySeries[seriesID]; ok {
+				if u := strings.TrimSpace(en.PosterURL); u != "" {
+					poster = u
+				}
 			}
 			return domain.CatalogSeries{
 				ID:     seriesID,
@@ -61,6 +64,13 @@ func (c *CatalogStore) SeriesByID(seriesID string) (domain.CatalogSeries, bool) 
 		}
 	}
 	return domain.CatalogSeries{}, false
+}
+
+// AniListEnrichment returns cached AniList metadata for a series id (may be empty struct).
+func (c *CatalogStore) AniListEnrichment(seriesID string) domain.AniListSeriesEnrichment {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.snap.AniListBySeries[seriesID]
 }
 
 // ItemsBySeriesID returns episodes for a series, sorted for display.

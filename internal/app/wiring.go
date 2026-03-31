@@ -27,7 +27,7 @@ func HydrateCatalogStore(ctx context.Context, repo ports.CatalogRepository, mem 
 		return
 	}
 	domain.EnsureSnapshotGrouped(&snap)
-	domain.ApplyAniListPostersToSeries(&snap)
+	domain.ApplyAniListEnrichmentToSeries(&snap)
 	mem.Set(snap)
 }
 

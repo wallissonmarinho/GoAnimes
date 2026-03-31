@@ -13,7 +13,7 @@ import (
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/httpclient"
 )
 
-func TestClient_SearchAnimePoster(t *testing.T) {
+func TestClient_SearchAnimeMedia(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		require.Equal(t, http.MethodPost, r.Method)
 		w.Header().Set("Content-Type", "application/json")
@@ -22,7 +22,14 @@ func TestClient_SearchAnimePoster(t *testing.T) {
 				"Page": {
 					"media": [{
 						"title": {"userPreferred": "Test Anime", "romaji": "Test Anime", "english": "Test Anime"},
-						"coverImage": {"extraLarge": "https://cdn.example/poster.jpg", "large": ""}
+						"coverImage": {"extraLarge": "https://cdn.example/poster.jpg", "large": ""},
+						"bannerImage": {"large": "https://cdn.example/banner.jpg"},
+						"description": "A <b>fine</b> show.",
+						"genres": ["Action", "Comedy"],
+						"seasonYear": 2024,
+						"startDate": {"year": 2024},
+						"duration": 24,
+						"trailer": {"id": "abc123xyz", "site": "youtube"}
 					}]
 				}
 			}
@@ -33,8 +40,14 @@ func TestClient_SearchAnimePoster(t *testing.T) {
 	g := httpclient.NewGetter(5*time.Second, "GoAnimes/test", 1<<20)
 	c := anilist.NewClient(g, anilist.WithEndpoint(srv.URL))
 
-	res, err := c.SearchAnimePoster(context.Background(), "Test Anime")
+	res, err := c.SearchAnimeMedia(context.Background(), "Test Anime")
 	require.NoError(t, err)
 	require.Equal(t, "https://cdn.example/poster.jpg", res.PosterURL)
+	require.Equal(t, "https://cdn.example/banner.jpg", res.BackgroundURL)
 	require.Equal(t, "Test Anime", res.Title)
+	require.Contains(t, res.Description, "fine")
+	require.Equal(t, []string{"Action", "Comedy"}, res.Genres)
+	require.Equal(t, 2024, res.StartYear)
+	require.Equal(t, 24, res.EpisodeLengthMin)
+	require.Equal(t, "abc123xyz", res.TrailerYouTubeID)
 }

@@ -255,14 +255,16 @@ func seriesFieldsMissing(items []CatalogItem) bool {
 	return false
 }
 
-// ApplyAniListPostersToSeries overwrites Series poster when AniListPosters has an entry for that series id.
-func ApplyAniListPostersToSeries(snap *CatalogSnapshot) {
-	if snap == nil || len(snap.Series) == 0 || len(snap.AniListPosters) == 0 {
+// ApplyAniListEnrichmentToSeries sets Series poster from cached AniList data.
+func ApplyAniListEnrichmentToSeries(snap *CatalogSnapshot) {
+	if snap == nil || len(snap.Series) == 0 || len(snap.AniListBySeries) == 0 {
 		return
 	}
 	for i := range snap.Series {
-		if u := strings.TrimSpace(snap.AniListPosters[snap.Series[i].ID]); u != "" {
-			snap.Series[i].Poster = u
+		if en, ok := snap.AniListBySeries[snap.Series[i].ID]; ok {
+			if u := strings.TrimSpace(en.PosterURL); u != "" {
+				snap.Series[i].Poster = u
+			}
 		}
 	}
 }

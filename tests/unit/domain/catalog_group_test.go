@@ -25,14 +25,16 @@ func TestParseEraiReleaseTitle(t *testing.T) {
 	require.False(t, ok)
 }
 
-func TestApplyAniListPostersToSeries(t *testing.T) {
+func TestApplyAniListEnrichmentToSeries(t *testing.T) {
 	snap := &domain.CatalogSnapshot{
 		Series: []domain.CatalogSeries{
 			{ID: "goanimes:series:aa", Name: "A", Poster: "http://placeholder"},
 		},
-		AniListPosters: map[string]string{"goanimes:series:aa": "https://cdn.anilist/1.jpg"},
+		AniListBySeries: map[string]domain.AniListSeriesEnrichment{
+			"goanimes:series:aa": {PosterURL: "https://cdn.anilist/1.jpg", Description: "Synopsis"},
+		},
 	}
-	domain.ApplyAniListPostersToSeries(snap)
+	domain.ApplyAniListEnrichmentToSeries(snap)
 	require.Equal(t, "https://cdn.anilist/1.jpg", snap.Series[0].Poster)
 }
 
