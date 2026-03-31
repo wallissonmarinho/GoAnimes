@@ -1,6 +1,7 @@
 package ginapi
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/wallissonmarinho/GoAnimes/internal/adapters/anilist"
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/rss"
 	"github.com/wallissonmarinho/GoAnimes/internal/core/domain"
 )
@@ -64,7 +66,7 @@ func stremioUnescapePathParam(s string) string {
 func (h *handlers) getManifest(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"id":          "org.goanimes",
-		"version":     "1.0.8",
+		"version":     "1.0.9",
 		"name":        "GoAnimes",
 		"description": "RSS anime torrents with pt-BR (Erai [br]) filter",
 		"types":       []string{stremioTypeAnime, stremioTypeMovie, stremioTypeSeries},
@@ -92,7 +94,7 @@ func (h *handlers) getCatalog(c *gin.Context) {
 	for _, s := range snap.Series {
 		m := gin.H{
 			"id":     s.ID,
-			"type":   stremioTypeSeries,
+			"type":   stremioTypeAnime,
 			"name":   s.Name,
 			"genres": []string{"Anime"},
 		}
@@ -122,6 +124,16 @@ func (h *handlers) getMeta(c *gin.Context) {
 		groups := domain.GroupItemsByEpisode(snap.Items, id)
 		keys := domain.OrderedEpisodeKeys(groups)
 		en := h.deps.Store.AniListEnrichment(ser.ID)
+		if strings.TrimSpace(en.Description) == "" && h.deps.AniList != nil && strings.TrimSpace(ser.Name) != "" {
+			ctx, cancel := context.WithTimeout(c.Request.Context(), 12*time.Second)
+			det, err := h.deps.AniList.SearchAnimeMedia(ctx, ser.Name)
+			cancel()
+			if err == nil {
+				add := anilist.ToDomainEnrichment(det)
+				h.deps.Store.MergeAniListEnrichment(ser.ID, add)
+				en = domain.MergeAniListEnrichment(en, add)
+			}
+		}
 		videos := make([]gin.H, 0, len(keys))
 		for _, k := range keys {
 			group := groups[k]
@@ -141,9 +153,11 @@ func (h *handlers) getMeta(c *gin.Context) {
 				"episode":  epNum,
 			})
 		}
+		// Must match catalog manifest type ("anime"). If meta.type is "series" while the catalog is
+		// "anime", many Stremio clients skip synopsis, genres, and similar fields on the detail screen.
 		meta := gin.H{
 			"id":          ser.ID,
-			"type":        stremioTypeSeries,
+			"type":        stremioTypeAnime,
 			"name":        ser.Name,
 			"poster":      ser.Poster,
 			"genres":      []string{"Anime"},

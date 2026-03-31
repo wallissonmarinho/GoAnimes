@@ -29,3 +29,43 @@ func AniListNeedsRefetch(en AniListSeriesEnrichment) bool {
 	}
 	return false
 }
+
+// MergeAniListEnrichment fills empty fields in stored with values from add (e.g. DB row + lazy AniList fetch).
+func MergeAniListEnrichment(stored, add AniListSeriesEnrichment) AniListSeriesEnrichment {
+	out := stored
+	if strings.TrimSpace(out.Description) == "" {
+		out.Description = strings.TrimSpace(add.Description)
+	}
+	if len(out.Genres) == 0 && len(add.Genres) > 0 {
+		out.Genres = append([]string(nil), add.Genres...)
+	}
+	if strings.TrimSpace(out.PosterURL) == "" {
+		out.PosterURL = strings.TrimSpace(add.PosterURL)
+	}
+	if strings.TrimSpace(out.BackgroundURL) == "" {
+		out.BackgroundURL = strings.TrimSpace(add.BackgroundURL)
+	}
+	if out.StartYear == 0 && add.StartYear > 0 {
+		out.StartYear = add.StartYear
+	}
+	if out.EpisodeLengthMin == 0 && add.EpisodeLengthMin > 0 {
+		out.EpisodeLengthMin = add.EpisodeLengthMin
+	}
+	if strings.TrimSpace(out.TrailerYouTubeID) == "" {
+		out.TrailerYouTubeID = strings.TrimSpace(add.TrailerYouTubeID)
+	}
+	if strings.TrimSpace(out.TitlePreferred) == "" {
+		out.TitlePreferred = strings.TrimSpace(add.TitlePreferred)
+	}
+	if add.EpisodeTitleByNum != nil {
+		if out.EpisodeTitleByNum == nil {
+			out.EpisodeTitleByNum = make(map[int]string)
+		}
+		for k, v := range add.EpisodeTitleByNum {
+			if _, ok := out.EpisodeTitleByNum[k]; !ok {
+				out.EpisodeTitleByNum[k] = v
+			}
+		}
+	}
+	return out
+}

@@ -54,6 +54,25 @@ type MediaDetails struct {
 	EpisodeTitleByNum map[int]string
 }
 
+// ToDomainEnrichment maps API details into the persisted enrichment shape.
+func ToDomainEnrichment(d MediaDetails) domain.AniListSeriesEnrichment {
+	ep := d.EpisodeTitleByNum
+	if ep == nil {
+		ep = map[int]string{}
+	}
+	return domain.AniListSeriesEnrichment{
+		PosterURL:         d.PosterURL,
+		BackgroundURL:     d.BackgroundURL,
+		Description:       d.Description,
+		Genres:            append([]string(nil), d.Genres...),
+		StartYear:         d.StartYear,
+		EpisodeLengthMin:  d.EpisodeLengthMin,
+		TrailerYouTubeID:  d.TrailerYouTubeID,
+		TitlePreferred:    d.Title,
+		EpisodeTitleByNum: ep,
+	}
+}
+
 type gqlRequest struct {
 	Query     string         `json:"query"`
 	Variables map[string]any `json:"variables"`

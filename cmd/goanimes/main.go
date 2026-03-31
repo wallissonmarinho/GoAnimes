@@ -50,7 +50,7 @@ func main() {
 	mem := &state.CatalogStore{}
 	app.HydrateCatalogStore(context.Background(), cat, mem)
 
-	syncSvc := app.NewRSSSyncService(cat, mem, services.RSSSyncRuntimeOptions{
+	syncSvc, anilistClient := app.NewRSSSyncService(cat, mem, services.RSSSyncRuntimeOptions{
 		HTTPTimeout:  durationEnv("GOANIMES_HTTP_TIMEOUT", 45*time.Second),
 		MaxBodyBytes: int64Env("GOANIMES_MAX_BODY_BYTES", 50<<20),
 		UserAgent:    getenv("GOANIMES_USER_AGENT", "GoAnimes/1.0"),
@@ -68,6 +68,7 @@ func main() {
 		Sync:     syncSvc,
 		RSSAdmin: rssAdmin,
 		Store:    mem,
+		AniList:  anilistClient,
 		Log:      lg,
 	})
 

@@ -53,7 +53,7 @@ func TestStremioRoutes_catalogMetaStream(t *testing.T) {
 	e.ServeHTTP(w, req)
 	require.Equal(t, http.StatusOK, w.Code)
 	require.Contains(t, w.Body.String(), `"metas"`)
-	require.Contains(t, w.Body.String(), `"type":"series"`)
+	require.Contains(t, w.Body.String(), `"type":"anime"`)
 	require.Contains(t, w.Body.String(), serID)
 	require.Contains(t, w.Body.String(), "Test Show")
 

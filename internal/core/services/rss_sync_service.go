@@ -154,6 +154,10 @@ func (s *RSSSyncService) Run(ctx context.Context) domain.SyncResult {
 	started := time.Now().UTC()
 	prevSnap, _ := s.repo.LoadCatalogSnapshot(ctx)
 	anilistCache := cloneAniListCache(prevSnap.AniListBySeries)
+	live := s.mem.Snapshot()
+	for k, v := range live.AniListBySeries {
+		anilistCache[k] = domain.MergeAniListEnrichment(anilistCache[k], v)
+	}
 
 	sources, err := s.repo.ListRSSSources(ctx)
 	if err != nil {

@@ -149,6 +149,7 @@ func unmarshalCatalogPayload(raw []byte) (domain.CatalogSnapshot, error) {
 		if err := json.Unmarshal(raw, &snap.Items); err != nil {
 			return domain.CatalogSnapshot{}, err
 		}
+		snap.AniListBySeries = make(map[string]domain.AniListSeriesEnrichment)
 		return snap, nil
 	}
 	var p catalogPayload

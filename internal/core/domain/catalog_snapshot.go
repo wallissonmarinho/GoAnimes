@@ -2,7 +2,7 @@ package domain
 
 import "time"
 
-// CatalogSeries is one anime show in Discover (type "series" in Stremio).
+// CatalogSeries is one anime show in Discover (Stremio catalog + meta use type "anime").
 type CatalogSeries struct {
 	ID     string `json:"id"`
 	Name   string `json:"name"`

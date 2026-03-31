@@ -5,6 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/wallissonmarinho/GoAnimes/internal/adapters/anilist"
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/state"
 	"github.com/wallissonmarinho/GoAnimes/internal/core/ports"
 )
@@ -16,10 +17,11 @@ type Config struct {
 
 // Deps wires handlers.
 type Deps struct {
-	Sync    ports.SyncRunner
+	Sync     ports.SyncRunner
 	RSSAdmin ports.RSSAdmin
-	Store   *state.CatalogStore
-	Log     *slog.Logger
+	Store    *state.CatalogStore
+	AniList  *anilist.Client // optional: lazy-fetch synopsis when cache is empty
+	Log      *slog.Logger
 }
 
 type handlers struct {

@@ -73,6 +73,17 @@ func (c *CatalogStore) AniListEnrichment(seriesID string) domain.AniListSeriesEn
 	return c.snap.AniListBySeries[seriesID]
 }
 
+// MergeAniListEnrichment merges add into the in-memory row for seriesID (e.g. lazy meta fetch).
+func (c *CatalogStore) MergeAniListEnrichment(seriesID string, add domain.AniListSeriesEnrichment) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.snap.AniListBySeries == nil {
+		c.snap.AniListBySeries = make(map[string]domain.AniListSeriesEnrichment)
+	}
+	cur := c.snap.AniListBySeries[seriesID]
+	c.snap.AniListBySeries[seriesID] = domain.MergeAniListEnrichment(cur, add)
+}
+
 // ItemsBySeriesID returns episodes for a series, sorted for display.
 func (c *CatalogStore) ItemsBySeriesID(seriesID string) []domain.CatalogItem {
 	c.mu.RLock()

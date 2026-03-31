@@ -36,19 +36,21 @@ func NewRSSSourceAdmin(repo *storage.Catalog) *services.RSSSourceAdminService {
 	return services.NewRSSSourceAdminService(repo)
 }
 
-// NewRSSSyncService builds sync with concrete deps.
-func NewRSSSyncService(repo *storage.Catalog, mem *state.CatalogStore, o services.RSSSyncRuntimeOptions) *services.RSSSyncService {
+// NewRSSSyncService builds sync with concrete deps and returns the AniList client (nil if disabled) for HTTP handlers.
+func NewRSSSyncService(repo *storage.Catalog, mem *state.CatalogStore, o services.RSSSyncRuntimeOptions) (*services.RSSSyncService, *anilist.Client) {
+	var al *anilist.Client
 	if !anilistDisabled() {
 		// Smaller cap for JSON POST bodies; AniList responses are tiny.
 		g := httpclient.NewGetter(o.HTTPTimeout, o.UserAgent, 2<<20)
-		o.AniList = anilist.NewClient(g)
+		al = anilist.NewClient(g)
+		o.AniList = al
 		if o.AniListMinDelay <= 0 {
 			if d, err := time.ParseDuration(getenv("GOANIMES_ANILIST_MIN_DELAY", "750ms")); err == nil {
 				o.AniListMinDelay = d
 			}
 		}
 	}
-	return services.NewRSSSyncService(repo, mem, o, nil)
+	return services.NewRSSSyncService(repo, mem, o, nil), al
 }
 
 func anilistDisabled() bool {
