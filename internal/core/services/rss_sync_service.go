@@ -118,19 +118,19 @@ func (s *RSSSyncService) Run(ctx context.Context) domain.SyncResult {
 		it.InfoHash = h
 	}
 
-	msg := fmt.Sprintf("synced %d items from %d feed(s)", len(merged), len(sources))
 	snap := domain.CatalogSnapshot{
 		OK:         true,
-		Message:    msg,
 		ItemCount:  len(merged),
 		StartedAt:  started,
 		FinishedAt: time.Now().UTC(),
 		Items:      merged,
 	}
+	domain.EnsureSnapshotGrouped(&snap)
+	snap.Message = fmt.Sprintf("synced %d episodes in %d series from %d feed(s)", len(merged), len(snap.Series), len(sources))
 	s.mem.Set(snap)
 	if saveErr := s.repo.SaveCatalogSnapshot(ctx, snap); saveErr != nil {
 		errs = append(errs, "save snapshot: "+saveErr.Error())
 		s.log.Error("save snapshot", slog.Any("err", saveErr))
 	}
-	return domain.SyncResult{Message: msg, Errors: errs}
+	return domain.SyncResult{Message: snap.Message, Errors: errs}
 }

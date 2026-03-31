@@ -37,3 +37,31 @@ func (c *CatalogStore) ItemByID(id string) (domain.CatalogItem, bool) {
 	}
 	return domain.CatalogItem{}, false
 }
+
+// SeriesByID returns catalog row for a series id.
+func (c *CatalogStore) SeriesByID(seriesID string) (domain.CatalogSeries, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	for _, s := range c.snap.Series {
+		if s.ID == seriesID {
+			return s, true
+		}
+	}
+	for _, it := range c.snap.Items {
+		if it.SeriesID == seriesID {
+			return domain.CatalogSeries{
+				ID:     seriesID,
+				Name:   it.SeriesName,
+				Poster: domain.SeriesPosterURL(it.SeriesName),
+			}, true
+		}
+	}
+	return domain.CatalogSeries{}, false
+}
+
+// ItemsBySeriesID returns episodes for a series, sorted for display.
+func (c *CatalogStore) ItemsBySeriesID(seriesID string) []domain.CatalogItem {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return domain.SortEpisodes(c.snap.Items, seriesID)
+}

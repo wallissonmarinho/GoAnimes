@@ -2,7 +2,14 @@ package domain
 
 import "time"
 
-// CatalogItem is one Stremio catalog entry (Type is "movie" per item for reliable playback; catalog URL stays anime).
+// CatalogSeries is one anime show in Discover (type "series" in Stremio).
+type CatalogSeries struct {
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Poster string `json:"poster,omitempty"`
+}
+
+// CatalogItem is one release (episode). Streams use its ID; catalog lists the parent series.
 type CatalogItem struct {
 	ID           string `json:"id"`
 	Type         string `json:"type"`
@@ -13,6 +20,11 @@ type CatalogItem struct {
 	InfoHash     string `json:"info_hash,omitempty"`
 	Released     string `json:"released,omitempty"`
 	SubtitlesTag string `json:"subtitles_tag,omitempty"`
+	SeriesID     string `json:"series_id,omitempty"`
+	SeriesName   string `json:"series_name,omitempty"`
+	Season       int    `json:"season,omitempty"`
+	Episode      int    `json:"episode,omitempty"`
+	IsSpecial    bool   `json:"is_special,omitempty"`
 }
 
 // CatalogSnapshot is persisted merge output for hydration after restart.
@@ -23,6 +35,7 @@ type CatalogSnapshot struct {
 	StartedAt  time.Time
 	FinishedAt time.Time
 	Items      []CatalogItem
+	Series     []CatalogSeries `json:"-"`
 }
 
 // SyncResult is the outcome of an RSS sync job.

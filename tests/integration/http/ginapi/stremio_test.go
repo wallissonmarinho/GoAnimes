@@ -16,18 +16,22 @@ import (
 func TestStremioRoutes_catalogMetaStream(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	store := &state.CatalogStore{}
-	store.Set(domain.CatalogSnapshot{
+	snap := domain.CatalogSnapshot{
 		OK: true,
 		Items: []domain.CatalogItem{
 			{
-				ID:           "goanimes:deadbeef",
+				ID:           "goanimes:deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
 				Type:         "movie",
-				Name:         "Episode",
+				Name:         "[Torrent] Test Show - 01 [1080p CR WEB-DL AVC AAC][us][br]",
 				InfoHash:     "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
 				SubtitlesTag: "[br]",
 			},
 		},
-	})
+	}
+	domain.EnsureSnapshotGrouped(&snap)
+	store.Set(snap)
+	serID := snap.Series[0].ID
+	epID := snap.Items[0].ID
 
 	e := gin.New()
 	e.Use(ginapi.CorsMiddleware())
@@ -42,16 +46,20 @@ func TestStremioRoutes_catalogMetaStream(t *testing.T) {
 	e.ServeHTTP(w, req)
 	require.Equal(t, http.StatusOK, w.Code)
 	require.Contains(t, w.Body.String(), `"metas"`)
-	require.Contains(t, w.Body.String(), "goanimes:deadbeef")
+	require.Contains(t, w.Body.String(), `"type":"series"`)
+	require.Contains(t, w.Body.String(), serID)
+	require.Contains(t, w.Body.String(), "Test Show")
 
 	w = httptest.NewRecorder()
-	req = httptest.NewRequest(http.MethodGet, "/meta/movie/goanimes:deadbeef.json", nil)
+	req = httptest.NewRequest(http.MethodGet, "/meta/series/"+serID+".json", nil)
 	e.ServeHTTP(w, req)
 	require.Equal(t, http.StatusOK, w.Code)
 	require.Contains(t, w.Body.String(), `"meta"`)
+	require.Contains(t, w.Body.String(), `"videos"`)
+	require.Contains(t, w.Body.String(), epID)
 
 	w = httptest.NewRecorder()
-	req = httptest.NewRequest(http.MethodGet, "/stream/movie/goanimes:deadbeef.json", nil)
+	req = httptest.NewRequest(http.MethodGet, "/stream/series/"+epID+".json", nil)
 	e.ServeHTTP(w, req)
 	require.Equal(t, http.StatusOK, w.Code)
 	require.Contains(t, w.Body.String(), `"streams"`)

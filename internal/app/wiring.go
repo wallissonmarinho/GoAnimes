@@ -6,6 +6,7 @@ import (
 
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/state"
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/storage"
+	"github.com/wallissonmarinho/GoAnimes/internal/core/domain"
 	"github.com/wallissonmarinho/GoAnimes/internal/core/ports"
 	"github.com/wallissonmarinho/GoAnimes/internal/core/services"
 )
@@ -21,6 +22,7 @@ func HydrateCatalogStore(ctx context.Context, repo ports.CatalogRepository, mem 
 	if err != nil || len(snap.Items) == 0 {
 		return
 	}
+	domain.EnsureSnapshotGrouped(&snap)
 	mem.Set(snap)
 }
 

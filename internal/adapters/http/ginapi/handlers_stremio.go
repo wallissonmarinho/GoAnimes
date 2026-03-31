@@ -7,13 +7,15 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/rss"
+	"github.com/wallissonmarinho/GoAnimes/internal/core/domain"
 )
 
 const (
 	catalogStremioID = "goanimes"
 	// Catalog is listed under Discover → anime (same URL pattern as Kitsu).
-	stremioTypeAnime = "anime"
-	stremioTypeMovie = "movie"
+	stremioTypeAnime   = "anime"
+	stremioTypeMovie   = "movie"
+	stremioTypeSeries  = "series"
 )
 
 func stremioMetaOrStreamTypeOK(t string) bool {
@@ -28,17 +30,17 @@ func stremioMetaOrStreamTypeOK(t string) bool {
 func (h *handlers) getManifest(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"id":          "org.goanimes",
-		"version":     "1.0.1",
+		"version":     "1.0.2",
 		"name":        "GoAnimes",
 		"description": "RSS anime torrents with pt-BR (Erai [br]) filter",
-		"types":       []string{stremioTypeAnime, stremioTypeMovie},
+		"types":       []string{stremioTypeAnime, stremioTypeMovie, stremioTypeSeries},
 		"catalogs": []gin.H{
 			{"type": stremioTypeAnime, "id": catalogStremioID, "name": "GoAnimes"},
 		},
 		"resources": []any{
 			"catalog",
-			gin.H{"name": "meta", "types": []string{stremioTypeAnime, stremioTypeMovie}, "idPrefixes": []string{rss.StremioIDPrefix}},
-			gin.H{"name": "stream", "types": []string{stremioTypeAnime, stremioTypeMovie}, "idPrefixes": []string{rss.StremioIDPrefix}},
+			gin.H{"name": "meta", "types": []string{stremioTypeAnime, stremioTypeMovie, stremioTypeSeries}, "idPrefixes": []string{rss.StremioIDPrefix}},
+			gin.H{"name": "stream", "types": []string{stremioTypeAnime, stremioTypeMovie, stremioTypeSeries}, "idPrefixes": []string{rss.StremioIDPrefix}},
 		},
 		"idPrefixes": []string{rss.StremioIDPrefix},
 	})
@@ -52,18 +54,16 @@ func (h *handlers) getCatalog(c *gin.Context) {
 		return
 	}
 	snap := h.deps.Store.Snapshot()
-	metas := make([]gin.H, 0, len(snap.Items))
-	for _, it := range snap.Items {
+	metas := make([]gin.H, 0, len(snap.Series))
+	for _, s := range snap.Series {
 		m := gin.H{
-			"id":   it.ID,
-			"type": it.Type,
-			"name": it.Name,
+			"id":     s.ID,
+			"type":   stremioTypeSeries,
+			"name":   s.Name,
+			"genres": []string{"Anime"},
 		}
-		if it.Poster != "" {
-			m["poster"] = it.Poster
-		}
-		if it.Released != "" {
-			m["releaseInfo"] = it.Released
+		if s.Poster != "" {
+			m["poster"] = s.Poster
 		}
 		metas = append(metas, m)
 	}
@@ -75,6 +75,43 @@ func (h *handlers) getMeta(c *gin.Context) {
 	id := strings.TrimSuffix(c.Param("meta_id"), ".json")
 	if !stremioMetaOrStreamTypeOK(typ) {
 		c.JSON(http.StatusNotFound, gin.H{})
+		return
+	}
+	// Discover is under "anime"; some clients still request /meta/anime/:id for series rows.
+	if domain.IsSeriesStremioID(id) {
+		ser, ok := h.deps.Store.SeriesByID(id)
+		if !ok {
+			c.JSON(http.StatusNotFound, gin.H{})
+			return
+		}
+		eps := h.deps.Store.ItemsBySeriesID(id)
+		videos := make([]gin.H, 0, len(eps))
+		for _, it := range eps {
+			epNum := it.Episode
+			if it.IsSpecial {
+				epNum = 0
+			}
+			v := gin.H{
+				"id":      it.ID,
+				"title":   domain.EpisodeVideoTitle(it),
+				"season":  it.Season,
+				"episode": epNum,
+			}
+			if it.Released != "" {
+				v["released"] = it.Released
+			}
+			videos = append(videos, v)
+		}
+		meta := gin.H{
+			"id":          ser.ID,
+			"type":        stremioTypeSeries,
+			"name":        ser.Name,
+			"poster":      ser.Poster,
+			"genres":      []string{"Anime"},
+			"description": "Torrent releases with pt-BR subtitles (Erai).",
+			"videos":      videos,
+		}
+		c.JSON(http.StatusOK, gin.H{"meta": meta})
 		return
 	}
 	it, ok := h.deps.Store.ItemByID(id)

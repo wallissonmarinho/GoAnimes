@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -120,8 +121,32 @@ func (r *catalogRepo) DeleteRSSSource(ctx context.Context, id string) error {
 	return nil
 }
 
+func marshalCatalogItemsPayload(items []domain.CatalogItem) ([]byte, error) {
+	return json.Marshal(struct {
+		Items []domain.CatalogItem `json:"items"`
+	}{Items: items})
+}
+
+func unmarshalCatalogItemsPayload(raw []byte) ([]domain.CatalogItem, error) {
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	if raw[0] == '[' {
+		var items []domain.CatalogItem
+		return items, json.Unmarshal(raw, &items)
+	}
+	var w struct {
+		Items []domain.CatalogItem `json:"items"`
+	}
+	if err := json.Unmarshal(raw, &w); err != nil {
+		return nil, err
+	}
+	return w.Items, nil
+}
+
 func (r *catalogRepo) SaveCatalogSnapshot(ctx context.Context, snap domain.CatalogSnapshot) error {
-	b, err := json.Marshal(snap.Items)
+	b, err := marshalCatalogItemsPayload(snap.Items)
 	if err != nil {
 		return err
 	}
@@ -195,9 +220,9 @@ func (r *catalogRepo) LoadCatalogSnapshot(ctx context.Context) (domain.CatalogSn
 			finished = sql.NullTime{Time: t, Valid: true}
 		}
 	}
-	var items []domain.CatalogItem
-	if len(rawItems) > 0 {
-		_ = json.Unmarshal(rawItems, &items)
+	items, err := unmarshalCatalogItemsPayload(rawItems)
+	if err != nil {
+		return domain.CatalogSnapshot{}, err
 	}
 	snap := domain.CatalogSnapshot{
 		OK:        ok,
