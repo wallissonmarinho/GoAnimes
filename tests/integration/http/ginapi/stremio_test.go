@@ -20,10 +20,17 @@ func TestStremioRoutes_catalogMetaStream(t *testing.T) {
 		OK: true,
 		Items: []domain.CatalogItem{
 			{
-				ID:           "goanimes:deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+				ID:           "goanimes:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+				Type:         "movie",
+				Name:         "[Torrent] Test Show - 01 [720p CR WEB-DL AVC AAC][us][br]",
+				InfoHash:     "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+				SubtitlesTag: "[br]",
+			},
+			{
+				ID:           "goanimes:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
 				Type:         "movie",
 				Name:         "[Torrent] Test Show - 01 [1080p CR WEB-DL AVC AAC][us][br]",
-				InfoHash:     "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+				InfoHash:     "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
 				SubtitlesTag: "[br]",
 			},
 		},
@@ -31,7 +38,7 @@ func TestStremioRoutes_catalogMetaStream(t *testing.T) {
 	domain.EnsureSnapshotGrouped(&snap)
 	store.Set(snap)
 	serID := snap.Series[0].ID
-	epID := snap.Items[0].ID
+	vid := domain.EpisodeVideoStremioID(serID, 1, 1, false)
 
 	e := gin.New()
 	e.Use(ginapi.CorsMiddleware())
@@ -56,16 +63,21 @@ func TestStremioRoutes_catalogMetaStream(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code)
 	require.Contains(t, w.Body.String(), `"meta"`)
 	require.Contains(t, w.Body.String(), `"videos"`)
-	require.Contains(t, w.Body.String(), epID)
+	require.Contains(t, w.Body.String(), vid)
+	require.NotContains(t, w.Body.String(), "goanimes:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	require.Contains(t, w.Body.String(), `"title":"E1"`)
 	require.Contains(t, w.Body.String(), `"released"`)
 	require.Regexp(t, `"released":"\d{4}-\d{2}-\d{2}T`, w.Body.String())
 
 	w = httptest.NewRecorder()
-	req = httptest.NewRequest(http.MethodGet, "/stream/series/"+epID+".json", nil)
+	req = httptest.NewRequest(http.MethodGet, "/stream/series/"+vid+".json", nil)
 	e.ServeHTTP(w, req)
 	require.Equal(t, http.StatusOK, w.Code)
 	require.Contains(t, w.Body.String(), `"streams"`)
-	require.Contains(t, w.Body.String(), "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef")
+	require.Contains(t, w.Body.String(), "Torrent · 1080p")
+	require.Contains(t, w.Body.String(), "Torrent · 720p")
+	require.Contains(t, w.Body.String(), "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+	require.Contains(t, w.Body.String(), "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 
 	w = httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodGet, "/manifest.json", nil)

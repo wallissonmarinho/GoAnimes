@@ -63,7 +63,7 @@ func stremioUnescapePathParam(s string) string {
 func (h *handlers) getManifest(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"id":          "org.goanimes",
-		"version":     "1.0.4",
+		"version":     "1.0.5",
 		"name":        "GoAnimes",
 		"description": "RSS anime torrents with pt-BR (Erai [br]) filter",
 		"types":       []string{stremioTypeAnime, stremioTypeMovie, stremioTypeSeries},
@@ -117,21 +117,27 @@ func (h *handlers) getMeta(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{})
 			return
 		}
-		eps := h.deps.Store.ItemsBySeriesID(id)
-		videos := make([]gin.H, 0, len(eps))
-		for _, it := range eps {
-			epNum := it.Episode
-			if it.IsSpecial {
+		snap := h.deps.Store.Snapshot()
+		groups := domain.GroupItemsByEpisode(snap.Items, id)
+		keys := domain.OrderedEpisodeKeys(groups)
+		videos := make([]gin.H, 0, len(keys))
+		for _, k := range keys {
+			group := groups[k]
+			if len(group) == 0 {
+				continue
+			}
+			vid := domain.EpisodeVideoStremioID(ser.ID, k.Season, k.Episode, k.Special)
+			epNum := k.Episode
+			if k.Special {
 				epNum = 0
 			}
-			v := gin.H{
-				"id":       it.ID,
-				"title":    domain.EpisodeVideoTitle(it),
-				"released": stremioVideoReleasedISO(it.Released),
-				"season":   it.Season,
+			videos = append(videos, gin.H{
+				"id":       vid,
+				"title":    domain.EpisodeListTitle(k.Season, k.Episode, k.Special),
+				"released": stremioVideoReleasedISO(domain.LatestReleased(group)),
+				"season":   k.Season,
 				"episode":  epNum,
-			}
-			videos = append(videos, v)
+			})
 		}
 		meta := gin.H{
 			"id":          ser.ID,
@@ -174,40 +180,75 @@ func (h *handlers) getStream(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{})
 		return
 	}
+	if domain.IsEpisodeVideoStremioID(id) {
+		snap := h.deps.Store.Snapshot()
+		releases := domain.ItemsForEpisodeVideoID(snap.Items, id)
+		if len(releases) == 0 {
+			c.JSON(http.StatusNotFound, gin.H{})
+			return
+		}
+		streams := make([]gin.H, 0, len(releases))
+		for _, it := range releases {
+			if s := streamFromCatalogItem(it, id); s != nil {
+				streams = append(streams, s)
+			}
+		}
+		if len(streams) == 0 {
+			c.JSON(http.StatusOK, gin.H{"streams": []any{}})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"streams": streams})
+		return
+	}
+
 	it, ok := h.deps.Store.ItemByID(id)
 	if !ok {
 		c.JSON(http.StatusNotFound, gin.H{})
 		return
 	}
-	var streams []gin.H
+	one := streamFromCatalogItem(it, it.ID)
+	if one == nil {
+		c.JSON(http.StatusOK, gin.H{"streams": []any{}})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"streams": []gin.H{one}})
+}
+
+func streamFromCatalogItem(it domain.CatalogItem, bingeGroup string) gin.H {
+	label := domain.ShortQualityHint(it.Name)
+	if label == "" && strings.Contains(strings.ToUpper(it.Name), "HEVC") {
+		label = "HEVC"
+	}
+	if label == "" {
+		label = "Release"
+	}
+	streamName := "Torrent · " + label
 	if it.InfoHash != "" {
-		streams = append(streams, gin.H{
-			"name":     "Torrent",
+		return gin.H{
+			"name":     streamName,
 			"title":    it.Name,
 			"infoHash": it.InfoHash,
 			"fileIdx":  0,
 			"behaviorHints": gin.H{
-				"bingeGroup": it.ID,
+				"bingeGroup": bingeGroup,
 			},
-		})
-	} else if it.MagnetURL != "" {
-		streams = append(streams, gin.H{
-			"name": "Magnet",
-			"title": it.Name,
-			"url":  it.MagnetURL,
-		})
-	} else if it.TorrentURL != "" {
-		streams = append(streams, gin.H{
-			"name": "Torrent file",
-			"title": it.Name,
-			"url":  it.TorrentURL,
-		})
+		}
 	}
-	if len(streams) == 0 {
-		c.JSON(http.StatusOK, gin.H{"streams": []any{}})
-		return
+	if it.MagnetURL != "" {
+		return gin.H{
+			"name":  streamName,
+			"title": it.Name,
+			"url":   it.MagnetURL,
+		}
 	}
-	c.JSON(http.StatusOK, gin.H{"streams": streams})
+	if it.TorrentURL != "" {
+		return gin.H{
+			"name":  streamName,
+			"title": it.Name,
+			"url":   it.TorrentURL,
+		}
+	}
+	return nil
 }
 
 func (h *handlers) getHealth(c *gin.Context) {

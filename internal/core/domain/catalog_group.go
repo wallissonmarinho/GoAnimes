@@ -17,6 +17,126 @@ func IsSeriesStremioID(id string) bool {
 	return strings.HasPrefix(id, stremioPrefix+":series:")
 }
 
+// IsEpisodeVideoStremioID is true for grouped episode rows (one list entry, multiple streams on play).
+func IsEpisodeVideoStremioID(id string) bool {
+	return strings.HasPrefix(id, stremioPrefix+":vid:")
+}
+
+// EpisodeVideoStremioID is stable per series + season + episode (+ special); all qualities share it.
+func EpisodeVideoStremioID(seriesID string, season, episode int, isSpecial bool) string {
+	sp := "0"
+	if isSpecial {
+		sp = "1"
+	}
+	h := seriesID + "|" + strconv.Itoa(season) + "|" + strconv.Itoa(episode) + "|" + sp
+	sum := sha256.Sum256([]byte(h))
+	return stremioPrefix + ":vid:" + hex.EncodeToString(sum[:8])
+}
+
+// epSortKey groups catalog items into one Stremio video row.
+type epSortKey struct {
+	Season  int
+	Episode int
+	Special bool
+}
+
+// GroupItemsByEpisode buckets releases for one series (SD/720/1080 → same bucket).
+func GroupItemsByEpisode(items []CatalogItem, seriesID string) map[epSortKey][]CatalogItem {
+	m := make(map[epSortKey][]CatalogItem)
+	for _, it := range items {
+		if it.SeriesID != seriesID {
+			continue
+		}
+		k := epSortKey{Season: it.Season, Episode: it.Episode, Special: it.IsSpecial}
+		m[k] = append(m[k], it)
+	}
+	return m
+}
+
+// OrderedEpisodeKeys sorts group keys for the meta videos list.
+func OrderedEpisodeKeys(m map[epSortKey][]CatalogItem) []epSortKey {
+	keys := make([]epSortKey, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		a, b := keys[i], keys[j]
+		if a.Season != b.Season {
+			return a.Season < b.Season
+		}
+		if a.Special != b.Special {
+			return !a.Special
+		}
+		return a.Episode < b.Episode
+	})
+	return keys
+}
+
+// LatestReleased picks the newest RSS date string in the group (yyyy-mm-dd lex sort works).
+func LatestReleased(items []CatalogItem) string {
+	var best string
+	for _, it := range items {
+		if strings.TrimSpace(it.Released) > best {
+			best = it.Released
+		}
+	}
+	return best
+}
+
+// EpisodeListTitle is the Stremio row label without quality (qualities show as stream choices).
+func EpisodeListTitle(season, episode int, isSpecial bool) string {
+	if isSpecial {
+		return "Special"
+	}
+	return "E" + strconv.Itoa(episode)
+}
+
+// StreamQualityRank higher = preferred default ordering in the stream picker.
+func StreamQualityRank(it CatalogItem) int {
+	if strings.Contains(strings.ToUpper(it.Name), "1080P") {
+		return 100
+	}
+	if strings.Contains(strings.ToUpper(it.Name), "720P") {
+		return 80
+	}
+	if q := ShortQualityHint(it.Name); q == "SD" {
+		return 60
+	}
+	if strings.Contains(strings.ToUpper(it.Name), "HEVC") {
+		return 50
+	}
+	if q := ShortQualityHint(it.Name); q != "" {
+		return 40
+	}
+	return 30
+}
+
+// SortItemsForStreamChoices orders variants for the stream list (best quality first).
+func SortItemsForStreamChoices(items []CatalogItem) {
+	sort.SliceStable(items, func(i, j int) bool {
+		ri, rj := StreamQualityRank(items[i]), StreamQualityRank(items[j])
+		if ri != rj {
+			return ri > rj
+		}
+		return items[i].Name < items[j].Name
+	})
+}
+
+// ItemsForEpisodeVideoID returns all releases for one logical episode (any quality).
+func ItemsForEpisodeVideoID(items []CatalogItem, videoID string) []CatalogItem {
+	var out []CatalogItem
+	for _, it := range items {
+		if it.SeriesID == "" {
+			continue
+		}
+		if EpisodeVideoStremioID(it.SeriesID, it.Season, it.Episode, it.IsSpecial) == videoID {
+			out = append(out, it)
+		}
+	}
+	SortItemsForStreamChoices(out)
+	return out
+}
+
 // SeriesStremioID returns a stable Stremio id for a series (catalog + meta).
 func SeriesStremioID(seriesName string) string {
 	sum := sha256.Sum256([]byte(normalizeSeriesKey(seriesName)))
@@ -186,17 +306,3 @@ func SortEpisodes(items []CatalogItem, seriesID string) []CatalogItem {
 	return out
 }
 
-// EpisodeVideoTitle builds the Stremio video row title.
-func EpisodeVideoTitle(it CatalogItem) string {
-	q := ShortQualityHint(it.Name)
-	if it.IsSpecial {
-		if q != "" {
-			return "Special · " + q
-		}
-		return "Special"
-	}
-	if q != "" {
-		return "E" + strconv.Itoa(it.Episode) + " · " + q
-	}
-	return "E" + strconv.Itoa(it.Episode)
-}
