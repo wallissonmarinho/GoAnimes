@@ -1,6 +1,8 @@
 # Testes (`tests/`)
 
-Estrutura alinhada ao [GoTV](https://github.com/wallissonmarinho/GoTV): ficheiros `*_test.go` ficam **só** aqui, não junto ao código de produção em `internal/`.
+Estrutura alinhada ao projeto GoTV (mesmo repositório/pasta irmã): ficheiros `*_test.go` ficam **só** aqui, não junto ao código de produção em `internal/`.
+
+Em Go o nome da pasta é **`tests/`** (inglês); o conteúdo é o que em PT costuma chamar-se “testes”.
 
 | Pasta | Conteúdo |
 |-------|----------|
