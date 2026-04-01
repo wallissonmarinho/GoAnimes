@@ -17,7 +17,7 @@ const (
 	// StremioIDPrefix is the manifest idPrefix for custom meta/stream ids.
 	StremioIDPrefix = "goanimes"
 	// StremioMetaType is the per-item type Stremio uses for meta/stream (playback).
-	// "anime" alone often breaks play; Kitsu uses series/movie in metas while catalog stays anime.
+	// Using "movie" here avoids clients that fail playback when meta type is only "anime"; catalog entries stay "anime".
 	StremioMetaType = "movie"
 )
 

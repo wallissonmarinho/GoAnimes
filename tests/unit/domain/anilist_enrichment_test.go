@@ -24,6 +24,25 @@ func TestMergeAniListEnrichment_fillsEmpty(t *testing.T) {
 	require.Equal(t, "Pilot", out.EpisodeTitleByNum[1])
 }
 
+func TestEnrichmentCouldUseJikan(t *testing.T) {
+	require.True(t, domain.EnrichmentCouldUseJikan(domain.AniListSeriesEnrichment{}))
+	require.True(t, domain.EnrichmentCouldUseJikan(domain.AniListSeriesEnrichment{
+		Description: "x",
+		PosterURL:   "p",
+		Genres:      []string{"A"},
+		StartYear:   2020,
+		// AniList often leaves episode titles empty → Jikan can fill.
+		EpisodeTitleByNum: map[int]string{},
+	}))
+	require.False(t, domain.EnrichmentCouldUseJikan(domain.AniListSeriesEnrichment{
+		Description:         "x",
+		PosterURL:           "p",
+		Genres:              []string{"A"},
+		StartYear:           2020,
+		EpisodeTitleByNum:   map[int]string{1: "Pilot"},
+	}))
+}
+
 func TestMergeAniListEnrichment_keepsStored(t *testing.T) {
 	stored := domain.AniListSeriesEnrichment{Description: "A", Genres: []string{"Drama"}}
 	add := domain.AniListSeriesEnrichment{Description: "B", Genres: []string{"Action"}}

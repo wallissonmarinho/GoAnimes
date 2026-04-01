@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/anilist"
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/btmeta"
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/httpclient"
+	"github.com/wallissonmarinho/GoAnimes/internal/adapters/jikan"
 	rssadapter "github.com/wallissonmarinho/GoAnimes/internal/adapters/rss"
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/state"
 	"github.com/wallissonmarinho/GoAnimes/internal/core/domain"
@@ -23,6 +25,8 @@ type RSSSyncRuntimeOptions struct {
 	UserAgent       string
 	AniList         *anilist.Client
 	AniListMinDelay time.Duration // sleep between AniList calls (rate limit); 0 → default 750ms
+	Jikan           *jikan.Client
+	JikanMinDelay   time.Duration // sleep after each Jikan series (2 HTTP calls); 0 → default 400ms
 }
 
 // RSSSyncService fetches RSS sources, filters pt-BR (Erai [br]), updates memory + DB snapshot.
@@ -32,6 +36,8 @@ type RSSSyncService struct {
 	getter       *httpclient.Getter
 	anilist      *anilist.Client
 	anilistDelay time.Duration
+	jikan        *jikan.Client
+	jikanDelay   time.Duration
 	log          *slog.Logger
 	mu           sync.Mutex
 }
@@ -53,12 +59,18 @@ func NewRSSSyncService(repo ports.CatalogRepository, mem *state.CatalogStore, o 
 	if dly <= 0 {
 		dly = 750 * time.Millisecond
 	}
+	jdly := o.JikanMinDelay
+	if jdly <= 0 {
+		jdly = 400 * time.Millisecond
+	}
 	return &RSSSyncService{
 		repo:         repo,
 		mem:          mem,
 		getter:       httpclient.NewGetter(o.HTTPTimeout, o.UserAgent, o.MaxBodyBytes),
 		anilist:      o.AniList,
 		anilistDelay: dly,
+		jikan:        o.Jikan,
+		jikanDelay:   jdly,
 		log:          log,
 	}
 }
@@ -146,6 +158,44 @@ func (s *RSSSyncService) enrichAniListSeries(ctx context.Context, series []domai
 	s.log.Info("anilist: finished", slog.Int("new_or_refreshed", newN), slog.Int("lookup_failures", fails))
 }
 
+func (s *RSSSyncService) enrichJikanGaps(ctx context.Context, series []domain.CatalogSeries, cache map[string]domain.AniListSeriesEnrichment) {
+	if len(series) == 0 || s.jikan == nil {
+		if s.jikan == nil {
+			s.log.Info("jikan: skipped (set GOANIMES_JIKAN_DISABLED=true to disable; no client)")
+		}
+		return
+	}
+	n := 0
+	for _, ser := range series {
+		select {
+		case <-ctx.Done():
+			s.log.Warn("jikan: stopped early (context done)", slog.Int("merged", n))
+			return
+		default:
+		}
+		if strings.TrimSpace(ser.Name) == "" {
+			continue
+		}
+		cur := cache[ser.ID]
+		if !domain.EnrichmentCouldUseJikan(cur) {
+			continue
+		}
+		add, err := s.jikan.SearchAnimeEnrichment(ctx, ser.Name)
+		if err != nil {
+			s.log.Debug("jikan lookup skipped or failed", slog.String("series", ser.Name), slog.Any("err", err))
+			continue
+		}
+		cache[ser.ID] = domain.MergeAniListEnrichment(cur, add)
+		n++
+		if s.jikanDelay > 0 {
+			time.Sleep(s.jikanDelay)
+		}
+	}
+	if n > 0 {
+		s.log.Info("jikan: filled gaps", slog.Int("series", n))
+	}
+}
+
 // Run fetches all RSS sources and rebuilds the catalog.
 func (s *RSSSyncService) Run(ctx context.Context) domain.SyncResult {
 	s.mu.Lock()
@@ -229,6 +279,7 @@ func (s *RSSSyncService) Run(ctx context.Context) domain.SyncResult {
 	}
 	domain.EnsureSnapshotGrouped(&snap)
 	s.enrichAniListSeries(ctx, snap.Series, anilistCache)
+	s.enrichJikanGaps(ctx, snap.Series, anilistCache)
 	pruneAniListCache(anilistCache, snap.Series)
 	snap.AniListBySeries = anilistCache
 	domain.ApplyAniListEnrichmentToSeries(&snap)

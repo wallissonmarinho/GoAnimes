@@ -6,6 +6,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/anilist"
+	"github.com/wallissonmarinho/GoAnimes/internal/adapters/jikan"
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/state"
 	"github.com/wallissonmarinho/GoAnimes/internal/core/ports"
 )
@@ -20,7 +21,8 @@ type Deps struct {
 	Sync     ports.SyncRunner
 	RSSAdmin ports.RSSAdmin
 	Store    *state.CatalogStore
-	AniList  *anilist.Client // optional: lazy-fetch synopsis when cache is empty
+	AniList  *anilist.Client // optional: lazy-fetch when cache is empty
+	Jikan    *jikan.Client   // optional: MAL fallback when AniList left gaps
 	Log      *slog.Logger
 }
 

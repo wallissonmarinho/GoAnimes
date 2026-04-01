@@ -8,6 +8,7 @@ import (
 
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/anilist"
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/httpclient"
+	"github.com/wallissonmarinho/GoAnimes/internal/adapters/jikan"
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/state"
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/storage"
 	"github.com/wallissonmarinho/GoAnimes/internal/core/domain"
@@ -36,8 +37,8 @@ func NewRSSSourceAdmin(repo *storage.Catalog) *services.RSSSourceAdminService {
 	return services.NewRSSSourceAdminService(repo)
 }
 
-// NewRSSSyncService builds sync with concrete deps and returns the AniList client (nil if disabled) for HTTP handlers.
-func NewRSSSyncService(repo *storage.Catalog, mem *state.CatalogStore, o services.RSSSyncRuntimeOptions) (*services.RSSSyncService, *anilist.Client) {
+// NewRSSSyncService builds sync with concrete deps and returns optional API clients for HTTP handlers.
+func NewRSSSyncService(repo *storage.Catalog, mem *state.CatalogStore, o services.RSSSyncRuntimeOptions) (*services.RSSSyncService, *anilist.Client, *jikan.Client) {
 	var al *anilist.Client
 	if !anilistDisabled() {
 		// Smaller cap for JSON POST bodies; AniList responses are tiny.
@@ -50,11 +51,27 @@ func NewRSSSyncService(repo *storage.Catalog, mem *state.CatalogStore, o service
 			}
 		}
 	}
-	return services.NewRSSSyncService(repo, mem, o, nil), al
+	var jk *jikan.Client
+	if !jikanDisabled() {
+		g := httpclient.NewGetter(o.HTTPTimeout, o.UserAgent, 2<<20)
+		jk = jikan.NewClient(g)
+		o.Jikan = jk
+		if o.JikanMinDelay <= 0 {
+			if d, err := time.ParseDuration(getenv("GOANIMES_JIKAN_MIN_DELAY", "400ms")); err == nil {
+				o.JikanMinDelay = d
+			}
+		}
+	}
+	return services.NewRSSSyncService(repo, mem, o, nil), al, jk
 }
 
 func anilistDisabled() bool {
 	v := strings.ToLower(strings.TrimSpace(os.Getenv("GOANIMES_ANILIST_DISABLED")))
+	return v == "1" || v == "true" || v == "yes"
+}
+
+func jikanDisabled() bool {
+	v := strings.ToLower(strings.TrimSpace(os.Getenv("GOANIMES_JIKAN_DISABLED")))
 	return v == "1" || v == "true" || v == "yes"
 }
 

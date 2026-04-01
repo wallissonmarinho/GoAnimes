@@ -17,10 +17,9 @@ import (
 
 const (
 	catalogStremioID = "goanimes"
-	// Catalog is listed under Discover → anime (same URL pattern as Kitsu).
-	stremioTypeAnime   = "anime"
-	stremioTypeMovie   = "movie"
-	stremioTypeSeries  = "series"
+	stremioTypeAnime  = "anime"
+	stremioTypeMovie  = "movie"
+	stremioTypeSeries = "series"
 )
 
 func stremioMetaOrStreamTypeOK(t string) bool {
@@ -66,7 +65,7 @@ func stremioUnescapePathParam(s string) string {
 func (h *handlers) getManifest(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"id":          "org.goanimes",
-		"version":     "1.0.9",
+		"version":     "1.0.10",
 		"name":        "GoAnimes",
 		"description": "RSS anime torrents with pt-BR (Erai [br]) filter",
 		"types":       []string{stremioTypeAnime, stremioTypeMovie, stremioTypeSeries},
@@ -124,15 +123,24 @@ func (h *handlers) getMeta(c *gin.Context) {
 		groups := domain.GroupItemsByEpisode(snap.Items, id)
 		keys := domain.OrderedEpisodeKeys(groups)
 		en := h.deps.Store.AniListEnrichment(ser.ID)
-		if strings.TrimSpace(en.Description) == "" && h.deps.AniList != nil && strings.TrimSpace(ser.Name) != "" {
-			ctx, cancel := context.WithTimeout(c.Request.Context(), 12*time.Second)
-			det, err := h.deps.AniList.SearchAnimeMedia(ctx, ser.Name)
-			cancel()
-			if err == nil {
-				add := anilist.ToDomainEnrichment(det)
-				h.deps.Store.MergeAniListEnrichment(ser.ID, add)
-				en = domain.MergeAniListEnrichment(en, add)
+		if strings.TrimSpace(ser.Name) != "" {
+			ctx, cancel := context.WithTimeout(c.Request.Context(), 14*time.Second)
+			if strings.TrimSpace(en.Description) == "" && h.deps.AniList != nil {
+				det, err := h.deps.AniList.SearchAnimeMedia(ctx, ser.Name)
+				if err == nil {
+					add := anilist.ToDomainEnrichment(det)
+					h.deps.Store.MergeAniListEnrichment(ser.ID, add)
+					en = domain.MergeAniListEnrichment(en, add)
+				}
 			}
+			if domain.EnrichmentCouldUseJikan(en) && h.deps.Jikan != nil {
+				add, err := h.deps.Jikan.SearchAnimeEnrichment(ctx, ser.Name)
+				if err == nil {
+					h.deps.Store.MergeAniListEnrichment(ser.ID, add)
+					en = domain.MergeAniListEnrichment(en, add)
+				}
+			}
+			cancel()
 		}
 		videos := make([]gin.H, 0, len(keys))
 		for _, k := range keys {
