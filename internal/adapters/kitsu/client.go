@@ -304,10 +304,12 @@ func (c *Client) FetchEpisodeMaps(ctx context.Context, kitsuAnimeID string) (map
 	if kitsuAnimeID == "" {
 		return nil, nil, errors.New("kitsu: empty anime id")
 	}
-	const limit = 100
+	// Kitsu edge API rejects page[limit] > 20 (HTTP 400: "Limit exceeds maximum page size of 20").
+	const limit = 20
 	offset := 0
 	total := -1
-	for page := 0; page < 80; page++ {
+	// At limit 20, 400 pages ≈ same max episodes as the old limit 100 × 80 pages.
+	for page := 0; page < 400; page++ {
 		if err := ctx.Err(); err != nil {
 			return titles, thumbs, err
 		}

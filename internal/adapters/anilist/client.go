@@ -15,8 +15,8 @@ import (
 
 const defaultEndpoint = "https://graphql.anilist.co"
 
-// defaultAnilistMinInterval spaces GraphQL posts (~50/min) to avoid HTTP 429 on public API.
-const defaultAnilistMinInterval = 1000 * time.Millisecond
+// defaultAnilistMinInterval spaces GraphQL posts to avoid HTTP 429 on the public API (strict burst limits).
+const defaultAnilistMinInterval = 1200 * time.Millisecond
 
 // Client queries AniList GraphQL (no API key required for public reads).
 type Client struct {
@@ -100,9 +100,9 @@ func (c *Client) postGQL(ctx context.Context, body []byte) ([]byte, error) {
 			if !errors.As(lastErr, &he) || he.StatusCode != http.StatusTooManyRequests {
 				return nil, lastErr
 			}
-			back := time.Duration(500+attempt*400) * time.Millisecond
-			if back > 6*time.Second {
-				back = 6 * time.Second
+			back := time.Duration(800+attempt*500) * time.Millisecond
+			if back > 10*time.Second {
+				back = 10 * time.Second
 			}
 			select {
 			case <-ctx.Done():
