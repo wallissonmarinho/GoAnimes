@@ -22,6 +22,8 @@ const (
 	stremioTypeAnime     = "anime"
 	stremioTypeMovie     = "movie"
 	stremioTypeSeries    = "series"
+	// stremioManifestVersion: PATCH = fixes, tuning, deps, docs; MINOR = nova funcionalidade visível (API, sync, catálogo Stremio); MAJOR = contrato que parte instalações.
+	stremioManifestVersion = "1.1.0"
 )
 
 func stremioMetaOrStreamTypeOK(t string) bool {
@@ -127,7 +129,7 @@ func (h *handlers) getManifest(c *gin.Context) {
 	genres := domain.StremioGenreFilterOptions()
 	c.JSON(http.StatusOK, gin.H{
 		"id":          "org.goanimes",
-		"version":     "1.0.16",
+		"version":     stremioManifestVersion,
 		"name":        "GoAnimes",
 		"description": "RSS anime torrents with pt-BR (Erai [br]) filter",
 		"types":       []string{stremioTypeAnime, stremioTypeMovie, stremioTypeSeries},
