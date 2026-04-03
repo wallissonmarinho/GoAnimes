@@ -72,7 +72,7 @@ func TestStremioRoutes_catalogMetaStream(t *testing.T) {
 	require.NotContains(t, w.Body.String(), "試験ショー")
 	require.Contains(t, w.Body.String(), "A test synopsis for catalog.")
 	require.Contains(t, w.Body.String(), "2020-")
-	require.Contains(t, w.Body.String(), "Comedy")
+	require.Contains(t, w.Body.String(), "Comédia")
 
 	w = httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodGet, "/meta/series/"+serID+".json", nil)
@@ -82,10 +82,11 @@ func TestStremioRoutes_catalogMetaStream(t *testing.T) {
 	require.Contains(t, w.Body.String(), `"videos"`)
 	require.Contains(t, w.Body.String(), vid)
 	require.NotContains(t, w.Body.String(), "goanimes:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-	require.Contains(t, w.Body.String(), `"title":"E1"`)
+	require.Contains(t, w.Body.String(), `"title":"E1 ·`)
+	require.Contains(t, w.Body.String(), "1080p")
 	require.Contains(t, w.Body.String(), `"released"`)
 	require.Regexp(t, `"released":"\d{4}-\d{2}-\d{2}T`, w.Body.String())
-	require.Contains(t, w.Body.String(), "試験ショー")
+	require.Contains(t, w.Body.String(), "Test Show")
 
 	w = httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodGet, "/stream/series/"+vid+".json", nil)

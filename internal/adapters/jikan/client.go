@@ -208,7 +208,7 @@ func jikanAnimeToEnrichment(a jikanAnime) domain.AniListSeriesEnrichment {
 		}
 	}
 	poster := strings.TrimSpace(a.Images.Jpg.LargeImageURL)
-	desc := anilist.NormalizeDescription(a.Synopsis)
+	desc := domain.LocalizeAniListDescriptionPTBR(anilist.NormalizeDescription(a.Synopsis))
 	var year int
 	if a.Year != nil {
 		year = *a.Year
@@ -226,7 +226,7 @@ func jikanAnimeToEnrichment(a jikanAnime) domain.AniListSeriesEnrichment {
 	out := domain.AniListSeriesEnrichment{
 		PosterURL:        poster,
 		Description:      desc,
-		Genres:           genres,
+		Genres:           domain.TranslateAnimeGenresToPTBR(genres),
 		StartYear:        year,
 		EpisodeLengthMin: epMin,
 		TrailerYouTubeID: trailer,

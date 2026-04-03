@@ -115,7 +115,7 @@ func (h *handlers) getInspectSeries(c *gin.Context) {
 			"special":              k.Special,
 			"torrent_variants":     len(group),
 			"stremio_video_id":     domain.EpisodeVideoStremioID(id, k.Season, k.Episode, k.Special),
-			"episode_list_title":   domain.EpisodeListTitle(k.Episode, k.Special, en.EpisodeTitleByNum),
+			"episode_list_title":   domain.EpisodeListTitleForGroup(k.Episode, k.Special, en.EpisodeTitleByNum, group),
 			"sample_release_titles": names,
 		})
 	}

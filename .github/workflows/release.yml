@@ -10,11 +10,12 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
+          cache: false
 
       - name: Test
         run: go test ./... -count=1
@@ -22,7 +23,7 @@ jobs:
       - name: Build
         run: go build -trimpath -ldflags="-s -w" -o bin/goanimes ./cmd/goanimes
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: goanimes-linux-amd64
           path: bin/goanimes

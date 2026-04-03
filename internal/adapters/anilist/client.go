@@ -61,11 +61,12 @@ func ToDomainEnrichment(d MediaDetails) domain.AniListSeriesEnrichment {
 	if ep == nil {
 		ep = map[int]string{}
 	}
+	desc := domain.LocalizeAniListDescriptionPTBR(d.Description)
 	return domain.AniListSeriesEnrichment{
 		PosterURL:         d.PosterURL,
 		BackgroundURL:     d.BackgroundURL,
-		Description:       d.Description,
-		Genres:            append([]string(nil), d.Genres...),
+		Description:       desc,
+		Genres:            domain.TranslateAnimeGenresToPTBR(append([]string(nil), d.Genres...)),
 		StartYear:         d.StartYear,
 		EpisodeLengthMin:  d.EpisodeLengthMin,
 		TrailerYouTubeID:  d.TrailerYouTubeID,

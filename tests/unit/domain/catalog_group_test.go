@@ -59,7 +59,7 @@ func TestApplyAniListEnrichmentToSeries(t *testing.T) {
 	require.Equal(t, "https://cdn.anilist/1.jpg", snap.Series[0].Poster)
 	require.Equal(t, "A Latin", snap.Series[0].Name)
 	require.Equal(t, "Synopsis", snap.Series[0].Description)
-	require.Equal(t, []string{"Action", "Fantasy"}, snap.Series[0].Genres)
+	require.Equal(t, []string{"Ação", "Fantasia"}, snap.Series[0].Genres)
 	require.Equal(t, "2024-", snap.Series[0].ReleaseInfo)
 }
 

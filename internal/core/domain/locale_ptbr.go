@@ -1,0 +1,111 @@
+package domain
+
+import (
+	"regexp"
+	"strings"
+)
+
+// translateGenreENtoPT maps AniList/MAL English genre labels to Brazilian Portuguese.
+// Unknown labels are returned unchanged (e.g. already "Romance").
+var translateGenreENtoPT = map[string]string{
+	"Action":            "Ação",
+	"Adventure":         "Aventura",
+	"Comedy":            "Comédia",
+	"Drama":             "Drama",
+	"Ecchi":             "Ecchi",
+	"Fantasy":           "Fantasia",
+	"Horror":            "Terror",
+	"Mahou Shoujo":      "Mahou shoujo",
+	"Mecha":             "Mecha",
+	"Music":             "Música",
+	"Mystery":           "Mistério",
+	"Psychological":     "Psicológico",
+	"Romance":           "Romance",
+	"Sci-Fi":            "Ficção científica",
+	"Slice of Life":     "Slice of life",
+	"Sports":            "Esportes",
+	"Supernatural":      "Sobrenatural",
+	"Thriller":          "Suspense",
+	"Superhero":         "Super-herói",
+	"Martial Arts":      "Artes marciais",
+	"School":            "Escolar",
+	"Shounen":           "Shounen",
+	"Shoujo":            "Shoujo",
+	"Seinen":            "Seinen",
+	"Josei":             "Josei",
+	"Kids":              "Infantil",
+	"Boys Love":         "Boys love",
+	"Girls Love":        "Girls love",
+	"Gourmet":           "Gastronomia",
+	"Harem":             "Harém",
+	"Isekai":            "Isekai",
+	"Military":          "Militar",
+	"Parody":            "Paródia",
+	"Police":            "Policial",
+	"Samurai":           "Samurai",
+	"Space":             "Espaço",
+	"Vampire":           "Vampiros",
+	"Work Life":         "Vida profissional",
+	"Strategy Game":     "Jogo de estratégia",
+	"Suspense":          "Suspense",
+	"Historical":        "Histórico",
+	"Demons":            "Demônios",
+	"Game":              "Jogos",
+	"Reverse Harem":     "Harém reverso",
+	"Award Winning":     "Premiado",
+	"Survival":          "Sobrevivência",
+	"Time Travel":       "Viagem no tempo",
+	"Video Game":        "Videogame",
+	"Visual Arts":       "Artes visuais",
+}
+
+var translateGenreLowerToPT = func() map[string]string {
+	m := make(map[string]string, len(translateGenreENtoPT)*2)
+	for en, pt := range translateGenreENtoPT {
+		m[strings.ToLower(en)] = pt
+	}
+	return m
+}()
+
+// TranslateAnimeGenresToPTBR returns a copy of genres with common English labels translated to pt-BR.
+func TranslateAnimeGenresToPTBR(genres []string) []string {
+	if len(genres) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(genres))
+	for _, g := range genres {
+		g = strings.TrimSpace(g)
+		if g == "" {
+			continue
+		}
+		if pt, ok := translateGenreENtoPT[g]; ok {
+			out = append(out, pt)
+			continue
+		}
+		if pt, ok := translateGenreLowerToPT[strings.ToLower(g)]; ok {
+			out = append(out, pt)
+			continue
+		}
+		out = append(out, g)
+	}
+	return out
+}
+
+var reSourceSuffix = regexp.MustCompile(`(?i)\(\s*Source:\s*([^)]+)\)`)
+
+// LocalizeAniListDescriptionPTBR keeps the AniList English blurb but normalizes the attribution line to Portuguese.
+// AniList’s public GraphQL schema has no description language parameter; full machine translation would need an external API.
+func LocalizeAniListDescriptionPTBR(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return s
+	}
+	return reSourceSuffix.ReplaceAllStringFunc(s, func(m string) string {
+		sub := reSourceSuffix.FindStringSubmatch(m)
+		if len(sub) < 2 {
+			return m
+		}
+		src := strings.TrimSpace(sub[1])
+		return "(Fonte: " + src + ")"
+	})
+}

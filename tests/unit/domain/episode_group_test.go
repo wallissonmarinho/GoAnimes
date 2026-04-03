@@ -50,8 +50,15 @@ func TestEpisodeTitlesFromStreamingList(t *testing.T) {
 
 func TestEpisodeListTitle_withAniListTitles(t *testing.T) {
 	titles := map[int]string{3: "Killing Magic"}
-	require.Equal(t, "E3 · Killing Magic", domain.EpisodeListTitle(3, false, titles))
-	require.Equal(t, "E3", domain.EpisodeListTitle(3, false, nil))
-	require.Equal(t, "E3", domain.EpisodeListTitle(3, false, map[int]string{5: "other"}))
-	require.Equal(t, "Special", domain.EpisodeListTitle(0, true, titles))
+	require.Equal(t, "E3 · Killing Magic", domain.EpisodeListTitle(3, false, titles, ""))
+	require.Equal(t, "E3 · from torrent tail", domain.EpisodeListTitle(3, false, nil, "from torrent tail"))
+	require.Equal(t, "E3", domain.EpisodeListTitle(3, false, nil, ""))
+	require.Equal(t, "E3", domain.EpisodeListTitle(3, false, map[int]string{5: "other"}, ""))
+	require.Equal(t, "Special", domain.EpisodeListTitle(0, true, titles, ""))
+}
+
+func TestTorrentReleaseEpisodeSuffix_eraiStyle(t *testing.T) {
+	s := "[Torrent] Akuyaku Reijou wa Ringoku no Outaishi ni Dekiai sareru - 07 (HEVC) [1080p CR WEBRip HEVC AAC][us][br]"
+	require.Contains(t, domain.TorrentReleaseEpisodeSuffix(s), "1080p")
+	require.Contains(t, domain.TorrentReleaseEpisodeSuffix(s), "HEVC")
 }

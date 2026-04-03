@@ -17,11 +17,14 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      # v6+ runs on Node 24 (avoids Node 20 runner deprecation warnings).
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
+          # Prevents intermittent "tar ... exit code 2" on cache restore (toolchain/module cache conflicts).
+          cache: false
 
       - name: Test
         run: go test ./... -count=1

@@ -66,7 +66,7 @@ func stremioUnescapePathParam(s string) string {
 func (h *handlers) getManifest(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"id":          "org.goanimes",
-		"version":     "1.0.12",
+		"version":     "1.0.13",
 		"name":        "GoAnimes",
 		"description": "RSS anime torrents with pt-BR (Erai [br]) filter",
 		"types":       []string{stremioTypeAnime, stremioTypeMovie, stremioTypeSeries},
@@ -184,7 +184,7 @@ func (h *handlers) getMeta(c *gin.Context) {
 			}
 			videos = append(videos, gin.H{
 				"id":       vid,
-				"title":    domain.EpisodeListTitle(k.Episode, k.Special, en.EpisodeTitleByNum),
+				"title":    domain.EpisodeListTitleForGroup(k.Episode, k.Special, en.EpisodeTitleByNum, group),
 				"released": stremioVideoReleasedISO(domain.LatestReleased(group)),
 				"season":   k.Season,
 				"episode":  epNum,
@@ -307,10 +307,10 @@ func streamFromCatalogItem(it domain.CatalogItem, bingeGroup string) gin.H {
 
 func mergeAniListSeriesMeta(meta gin.H, en domain.AniListSeriesEnrichment) {
 	if strings.TrimSpace(en.Description) != "" {
-		meta["description"] = en.Description
+		meta["description"] = domain.LocalizeAniListDescriptionPTBR(en.Description)
 	}
 	if len(en.Genres) > 0 {
-		meta["genres"] = en.Genres
+		meta["genres"] = domain.TranslateAnimeGenresToPTBR(en.Genres)
 	}
 	if en.StartYear > 0 {
 		meta["releaseInfo"] = fmt.Sprintf("%d-", en.StartYear)
@@ -318,10 +318,8 @@ func mergeAniListSeriesMeta(meta gin.H, en domain.AniListSeriesEnrichment) {
 	if en.EpisodeLengthMin > 0 {
 		meta["runtime"] = fmt.Sprintf("~%dm per episode", en.EpisodeLengthMin)
 	}
-	bg := strings.TrimSpace(en.BackgroundURL)
-	if bg == "" {
-		bg = strings.TrimSpace(en.PosterURL)
-	}
+	// Stremio hero/backdrop looks bad with AniList’s ultra-wide banners; use cover art only.
+	bg := strings.TrimSpace(en.PosterURL)
 	if bg == "" {
 		if p, ok := meta["poster"].(string); ok {
 			bg = strings.TrimSpace(p)
@@ -333,10 +331,8 @@ func mergeAniListSeriesMeta(meta gin.H, en domain.AniListSeriesEnrichment) {
 	if strings.TrimSpace(en.TrailerYouTubeID) != "" {
 		meta["trailers"] = []gin.H{{"source": en.TrailerYouTubeID, "type": "Trailer"}}
 	}
-	if strings.TrimSpace(en.TitleNative) != "" {
-		meta["name"] = en.TitleNative
-	} else if strings.TrimSpace(en.TitlePreferred) != "" {
-		meta["name"] = en.TitlePreferred
+	if tp := strings.TrimSpace(en.TitlePreferred); tp != "" {
+		meta["name"] = tp
 	}
 	if u := strings.TrimSpace(en.PosterURL); u != "" {
 		meta["poster"] = u

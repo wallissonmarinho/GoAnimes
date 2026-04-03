@@ -59,7 +59,7 @@ func TestClient_SearchAnimeEnrichment(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "English Title", en.TitlePreferred)
 	require.Contains(t, en.Description, "fine")
-	require.Equal(t, []string{"Action"}, en.Genres)
+	require.Equal(t, []string{"Ação"}, en.Genres)
 	require.Equal(t, 2025, en.StartYear)
 	require.Equal(t, 24, en.EpisodeLengthMin)
 	require.Equal(t, "https://cdn.example/l.jpg", en.PosterURL)

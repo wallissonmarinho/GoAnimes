@@ -111,9 +111,39 @@ func EpisodeTitlesFromStreamingList(rawTitles []string) map[int]string {
 	return out
 }
 
+// eraiEpisodeTailRe captures the part of an Erai-style release title after the episode number (codec, tags).
+var eraiEpisodeTailRe = regexp.MustCompile(`(?i)-\s*(?:\d{1,4}(?:v\d+)?|Special)\s+(.*)$`)
+
+// TorrentReleaseEpisodeSuffix returns a short label from the torrent filename when AniList has no streaming episode title.
+func TorrentReleaseEpisodeSuffix(releaseTitle string) string {
+	s := strings.TrimSpace(releaseTitle)
+	if s == "" {
+		return ""
+	}
+	if m := eraiEpisodeTailRe.FindStringSubmatch(s); len(m) > 1 {
+		tail := strings.TrimSpace(m[1])
+		tail = strings.Join(strings.Fields(tail), " ")
+		if r := []rune(tail); len(r) > 88 {
+			tail = string(r[:85]) + "…"
+		}
+		if tail != "" {
+			return tail
+		}
+	}
+	var parts []string
+	if strings.Contains(strings.ToUpper(s), "HEVC") {
+		parts = append(parts, "HEVC")
+	}
+	if q := ShortQualityHint(s); q != "" {
+		parts = append(parts, q)
+	}
+	return strings.Join(parts, " · ")
+}
+
 // EpisodeListTitle is the Stremio row label without quality (qualities show as stream choices).
-// epTitles is optional AniList streaming episode titles keyed by episode number (season 1 assumed).
-func EpisodeListTitle(episode int, isSpecial bool, epTitles map[int]string) string {
+// epTitles is optional AniList/Jikan episode titles keyed by episode number (season 1 assumed).
+// releaseHint is optional (e.g. TorrentReleaseEpisodeSuffix from the RSS release name) when epTitles is empty.
+func EpisodeListTitle(episode int, isSpecial bool, epTitles map[int]string, releaseHint string) string {
 	if isSpecial {
 		return "Special"
 	}
@@ -126,7 +156,22 @@ func EpisodeListTitle(episode int, isSpecial bool, epTitles map[int]string) stri
 			}
 		}
 	}
+	if h := strings.TrimSpace(releaseHint); h != "" {
+		return base + " · " + h
+	}
 	return base
+}
+
+// EpisodeListTitleForGroup picks the best-quality release in the group and builds the Stremio episode row title
+// (AniList/Jikan title when present, otherwise a suffix from the torrent release name).
+func EpisodeListTitleForGroup(episode int, special bool, epTitles map[int]string, group []CatalogItem) string {
+	if len(group) == 0 {
+		return EpisodeListTitle(episode, special, epTitles, "")
+	}
+	g := append([]CatalogItem(nil), group...)
+	SortItemsForStreamChoices(g)
+	hint := TorrentReleaseEpisodeSuffix(g[0].Name)
+	return EpisodeListTitle(episode, special, epTitles, hint)
 }
 
 // StreamQualityRank higher = preferred default ordering in the stream picker.
@@ -355,10 +400,10 @@ func ApplyEnrichmentToCatalogSeries(s *CatalogSeries, en AniListSeriesEnrichment
 		s.Name = t
 	}
 	if d := strings.TrimSpace(en.Description); d != "" {
-		s.Description = d
+		s.Description = LocalizeAniListDescriptionPTBR(d)
 	}
 	if len(en.Genres) > 0 {
-		s.Genres = append([]string(nil), en.Genres...)
+		s.Genres = TranslateAnimeGenresToPTBR(append([]string(nil), en.Genres...))
 	}
 	if en.StartYear > 0 {
 		s.ReleaseInfo = fmt.Sprintf("%d-", en.StartYear)
