@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -34,6 +36,19 @@ func capPersistedSyncLines(lines []string) []string {
 	}
 	out := append([]string(nil), lines[:maxPersistedSyncErrors]...)
 	return append(out, fmt.Sprintf("… and %d more (see server logs)", len(lines)-maxPersistedSyncErrors))
+}
+
+// maxEraiPerAnimeFeedFetches limits HTTP fetches to anime-list/{slug}/feed per sync (0 = unlimited).
+func maxEraiPerAnimeFeedFetches() int {
+	v := strings.TrimSpace(os.Getenv("GOANIMES_ERAI_MAX_PER_ANIME_FEEDS"))
+	if v == "" {
+		return 200
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 0 {
+		return 200
+	}
+	return n
 }
 
 // RSSSyncRuntimeOptions configures outbound fetch.
@@ -221,6 +236,15 @@ func (s *RSSSyncService) Run(ctx context.Context) domain.SyncResult {
 	if err != nil {
 		return domain.SyncResult{Message: "list sources failed", Errors: []string{err.Error()}}
 	}
+	// Erai per-anime URLs need ?token=; use the token from any registered Erai feed URL (same account).
+	var defaultEraiToken string
+	for _, src := range sources {
+		if _, tok := rssadapter.EraiSourceOriginAndToken(src.URL); tok != "" {
+			defaultEraiToken = tok
+			break
+		}
+	}
+
 	if len(sources) == 0 {
 		snap := domain.CatalogSnapshot{
 			OK:              true,
@@ -240,19 +264,69 @@ func (s *RSSSyncService) Run(ctx context.Context) domain.SyncResult {
 
 	var rssBatch []domain.CatalogItem
 	var errs []string
+	type eraiSlugJob struct {
+		slug, origin, token string
+	}
+	var eraiJobs []eraiSlugJob
+	slugQueued := make(map[string]struct{})
 	for _, src := range sources {
 		body, gerr := s.getter.GetBytes(src.URL)
 		if gerr != nil {
 			errs = append(errs, fmt.Sprintf("%s: %v", src.Label, gerr))
 			continue
 		}
-		items, perr := rssadapter.ParseFeed(body)
+		items, slugs, perr := rssadapter.ParseFeedWithEraiSlugs(body)
 		if perr != nil {
 			errs = append(errs, fmt.Sprintf("%s: parse: %v", src.Label, perr))
 			continue
 		}
 		rssBatch = append(rssBatch, items...)
+		origin, token := rssadapter.EraiSourceOriginAndToken(src.URL)
+		if origin == "" {
+			continue
+		}
+		if token == "" {
+			token = defaultEraiToken
+		}
+		if token == "" {
+			continue
+		}
+		for _, slug := range slugs {
+			if _, dup := slugQueued[slug]; dup {
+				continue
+			}
+			slugQueued[slug] = struct{}{}
+			eraiJobs = append(eraiJobs, eraiSlugJob{slug: slug, origin: origin, token: token})
+		}
 	}
+	perAnimeCap := maxEraiPerAnimeFeedFetches()
+	perAnimeOK := 0
+	for _, job := range eraiJobs {
+		if perAnimeCap > 0 && perAnimeOK >= perAnimeCap {
+			break
+		}
+		u := rssadapter.BuildEraiPerAnimeFeedURL(job.origin, job.slug, job.token)
+		if u == "" {
+			continue
+		}
+		body, ferr := s.getter.GetBytes(u)
+		if ferr != nil {
+			errs = append(errs, fmt.Sprintf("erai anime-list %s: %v", job.slug, ferr))
+			continue
+		}
+		subItems, perr := rssadapter.ParseFeed(body)
+		perAnimeOK++
+		if perr != nil {
+			errs = append(errs, fmt.Sprintf("erai anime-list %s: parse: %v", job.slug, perr))
+			continue
+		}
+		rssBatch = append(rssBatch, subItems...)
+	}
+	s.log.Info("erai per-anime rss",
+		slog.Int("slugs_queued", len(eraiJobs)),
+		slog.Int("fetched", perAnimeOK),
+		slog.Int("per_anime_cap", perAnimeCap),
+	)
 	merged := domain.MergeCatalogItemsByID(prevSnap.Items, rssBatch)
 	s.log.Info("catalog merge",
 		slog.Int("from_feed_this_run", len(rssBatch)),

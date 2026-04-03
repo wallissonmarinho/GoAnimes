@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/xml"
+	"errors"
 	"io"
 	"regexp"
 	"strings"
@@ -28,16 +29,30 @@ var (
 
 // ParseFeed parses RSS/Atom XML and returns catalog items that include [br] in Erai subtitles.
 func ParseFeed(body []byte) ([]domain.CatalogItem, error) {
+	items, _, err := ParseFeedWithEraiSlugs(body)
+	return items, err
+}
+
+// ParseFeedWithEraiSlugs is like ParseFeed but also returns Erai /anime-list/{slug}/ segments found in item links/HTML (for per-anime RSS expansion).
+func ParseFeedWithEraiSlugs(body []byte) ([]domain.CatalogItem, []string, error) {
 	fp := gofeed.NewParser()
 	feed, err := fp.ParseString(string(body))
 	if err != nil {
-		if items, err2 := parseFallbackXML(body); err2 == nil && len(items) > 0 {
-			return items, nil
+		items, slugs, err2 := parseFallbackXMLWithSlugs(body)
+		if err2 == nil && len(items) > 0 {
+			return items, slugs, nil
 		}
-		return nil, err
+		if err2 != nil && !errors.Is(err2, io.EOF) {
+			return nil, nil, err2
+		}
+		return nil, nil, err
+	}
+	raw := string(body)
+	var slugAcc []string
+	for _, item := range feed.Items {
+		slugAcc = append(slugAcc, discoverSlugsFromGofeedItem(raw, item)...)
 	}
 	var out []domain.CatalogItem
-	raw := string(body)
 	for _, item := range feed.Items {
 		subTag := eraiSubtitlesFromExtensions(item)
 		if subTag == "" {
@@ -70,7 +85,7 @@ func ParseFeed(body []byte) ([]domain.CatalogItem, error) {
 			SubtitlesTag: subTag,
 		})
 	}
-	return out, nil
+	return out, uniqueEraiSlugs(slugAcc), nil
 }
 
 func eraiSubtitlesFromExtensions(item *gofeed.Item) string {
@@ -98,7 +113,11 @@ func eraiSubtitlesFromExtensions(item *gofeed.Item) string {
 	return ""
 }
 
-func eraiSubtitlesFromRaw(raw string, item *gofeed.Item) string {
+// itemXMLBlock returns the raw <item>...</item> fragment for a gofeed item (for custom tags + slug discovery).
+func itemXMLBlock(raw string, item *gofeed.Item) string {
+	if item == nil {
+		return ""
+	}
 	guid := strings.TrimSpace(item.GUID)
 	link := strings.TrimSpace(item.Link)
 	title := strings.TrimSpace(item.Title)
@@ -109,16 +128,20 @@ func eraiSubtitlesFromRaw(raw string, item *gofeed.Item) string {
 			block = block[:end+7]
 		}
 		if link != "" && strings.Contains(block, link) {
-			return extractEraiSubtitles(block)
+			return block
 		}
 		if guid != "" && strings.Contains(block, guid) {
-			return extractEraiSubtitles(block)
+			return block
 		}
 		if title != "" && strings.Contains(block, title) {
-			return extractEraiSubtitles(block)
+			return block
 		}
 	}
 	return ""
+}
+
+func eraiSubtitlesFromRaw(raw string, item *gofeed.Item) string {
+	return extractEraiSubtitles(itemXMLBlock(raw, item))
 }
 
 func extractEraiSubtitles(s string) string {
@@ -167,8 +190,7 @@ func stableItemID(item *gofeed.Item) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// parseFallbackXML handles minimal RSS 2.0 when gofeed fails.
-func parseFallbackXML(body []byte) ([]domain.CatalogItem, error) {
+func parseFallbackXMLWithSlugs(body []byte) ([]domain.CatalogItem, []string, error) {
 	var doc struct {
 		Channel struct {
 			Items []struct {
@@ -184,12 +206,13 @@ func parseFallbackXML(body []byte) ([]domain.CatalogItem, error) {
 		} `xml:"channel"`
 	}
 	if err := xml.Unmarshal(body, &doc); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if len(doc.Channel.Items) == 0 {
-		return nil, io.EOF
+		return nil, nil, io.EOF
 	}
 	raw := string(body)
+	var slugAcc []string
 	var out []domain.CatalogItem
 	for _, it := range doc.Channel.Items {
 		var block string
@@ -203,6 +226,8 @@ func parseFallbackXML(body []byte) ([]domain.CatalogItem, error) {
 				}
 			}
 		}
+		slugAcc = append(slugAcc, ExtractEraiAnimeListSlugs(block, it.Link, it.Guid, it.Title)...)
+		slugAcc = append(slugAcc, ExtractEraiAnimeListSlugsFromEpisodeLinks(block, it.Link, it.Guid, it.Title)...)
 		sub := extractEraiSubtitles(block)
 		if sub == "" {
 			continue
@@ -252,5 +277,11 @@ func parseFallbackXML(body []byte) ([]domain.CatalogItem, error) {
 			SubtitlesTag: sub,
 		})
 	}
-	return out, nil
+	return out, uniqueEraiSlugs(slugAcc), nil
+}
+
+// parseFallbackXML handles minimal RSS 2.0 when gofeed fails.
+func parseFallbackXML(body []byte) ([]domain.CatalogItem, error) {
+	items, _, err := parseFallbackXMLWithSlugs(body)
+	return items, err
 }

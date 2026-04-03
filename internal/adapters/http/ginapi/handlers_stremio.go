@@ -127,7 +127,7 @@ func (h *handlers) getManifest(c *gin.Context) {
 	genres := domain.StremioGenreFilterOptions()
 	c.JSON(http.StatusOK, gin.H{
 		"id":          "org.goanimes",
-		"version":     "1.0.15",
+		"version":     "1.0.16",
 		"name":        "GoAnimes",
 		"description": "RSS anime torrents with pt-BR (Erai [br]) filter",
 		"types":       []string{stremioTypeAnime, stremioTypeMovie, stremioTypeSeries},

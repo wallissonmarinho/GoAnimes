@@ -1,6 +1,8 @@
 # GoAnimes
 
-Addon **Stremio** em Go: cadastra feeds **RSS** por API, sincroniza em intervalo, filtra releases com legenda **pt-BR** no modelo Erai (`[br]` em `<erai:subtitles>`) e expõe catálogo/meta/streams por torrent ou magnet.
+Addon **Stremio** em Go: cadastra **uma ou mais URLs de RSS** por API, sincroniza em intervalo, filtra releases com legenda **pt-BR** no modelo Erai (`[br]` em `<erai:subtitles>`) e expõe catálogo/meta/streams por torrent ou magnet.
+
+**Erai:** não precisas cadastrar um RSS por anime. Basta **um** feed global (ex. `https://www.erai-raws.info/feed/?type=torrent&token=…`). Em cada sync o servidor lê esse feed, descobre slugs a partir dos links `/episodes/…` e `/anime-list/…` nos itens e **busca sozinho** cada `…/anime-list/{slug}/feed/?token=…` (mesmo token do feed cadastrado), até ao limite `GOANIMES_ERAI_MAX_PER_ANIME_FEEDS` (default 200; `0` = ilimitado).
 
 ## Build
 
@@ -32,7 +34,7 @@ Autenticação: `Authorization: Bearer <chave>` ou `X-Admin-API-Key: <chave>`.
 
 | Método | Caminho | Descrição |
 |--------|---------|-----------|
-| POST | `/api/v1/rss-sources` | `{"url":"https://...feed...","label":"..."}` |
+| POST | `/api/v1/rss-sources` | `{"url":"https://...feed...","label":"..."}` — URL do **feed global**; expansão Erai por anime é automática |
 | GET | `/api/v1/rss-sources` | Lista fontes |
 | DELETE | `/api/v1/rss-sources/:id` | Remove |
 | POST | `/api/v1/rebuild` | Sincroniza feeds agora (202) |
@@ -54,6 +56,7 @@ Autenticação: `Authorization: Bearer <chave>` ou `X-Admin-API-Key: <chave>`.
 | `GOANIMES_ADMIN_API_KEY` / `ADMIN_API_KEY` | Chave admin |
 | `GOANIMES_SYNC_INTERVAL` | Intervalo de sync (default `30m`) |
 | `GOANIMES_HTTP_TIMEOUT` | Timeout HTTP ao buscar RSS (default `45s`) |
+| `GOANIMES_ERAI_MAX_PER_ANIME_FEEDS` | Máx. GETs a feeds por anime num sync Erai (default `200`; `0` = sem limite) |
 | `DATABASE_URL` | Postgres opcional (`postgres://` / `postgresql://`) |
 
 ## Docker
