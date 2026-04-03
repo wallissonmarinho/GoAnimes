@@ -406,6 +406,57 @@ func (s *RSSSyncService) enrichKitsuGaps(ctx context.Context, series []domain.Ca
 	}
 }
 
+// enrichKitsuEpisodeMaps merges Kitsu /episodes titles and thumbnails (resolve id by search when missing).
+func (s *RSSSyncService) enrichKitsuEpisodeMaps(ctx context.Context, series []domain.CatalogSeries, cache map[string]domain.AniListSeriesEnrichment, syncNotes *[]string) {
+	if len(series) == 0 || s.kitsu == nil {
+		return
+	}
+	n := 0
+	for _, ser := range series {
+		select {
+		case <-ctx.Done():
+			s.log.Warn("kitsu episodes: stopped early (context done)", slog.Int("merged", n))
+			appendSyncNote(syncNotes, "kitsu episodes: stopped early (context cancelled)")
+			return
+		default:
+		}
+		cur := cache[ser.ID]
+		kid := strings.TrimSpace(cur.KitsuAnimeID)
+		if kid == "" && strings.TrimSpace(ser.Name) != "" {
+			id, err := s.kitsu.SearchAnimeID(ctx, ser.Name)
+			if err == nil && id != "" {
+				cur.KitsuAnimeID = id
+				cache[ser.ID] = cur
+				kid = id
+			}
+		}
+		if kid == "" {
+			continue
+		}
+		titles, thumbs, err := s.kitsu.FetchEpisodeMaps(ctx, kid)
+		if err != nil {
+			s.log.Debug("kitsu episodes failed", slog.String("kitsu_id", kid), slog.String("series", ser.Name), slog.Any("err", err))
+			appendSyncNote(syncNotes, fmt.Sprintf("kitsu episodes %s: %v", kid, err))
+			continue
+		}
+		if len(titles) == 0 && len(thumbs) == 0 {
+			continue
+		}
+		cache[ser.ID] = domain.MergeAniListEnrichment(cache[ser.ID], domain.AniListSeriesEnrichment{
+			KitsuAnimeID:          kid,
+			EpisodeTitleByNum:     titles,
+			EpisodeThumbnailByNum: thumbs,
+		})
+		n++
+		if s.kitsuDelay > 0 {
+			time.Sleep(s.kitsuDelay)
+		}
+	}
+	if n > 0 {
+		s.log.Info("kitsu: merged episode titles/thumbnails", slog.Int("series", n))
+	}
+}
+
 // enrichJikanMalEpisodeTitles pulls MAL episode names via Jikan when MalID is known (e.g. AniList idMal),
 // without repeating a full Jikan anime search. Merge only fills episode numbers still missing in cache.
 func (s *RSSSyncService) enrichJikanMalEpisodeTitles(ctx context.Context, series []domain.CatalogSeries, cache map[string]domain.AniListSeriesEnrichment, syncNotes *[]string) {
@@ -450,7 +501,7 @@ func (s *RSSSyncService) resolveStremioHeroBackgrounds(ctx context.Context, seri
 		return
 	}
 	if s.tmdb == nil {
-		s.log.Info("tmdb: skipped (no API key or GOANIMES_TMDB_DISABLED; hero uses AniList/Kitsu only)")
+			s.log.Info("tmdb: skipped (no API key or GOANIMES_TMDB_DISABLED; hero uses AniList/Kitsu only)")
 	}
 	n := 0
 	for i, ser := range series {
@@ -672,6 +723,7 @@ doneTorrentBackfill:
 	s.enrichAniListSeries(ctx, snap.Series, anilistCache, &enrichNotes)
 	s.enrichJikanGaps(ctx, snap.Series, anilistCache, &enrichNotes)
 	s.enrichKitsuGaps(ctx, snap.Series, anilistCache, &enrichNotes)
+	s.enrichKitsuEpisodeMaps(ctx, snap.Series, anilistCache, &enrichNotes)
 	s.enrichJikanMalEpisodeTitles(ctx, snap.Series, anilistCache, &enrichNotes)
 	s.resolveStremioHeroBackgrounds(ctx, snap.Series, anilistCache, &enrichNotes)
 	pruneAniListCache(anilistCache, snap.Series)

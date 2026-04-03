@@ -61,6 +61,18 @@ func TestEpisodeTitlesFromStreamingList(t *testing.T) {
 	require.Len(t, m, 2)
 }
 
+func TestEpisodeStreamingDataFromAniList_thumbnails(t *testing.T) {
+	titles, thumbs := domain.EpisodeStreamingDataFromAniList([]domain.AniListStreamingEpisode{
+		{Title: "Episode 1 - Alpha", Thumbnail: "https://a/1.jpg"},
+		{Title: "Episode 2 - Beta", Thumbnail: ""},
+	})
+	require.Equal(t, "Alpha", titles[1])
+	require.Equal(t, "Beta", titles[2])
+	require.Equal(t, "https://a/1.jpg", thumbs[1])
+	_, ok := thumbs[2]
+	require.False(t, ok)
+}
+
 func TestEpisodeListTitle_withAniListTitles(t *testing.T) {
 	titles := map[int]string{3: "Killing Magic"}
 	require.Equal(t, "Episódio 3 · Killing Magic", domain.EpisodeListTitle(3, false, titles, ""))

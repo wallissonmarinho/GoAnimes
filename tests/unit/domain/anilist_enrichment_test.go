@@ -68,6 +68,22 @@ func TestMergeAniListEnrichment_jikanDoesNotWipeNextAiring(t *testing.T) {
 	require.Equal(t, "from jikan", out.Description)
 }
 
+func TestMergeAniListEnrichment_episodeThumbnailsFillGaps(t *testing.T) {
+	stored := domain.AniListSeriesEnrichment{
+		EpisodeTitleByNum:     map[int]string{1: "A"},
+		EpisodeThumbnailByNum: map[int]string{1: "https://u/1"},
+	}
+	add := domain.AniListSeriesEnrichment{
+		EpisodeTitleByNum:     map[int]string{1: "B", 2: "C"},
+		EpisodeThumbnailByNum: map[int]string{1: "https://other", 2: "https://u/2"},
+	}
+	out := domain.MergeAniListEnrichment(stored, add)
+	require.Equal(t, "A", out.EpisodeTitleByNum[1])
+	require.Equal(t, "C", out.EpisodeTitleByNum[2])
+	require.Equal(t, "https://u/1", out.EpisodeThumbnailByNum[1])
+	require.Equal(t, "https://u/2", out.EpisodeThumbnailByNum[2])
+}
+
 func TestMergeAniListEnrichment_anilistUpdatesNextAiring(t *testing.T) {
 	stored := domain.AniListSeriesEnrichment{
 		NextAiringFromAniList: true,

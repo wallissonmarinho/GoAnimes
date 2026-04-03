@@ -134,7 +134,8 @@ type MediaDetails struct {
 	StartYear         int
 	EpisodeLengthMin  int
 	TrailerYouTubeID  string
-	EpisodeTitleByNum map[int]string
+	EpisodeTitleByNum      map[int]string
+	EpisodeThumbnailByNum  map[int]string
 	// NextAiring* from AniList nextAiringEpisode (Stremio Calendar); unix 0 if not airing / unknown.
 	NextAiringUnix    int64
 	NextAiringEpisode int
@@ -146,6 +147,10 @@ func ToDomainEnrichment(d MediaDetails) domain.AniListSeriesEnrichment {
 	ep := d.EpisodeTitleByNum
 	if ep == nil {
 		ep = map[int]string{}
+	}
+	th := d.EpisodeThumbnailByNum
+	if len(th) == 0 {
+		th = nil
 	}
 	desc := domain.LocalizeAniListDescriptionPTBR(d.Description)
 	banner := strings.TrimSpace(d.BackgroundURL)
@@ -160,9 +165,10 @@ func ToDomainEnrichment(d MediaDetails) domain.AniListSeriesEnrichment {
 		TrailerYouTubeID:  d.TrailerYouTubeID,
 		TitlePreferred:    d.Title,
 		TitleNative:       d.NativeTitle,
-		MalID:             d.MalID,
-		AniListSearchVer:  domain.AniListSearcherVersion,
-		EpisodeTitleByNum: ep,
+		MalID:                 d.MalID,
+		AniListSearchVer:      domain.AniListSearcherVersion,
+		EpisodeTitleByNum:     ep,
+		EpisodeThumbnailByNum: th,
 		NextAiringFromAniList: true,
 		NextAiringUnix:       d.NextAiringUnix,
 		NextAiringEpisode:    d.NextAiringEpisode,
@@ -213,7 +219,8 @@ type gqlNextAiring struct {
 }
 
 type gqlStreamingEpisode struct {
-	Title string `json:"title"`
+	Title     string  `json:"title"`
+	Thumbnail *string `json:"thumbnail"`
 }
 
 type gqlFuzzyDate struct {
@@ -250,7 +257,7 @@ const searchMediaQuery = `query ($search: String, $perPage: Int) {
       startDate { year }
       duration
       trailer { id site }
-      streamingEpisodes { title }
+      streamingEpisodes { title thumbnail }
       nextAiringEpisode { airingAt episode }
     }
   }
@@ -337,18 +344,22 @@ func (c *Client) SearchAnimeMedia(ctx context.Context, title string) (MediaDetai
 			}
 		}
 		if len(m.StreamingEpisodes) > 0 {
-			raw := make([]string, 0, len(m.StreamingEpisodes))
+			eps := make([]domain.AniListStreamingEpisode, 0, len(m.StreamingEpisodes))
 			for _, se := range m.StreamingEpisodes {
-				raw = append(raw, se.Title)
+				thStr := ""
+				if se.Thumbnail != nil {
+					thStr = strings.TrimSpace(*se.Thumbnail)
+				}
+				eps = append(eps, domain.AniListStreamingEpisode{Title: se.Title, Thumbnail: thStr})
 			}
-			out.EpisodeTitleByNum = domain.EpisodeTitlesFromStreamingList(raw)
+			out.EpisodeTitleByNum, out.EpisodeThumbnailByNum = domain.EpisodeStreamingDataFromAniList(eps)
 		}
 		if m.NextAiringEpisode != nil && m.NextAiringEpisode.AiringAt != nil && *m.NextAiringEpisode.AiringAt > 0 &&
 			m.NextAiringEpisode.Episode != nil && *m.NextAiringEpisode.Episode > 0 {
 			out.NextAiringUnix = int64(*m.NextAiringEpisode.AiringAt)
 			out.NextAiringEpisode = *m.NextAiringEpisode.Episode
 		}
-		if out.PosterURL == "" && out.BackgroundURL == "" && out.Description == "" && out.Title == "" && out.NativeTitle == "" && out.EpisodeLengthMin == 0 && len(out.Genres) == 0 && out.StartYear == 0 && out.TrailerYouTubeID == "" && len(out.EpisodeTitleByNum) == 0 && out.NextAiringUnix == 0 {
+		if out.PosterURL == "" && out.BackgroundURL == "" && out.Description == "" && out.Title == "" && out.NativeTitle == "" && out.EpisodeLengthMin == 0 && len(out.Genres) == 0 && out.StartYear == 0 && out.TrailerYouTubeID == "" && len(out.EpisodeTitleByNum) == 0 && len(out.EpisodeThumbnailByNum) == 0 && out.NextAiringUnix == 0 {
 			lastErr = errors.New("anilist: empty media payload")
 			continue
 		}

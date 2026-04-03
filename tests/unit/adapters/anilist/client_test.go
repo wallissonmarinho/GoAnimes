@@ -32,8 +32,8 @@ func TestClient_SearchAnimeMedia(t *testing.T) {
 						"trailer": {"id": "abc123xyz", "site": "youtube"},
 						"nextAiringEpisode": {"airingAt": 1735689600, "episode": 5},
 						"streamingEpisodes": [
-							{"title": "Episode 1 - Pilot"},
-							{"title": "Episode 2 - The Chase"}
+							{"title": "Episode 1 - Pilot", "thumbnail": "https://cdn.example/ep1.jpg"},
+							{"title": "Episode 2 - The Chase", "thumbnail": null}
 						]
 					}]
 				}
@@ -58,6 +58,7 @@ func TestClient_SearchAnimeMedia(t *testing.T) {
 	require.Equal(t, "abc123xyz", res.TrailerYouTubeID)
 	require.Equal(t, "Pilot", res.EpisodeTitleByNum[1])
 	require.Equal(t, "The Chase", res.EpisodeTitleByNum[2])
+	require.Equal(t, "https://cdn.example/ep1.jpg", res.EpisodeThumbnailByNum[1])
 	require.Equal(t, int64(1735689600), res.NextAiringUnix)
 	require.Equal(t, 5, res.NextAiringEpisode)
 }

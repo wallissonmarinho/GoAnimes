@@ -101,12 +101,19 @@ func LatestReleased(items []CatalogItem) string {
 
 var streamingEpTitleRe = regexp.MustCompile(`(?i)^Episode\s+(\d+)\s*(?:-|–|—)\s*(.+)$`)
 
-// EpisodeTitlesFromStreamingList builds episode number → title from AniList streamingEpisodes titles
-// (e.g. "Episode 5 - Phantoms of the Dead").
-func EpisodeTitlesFromStreamingList(rawTitles []string) map[int]string {
-	out := make(map[int]string)
-	for _, raw := range rawTitles {
-		t := strings.TrimSpace(raw)
+// AniListStreamingEpisode is one AniList streamingEpisodes row (title + optional thumbnail URL).
+type AniListStreamingEpisode struct {
+	Title     string
+	Thumbnail string
+}
+
+// EpisodeStreamingDataFromAniList builds episode number → title and thumbnail from AniList streamingEpisodes
+// (e.g. title "Episode 5 - Phantoms of the Dead" plus optional thumbnail URL).
+func EpisodeStreamingDataFromAniList(episodes []AniListStreamingEpisode) (titles map[int]string, thumbs map[int]string) {
+	titles = make(map[int]string)
+	thumbs = make(map[int]string)
+	for _, ep := range episodes {
+		t := strings.TrimSpace(ep.Title)
 		m := streamingEpTitleRe.FindStringSubmatch(t)
 		if len(m) != 3 {
 			continue
@@ -116,14 +123,28 @@ func EpisodeTitlesFromStreamingList(rawTitles []string) map[int]string {
 			continue
 		}
 		name := strings.TrimSpace(m[2])
-		if name == "" {
-			continue
+		if name != "" {
+			if _, ok := titles[n]; !ok {
+				titles[n] = name
+			}
 		}
-		if _, ok := out[n]; !ok {
-			out[n] = name
+		if u := strings.TrimSpace(ep.Thumbnail); u != "" {
+			if _, ok := thumbs[n]; !ok {
+				thumbs[n] = u
+			}
 		}
 	}
-	return out
+	return titles, thumbs
+}
+
+// EpisodeTitlesFromStreamingList builds episode number → title from AniList streamingEpisodes titles only.
+func EpisodeTitlesFromStreamingList(rawTitles []string) map[int]string {
+	eps := make([]AniListStreamingEpisode, len(rawTitles))
+	for i, t := range rawTitles {
+		eps[i] = AniListStreamingEpisode{Title: t}
+	}
+	titles, _ := EpisodeStreamingDataFromAniList(eps)
+	return titles
 }
 
 // eraiEpisodeTailRe captures the part of an Erai-style release title after the episode number (codec, tags).

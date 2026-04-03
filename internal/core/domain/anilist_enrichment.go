@@ -22,8 +22,11 @@ type AniListSeriesEnrichment struct {
 	TitleNative       string         `json:"title_native,omitempty"`  // Japanese (optional; meta detail)
 	MalID             int            `json:"mal_id,omitempty"`        // MyAnimeList id (AniList idMal / Jikan)
 	ImdbID            string         `json:"imdb,omitempty"`          // tt… when Jikan/MAL lists IMDb (TMDB find)
+	KitsuAnimeID      string         `json:"kitsu_id,omitempty"`      // Kitsu JSON:API anime id (episodes list)
 	AniListSearchVer  int            `json:"al_search_ver,omitempty"` // bump forces refetch after search logic changes
 	EpisodeTitleByNum map[int]string `json:"ep_titles"`
+	// EpisodeThumbnailByNum is Stremio video thumbnail per episode number (AniList streaming / Kitsu); merge fills missing keys only.
+	EpisodeThumbnailByNum map[int]string `json:"ep_thumbs,omitempty"`
 	// NextAiring* from AniList nextAiringEpisode (Stremio Calendar). NextAiringFromAniList=true means the last
 	// AniList fetch set these values (including zeros when nothing is scheduled); Jikan/Kitsu merges must not overwrite.
 	NextAiringUnix        int64 `json:"next_air_unix,omitempty"`    // Unix seconds; 0 = none
@@ -101,6 +104,9 @@ func MergeAniListEnrichment(stored, add AniListSeriesEnrichment) AniListSeriesEn
 	if strings.TrimSpace(out.ImdbID) == "" {
 		out.ImdbID = strings.TrimSpace(add.ImdbID)
 	}
+	if strings.TrimSpace(out.KitsuAnimeID) == "" {
+		out.KitsuAnimeID = strings.TrimSpace(add.KitsuAnimeID)
+	}
 	if out.StartYear == 0 && add.StartYear > 0 {
 		out.StartYear = add.StartYear
 	}
@@ -126,6 +132,16 @@ func MergeAniListEnrichment(stored, add AniListSeriesEnrichment) AniListSeriesEn
 		for k, v := range add.EpisodeTitleByNum {
 			if _, ok := out.EpisodeTitleByNum[k]; !ok {
 				out.EpisodeTitleByNum[k] = v
+			}
+		}
+	}
+	if add.EpisodeThumbnailByNum != nil {
+		if out.EpisodeThumbnailByNum == nil {
+			out.EpisodeThumbnailByNum = make(map[int]string)
+		}
+		for k, v := range add.EpisodeThumbnailByNum {
+			if _, ok := out.EpisodeThumbnailByNum[k]; !ok {
+				out.EpisodeThumbnailByNum[k] = v
 			}
 		}
 	}

@@ -24,7 +24,7 @@ type Deps struct {
 	AniList *anilist.Client    // optional: lazy-fetch when cache is empty
 	Jikan   *jikan.Client      // optional: MAL fallback when AniList left gaps
 	Kitsu   *kitsu.Client      // optional: Kitsu JSON:API when gaps remain after Jikan
-	TMDB    *tmdb.Client       // optional: backdrops via IMDb→TMDB find (GOANIMES_TMDB_API_KEY)
+	TMDB    *tmdb.Client       // optional: backdrops via IMDb→TMDB find (GOANIMES_TMDB_API_KEY; GOANIMES_TMDB_DISABLED)
 	// SynopsisTrans optional (nil in tests); production wires gilang Google translate.
 	SynopsisTrans ports.SynopsisTranslator
 	Log           *slog.Logger

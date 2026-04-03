@@ -48,6 +48,22 @@ func TestClient_SearchAnimeEnrichment(t *testing.T) {
 		w.Header().Set("Content-Type", "application/vnd.api+json")
 		_, _ = w.Write([]byte(payload))
 	})
+	mux.HandleFunc("/api/edge/episodes", func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "42", r.URL.Query().Get("filter[mediaId]"))
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = w.Write([]byte(`{
+			"data": [{
+				"id": "ep1",
+				"type": "episodes",
+				"attributes": {
+					"number": 1,
+					"canonicalTitle": "From Kitsu",
+					"thumbnail": {"original": "https://cdn.example/kitsu-ep1.png"}
+				}
+			}],
+			"meta": {"count": 1}
+		}`))
+	})
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
@@ -64,4 +80,12 @@ func TestClient_SearchAnimeEnrichment(t *testing.T) {
 	require.Equal(t, "https://cdn.example/p.jpg", en.PosterURL)
 	require.Equal(t, "https://cdn.example/c.jpg", en.BackgroundURL)
 	require.Equal(t, []string{"Ação"}, en.Genres)
+	require.Equal(t, "42", en.KitsuAnimeID)
+
+	g2 := httpclient.NewGetter(5*time.Second, "GoAnimes/test", 1<<20)
+	c2 := kitsu.NewClient(g2, kitsu.WithBaseURL(srv.URL+"/api/edge"), kitsu.WithMinRequestInterval(0))
+	titles, thumbs, err := c2.FetchEpisodeMaps(context.Background(), "42")
+	require.NoError(t, err)
+	require.Equal(t, "From Kitsu", titles[1])
+	require.Equal(t, "https://cdn.example/kitsu-ep1.png", thumbs[1])
 }

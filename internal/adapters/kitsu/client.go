@@ -228,7 +228,149 @@ func (c *Client) SearchAnimeEnrichment(ctx context.Context, title string) (domai
 		return zero, err
 	}
 	catTitles := categoryTitlesFromIncluded(resp.Data[0].Relationships, resp.Included)
-	return kitsuAnimeToEnrichment(attrs, catTitles), nil
+	kid := strings.TrimSpace(resp.Data[0].ID)
+	return kitsuAnimeToEnrichment(attrs, catTitles, kid), nil
+}
+
+// SearchAnimeID returns the Kitsu anime id for the best text match (limit 1), or error.
+func (c *Client) SearchAnimeID(ctx context.Context, title string) (string, error) {
+	if c == nil || c.getter == nil || c.getter.Client == nil {
+		return "", errors.New("kitsu: nil client")
+	}
+	q := domain.NormalizeExternalAnimeSearchQuery(title)
+	if q == "" {
+		return "", errors.New("kitsu: empty title")
+	}
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	u := c.base + "/anime?" + url.Values{
+		"filter[text]": {q},
+		"page[limit]":  {"1"},
+	}.Encode()
+	body, err := c.getJSONAPI(ctx, u)
+	if err != nil {
+		return "", err
+	}
+	var resp animeSearchResp
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return "", err
+	}
+	if len(resp.Data) == 0 || resp.Data[0].Type != "anime" {
+		return "", errors.New("kitsu: no results")
+	}
+	return strings.TrimSpace(resp.Data[0].ID), nil
+}
+
+type episodeAttrs struct {
+	Number         int               `json:"number"`
+	SeasonNumber   int               `json:"seasonNumber"`
+	CanonicalTitle *string           `json:"canonicalTitle"`
+	Titles         map[string]string `json:"titles"`
+	Thumbnail      *struct {
+		Original string `json:"original"`
+	} `json:"thumbnail"`
+}
+
+func kitsuEpisodePickTitle(a episodeAttrs) string {
+	if a.CanonicalTitle != nil {
+		if t := strings.TrimSpace(*a.CanonicalTitle); t != "" {
+			return t
+		}
+	}
+	if a.Titles != nil {
+		for _, k := range []string{"en_us", "en_jp", "en", "ja_jp"} {
+			if t := strings.TrimSpace(a.Titles[k]); t != "" {
+				return t
+			}
+		}
+		for _, t := range a.Titles {
+			if s := strings.TrimSpace(t); s != "" {
+				return s
+			}
+		}
+	}
+	return ""
+}
+
+// FetchEpisodeMaps loads episode titles and thumbnails from Kitsu /episodes (paginated) for a media id.
+func (c *Client) FetchEpisodeMaps(ctx context.Context, kitsuAnimeID string) (map[int]string, map[int]string, error) {
+	titles := make(map[int]string)
+	thumbs := make(map[int]string)
+	kitsuAnimeID = strings.TrimSpace(kitsuAnimeID)
+	if c == nil || c.getter == nil {
+		return nil, nil, errors.New("kitsu: nil client")
+	}
+	if kitsuAnimeID == "" {
+		return nil, nil, errors.New("kitsu: empty anime id")
+	}
+	const limit = 100
+	offset := 0
+	total := -1
+	for page := 0; page < 80; page++ {
+		if err := ctx.Err(); err != nil {
+			return titles, thumbs, err
+		}
+		u := c.base + "/episodes?" + url.Values{
+			"filter[mediaId]": {kitsuAnimeID},
+			"sort":            {"number"},
+			"page[limit]":     {strconv.Itoa(limit)},
+			"page[offset]":    {strconv.Itoa(offset)},
+		}.Encode()
+		body, err := c.getJSONAPI(ctx, u)
+		if err != nil {
+			return nil, nil, err
+		}
+		var resp struct {
+			Data []jsonapiResource `json:"data"`
+			Meta struct {
+				Count int `json:"count"`
+			} `json:"meta"`
+		}
+		if err := json.Unmarshal(body, &resp); err != nil {
+			return nil, nil, err
+		}
+		if page == 0 {
+			total = resp.Meta.Count
+		}
+		for _, row := range resp.Data {
+			if row.Type != "episodes" {
+				continue
+			}
+			var attrs episodeAttrs
+			if err := json.Unmarshal(row.Attributes, &attrs); err != nil {
+				continue
+			}
+			n := attrs.Number
+			if n < 1 {
+				continue
+			}
+			if t := kitsuEpisodePickTitle(attrs); t != "" {
+				if _, ok := titles[n]; !ok {
+					titles[n] = t
+				}
+			}
+			if attrs.Thumbnail != nil {
+				if u := strings.TrimSpace(attrs.Thumbnail.Original); u != "" {
+					if _, ok := thumbs[n]; !ok {
+						thumbs[n] = u
+					}
+				}
+			}
+		}
+		nGot := len(resp.Data)
+		offset += nGot
+		if nGot == 0 {
+			break
+		}
+		if total > 0 && offset >= total {
+			break
+		}
+		if total <= 0 && nGot < limit {
+			break
+		}
+	}
+	return titles, thumbs, nil
 }
 
 func categoryTitlesFromIncluded(relationships json.RawMessage, included []jsonapiResource) []string {
@@ -279,7 +421,7 @@ func titlesForCategoryIDs(refs []relDataEntry, included []jsonapiResource) []str
 	return out
 }
 
-func kitsuAnimeToEnrichment(a animeAttrs, categoryTitles []string) domain.AniListSeriesEnrichment {
+func kitsuAnimeToEnrichment(a animeAttrs, categoryTitles []string, kitsuAnimeID string) domain.AniListSeriesEnrichment {
 	syn := strings.TrimSpace(a.Synopsis)
 	if syn == "" {
 		syn = strings.TrimSpace(a.CanonicalTitle)
@@ -303,6 +445,7 @@ func kitsuAnimeToEnrichment(a animeAttrs, categoryTitles []string) domain.AniLis
 		EpisodeLengthMin: epMin,
 		TitlePreferred:   title,
 		TitleNative:      strings.TrimSpace(a.Titles["ja_jp"]),
+		KitsuAnimeID:     strings.TrimSpace(kitsuAnimeID),
 		AniListSearchVer: domain.AniListSearcherVersion,
 	}
 }

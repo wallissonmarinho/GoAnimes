@@ -25,7 +25,7 @@ const (
 	stremioTypeMovie     = "movie"
 	stremioTypeSeries    = "series"
 	// stremioManifestVersion: PATCH = fixes, tuning, deps, docs; MINOR = nova funcionalidade visível (API, sync, catálogo Stremio); MAJOR = contrato que parte instalações.
-	stremioManifestVersion = "1.5.2"
+	stremioManifestVersion = "1.5.4"
 )
 
 func stremioMetaOrStreamTypeOK(t string) bool {
@@ -308,6 +308,26 @@ func (h *handlers) getMeta(c *gin.Context) {
 					didLazyEnrich = true
 				}
 			}
+			en = h.deps.Catalog.AniListEnrichment(ser.ID)
+			kitsuID := strings.TrimSpace(en.KitsuAnimeID)
+			if kitsuID == "" && h.deps.Kitsu != nil && strings.TrimSpace(search) != "" {
+				if id, kerr := h.deps.Kitsu.SearchAnimeID(ctx, search); kerr == nil && id != "" {
+					addK := domain.AniListSeriesEnrichment{KitsuAnimeID: id}
+					h.deps.Catalog.MergeAniListEnrichment(ser.ID, addK)
+					en = domain.MergeAniListEnrichment(en, addK)
+					kitsuID = id
+					didLazyEnrich = true
+				}
+			}
+			if h.deps.Kitsu != nil && kitsuID != "" && (len(en.EpisodeTitleByNum) == 0 || len(en.EpisodeThumbnailByNum) == 0) {
+				t, th, kerr := h.deps.Kitsu.FetchEpisodeMaps(ctx, kitsuID)
+				if kerr == nil && (len(t) > 0 || len(th) > 0) {
+					addKE := domain.AniListSeriesEnrichment{KitsuAnimeID: kitsuID, EpisodeTitleByNum: t, EpisodeThumbnailByNum: th}
+					h.deps.Catalog.MergeAniListEnrichment(ser.ID, addKE)
+					en = domain.MergeAniListEnrichment(en, addKE)
+					didLazyEnrich = true
+				}
+			}
 			cancel()
 		}
 		synopsisUpdated := false
@@ -351,13 +371,19 @@ func (h *handlers) getMeta(c *gin.Context) {
 			if k.Special {
 				epNum = 0
 			}
-			videos = append(videos, gin.H{
+			row := gin.H{
 				"id":       vid,
 				"title":    domain.EpisodeListTitleForGroup(k.Episode, k.Special, en.EpisodeTitleByNum, group),
 				"released": stremioVideoReleasedISO(domain.LatestReleased(group)),
 				"season":   k.Season,
 				"episode":  epNum,
-			})
+			}
+			if !k.Special {
+				if th := strings.TrimSpace(en.EpisodeThumbnailByNum[k.Episode]); th != "" {
+					row["thumbnail"] = th
+				}
+			}
+			videos = append(videos, row)
 		}
 		calSeason := domain.MaxSeasonAmongSeriesItems(snap.Items, id)
 		appendAniListCalendarVideo(ser.ID, calSeason, en.NextAiringEpisode, en, groups, &videos)
@@ -414,9 +440,14 @@ func (h *handlers) getStream(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{"streams": []any{}})
 			return
 		}
+		var epDisplay string
+		if it0 := releases[0]; it0.SeriesID != "" {
+			en := snap.AniListBySeries[it0.SeriesID]
+			epDisplay = domain.EpisodeListTitleForGroup(it0.Episode, it0.IsSpecial, en.EpisodeTitleByNum, releases)
+		}
 		streams := make([]gin.H, 0, len(releases))
 		for _, it := range releases {
-			if s := streamFromCatalogItem(it, id); s != nil {
+			if s := streamFromCatalogItem(it, id, epDisplay); s != nil {
 				streams = append(streams, s)
 			}
 		}
@@ -433,7 +464,13 @@ func (h *handlers) getStream(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{})
 		return
 	}
-	one := streamFromCatalogItem(it, it.ID)
+	var epDisplay string
+	if it.SeriesID != "" && (it.Episode > 0 || it.IsSpecial) {
+		snap := h.deps.Catalog.Snapshot()
+		en := snap.AniListBySeries[it.SeriesID]
+		epDisplay = domain.EpisodeListTitleForGroup(it.Episode, it.IsSpecial, en.EpisodeTitleByNum, []domain.CatalogItem{it})
+	}
+	one := streamFromCatalogItem(it, it.ID, epDisplay)
 	if one == nil {
 		c.JSON(http.StatusOK, gin.H{"streams": []any{}})
 		return
@@ -441,7 +478,7 @@ func (h *handlers) getStream(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"streams": []gin.H{one}})
 }
 
-func streamFromCatalogItem(it domain.CatalogItem, bingeGroup string) gin.H {
+func streamFromCatalogItem(it domain.CatalogItem, bingeGroup string, episodeDisplay string) gin.H {
 	label := domain.ShortQualityHint(it.Name)
 	if label == "" && strings.Contains(strings.ToUpper(it.Name), "HEVC") {
 		label = "HEVC"
@@ -450,10 +487,14 @@ func streamFromCatalogItem(it domain.CatalogItem, bingeGroup string) gin.H {
 		label = "Release"
 	}
 	streamName := "Torrent · " + label
+	streamTitle := it.Name
+	if ed := strings.TrimSpace(episodeDisplay); ed != "" {
+		streamTitle = ed + " — " + it.Name
+	}
 	if it.InfoHash != "" {
 		return gin.H{
 			"name":     streamName,
-			"title":    it.Name,
+			"title":    streamTitle,
 			"infoHash": it.InfoHash,
 			"fileIdx":  0,
 			"behaviorHints": gin.H{
@@ -464,14 +505,14 @@ func streamFromCatalogItem(it domain.CatalogItem, bingeGroup string) gin.H {
 	if it.MagnetURL != "" {
 		return gin.H{
 			"name":  streamName,
-			"title": it.Name,
+			"title": streamTitle,
 			"url":   it.MagnetURL,
 		}
 	}
 	if it.TorrentURL != "" {
 		return gin.H{
 			"name":  streamName,
-			"title": it.Name,
+			"title": streamTitle,
 			"url":   it.TorrentURL,
 		}
 	}
