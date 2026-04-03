@@ -355,6 +355,16 @@ func (s *RSSSyncService) Run(ctx context.Context) domain.SyncResult {
 	)
 
 	for i := range merged {
+		select {
+		case <-ctx.Done():
+			s.log.Warn("torrent info_hash backfill stopped early",
+				slog.Any("err", ctx.Err()),
+				slog.Int("processed_index", i),
+				slog.Int("total_items", len(merged)))
+			errs = append(errs, fmt.Sprintf("torrent info_hash backfill: stopped early (%v)", ctx.Err()))
+			goto doneTorrentBackfill
+		default:
+		}
 		it := &merged[i]
 		if it.InfoHash != "" || it.TorrentURL == "" {
 			continue
@@ -371,6 +381,7 @@ func (s *RSSSyncService) Run(ctx context.Context) domain.SyncResult {
 		}
 		it.InfoHash = h
 	}
+doneTorrentBackfill:
 
 	snap := domain.CatalogSnapshot{
 		OK:         true,

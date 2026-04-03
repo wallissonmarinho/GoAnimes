@@ -24,7 +24,7 @@ const (
 	stremioTypeMovie     = "movie"
 	stremioTypeSeries    = "series"
 	// stremioManifestVersion: PATCH = fixes, tuning, deps, docs; MINOR = nova funcionalidade visível (API, sync, catálogo Stremio); MAJOR = contrato que parte instalações.
-	stremioManifestVersion = "1.2.1"
+	stremioManifestVersion = "1.2.2"
 )
 
 func stremioMetaOrStreamTypeOK(t string) bool {
@@ -219,22 +219,36 @@ func (h *handlers) getMeta(c *gin.Context) {
 			}
 			cancel()
 		}
+		synopsisUpdated := false
 		if didLazyEnrich {
 			enAfter := h.deps.Catalog.AniListEnrichment(ser.ID)
 			newDesc := services.TranslateSynopsisToPT(h.deps.SynopsisTrans, h.deps.Log, enAfter.Description)
 			if newDesc != enAfter.Description && strings.TrimSpace(newDesc) != "" {
 				h.deps.Catalog.ReplaceAniListSynopsis(ser.ID, newDesc)
+				synopsisUpdated = true
 			}
-			pctx, pcancel := context.WithTimeout(context.Background(), 60*time.Second)
-			if err := h.deps.Catalog.PersistActiveCatalog(pctx); err != nil && h.deps.Log != nil {
-				h.deps.Log.Warn("persist catalog after lazy enrichment", slog.Any("err", err))
-			}
-			pcancel()
 		}
 		if s2, ok := h.deps.Catalog.SeriesByID(id); ok {
 			ser = s2
 		}
 		en = h.deps.Catalog.AniListEnrichment(ser.ID)
+		// Sinopse vinha muitas vezes só em EN do sync; géneros já vão para PT por mapa. Traduz ao abrir a série
+		// quando GOANIMES_GOOGLE_*_TRANSLATE estiver ativo (idempotente se já estiver em PT).
+		if h.deps.SynopsisTrans != nil && strings.TrimSpace(en.Description) != "" {
+			newDesc := services.TranslateSynopsisToPT(h.deps.SynopsisTrans, h.deps.Log, en.Description)
+			if newDesc != en.Description && strings.TrimSpace(newDesc) != "" {
+				h.deps.Catalog.ReplaceAniListSynopsis(ser.ID, newDesc)
+				en = h.deps.Catalog.AniListEnrichment(ser.ID)
+				synopsisUpdated = true
+			}
+		}
+		if didLazyEnrich || synopsisUpdated {
+			pctx, pcancel := context.WithTimeout(context.Background(), 60*time.Second)
+			if err := h.deps.Catalog.PersistActiveCatalog(pctx); err != nil && h.deps.Log != nil {
+				h.deps.Log.Warn("persist catalog after Stremio meta enrichment", slog.Any("err", err))
+			}
+			pcancel()
+		}
 		videos := make([]gin.H, 0, len(keys))
 		for _, k := range keys {
 			group := groups[k]
@@ -380,7 +394,7 @@ func mergeAniListSeriesMeta(meta gin.H, en domain.AniListSeriesEnrichment) {
 		meta["releaseInfo"] = fmt.Sprintf("%d-", en.StartYear)
 	}
 	if en.EpisodeLengthMin > 0 {
-		meta["runtime"] = fmt.Sprintf("~%dm per episode", en.EpisodeLengthMin)
+		meta["runtime"] = fmt.Sprintf("~%d min por episódio", en.EpisodeLengthMin)
 	}
 	// Stremio hero/backdrop looks bad with AniList’s ultra-wide banners; use cover art only.
 	bg := strings.TrimSpace(en.PosterURL)

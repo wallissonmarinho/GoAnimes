@@ -24,8 +24,26 @@ const (
 
 var (
 	eraiSubtitlesRe = regexp.MustCompile(`(?i)<erai:subtitles[^>]*>([^<]*)</erai:subtitles>`)
+	eraiInfohashRe  = regexp.MustCompile(`(?i)<erai:infohash[^>]*>\s*([a-f0-9]{40})\s*</erai:infohash>`)
 	magnetHashRe    = regexp.MustCompile(`(?i)btih:([a-f0-9]{40})`)
 )
+
+// xmlSourceContainsDecodedSubstring is true when raw XML text contains s or its form with & as &amp;
+// (gofeed/xml.Unmarshal decode &amp; → & in item.Link, but the source still has &amp;).
+func xmlSourceContainsDecodedSubstring(source, s string) bool {
+	if s == "" {
+		return false
+	}
+	if strings.Contains(source, s) {
+		return true
+	}
+	if strings.Contains(s, "&") {
+		if strings.Contains(source, strings.ReplaceAll(s, "&", "&amp;")) {
+			return true
+		}
+	}
+	return false
+}
 
 // ParseFeed parses RSS/Atom XML and returns catalog items that include [br] in Erai subtitles.
 func ParseFeed(body []byte) ([]domain.CatalogItem, error) {
@@ -62,6 +80,13 @@ func ParseFeedWithEraiSlugs(body []byte) ([]domain.CatalogItem, []string, error)
 			continue
 		}
 		magnet, torrent, hash := resolveStream(item)
+		if hash == "" {
+			if b := itemXMLBlock(raw, item); b != "" {
+				if m := eraiInfohashRe.FindStringSubmatch(b); len(m) > 1 {
+					hash = strings.ToLower(m[1])
+				}
+			}
+		}
 		if magnet == "" && torrent == "" && hash == "" {
 			continue
 		}
@@ -127,7 +152,7 @@ func itemXMLBlock(raw string, item *gofeed.Item) string {
 		if end := strings.Index(block, "</item>"); end >= 0 {
 			block = block[:end+7]
 		}
-		if link != "" && strings.Contains(block, link) {
+		if link != "" && xmlSourceContainsDecodedSubstring(block, link) {
 			return block
 		}
 		if guid != "" && strings.Contains(block, guid) {
@@ -194,11 +219,12 @@ func parseFallbackXMLWithSlugs(body []byte) ([]domain.CatalogItem, []string, err
 	var doc struct {
 		Channel struct {
 			Items []struct {
-				Title     string `xml:"title"`
-				Link      string `xml:"link"`
-				Guid      string `xml:"guid"`
-				PubDate   string `xml:"pubDate"`
-				Enclosure []struct {
+				Title       string `xml:"title"`
+				Link        string `xml:"link"`
+				Guid        string `xml:"guid"`
+				PubDate     string `xml:"pubDate"`
+				Description string `xml:"description"`
+				Enclosure   []struct {
 					URL  string `xml:"url,attr"`
 					Type string `xml:"type,attr"`
 				} `xml:"enclosure"`
@@ -215,20 +241,33 @@ func parseFallbackXMLWithSlugs(body []byte) ([]domain.CatalogItem, []string, err
 	var slugAcc []string
 	var out []domain.CatalogItem
 	for _, it := range doc.Channel.Items {
+		link := strings.TrimSpace(it.Link)
+		guid := strings.TrimSpace(it.Guid)
+		title := strings.TrimSpace(it.Title)
 		var block string
-		if strings.TrimSpace(it.Link) != "" {
-			parts := strings.Split(raw, "<item")
-			for _, p := range parts[1:] {
-				b := "<item" + p
-				if strings.Contains(b, strings.TrimSpace(it.Link)) {
-					block = b
-					break
-				}
+		parts := strings.Split(raw, "<item")
+		for _, p := range parts[1:] {
+			b := "<item" + p
+			if end := strings.Index(b, "</item>"); end >= 0 {
+				b = b[:end+7]
+			}
+			if link != "" && xmlSourceContainsDecodedSubstring(b, link) {
+				block = b
+				break
+			}
+			if guid != "" && strings.Contains(b, guid) {
+				block = b
+				break
+			}
+			if title != "" && strings.Contains(b, title) {
+				block = b
+				break
 			}
 		}
-		slugAcc = append(slugAcc, ExtractEraiAnimeListSlugs(block, it.Link, it.Guid, it.Title)...)
-		slugAcc = append(slugAcc, ExtractEraiAnimeListSlugsFromEpisodeLinks(block, it.Link, it.Guid, it.Title)...)
-		slugAcc = append(slugAcc, ExtractEraiAnimeListSlugsFromEncodesLinks(block, it.Link, it.Guid, it.Title)...)
+		hay := []string{block, it.Link, it.Guid, it.Title, it.Description}
+		slugAcc = append(slugAcc, ExtractEraiAnimeListSlugs(hay...)...)
+		slugAcc = append(slugAcc, ExtractEraiAnimeListSlugsFromEpisodeLinks(hay...)...)
+		slugAcc = append(slugAcc, ExtractEraiAnimeListSlugsFromEncodesLinks(hay...)...)
 		sub := extractEraiSubtitles(block)
 		if sub == "" {
 			continue
@@ -237,7 +276,6 @@ func parseFallbackXMLWithSlugs(body []byte) ([]domain.CatalogItem, []string, err
 			continue
 		}
 		magnet, torrent, hash := "", "", ""
-		link := strings.TrimSpace(it.Link)
 		if strings.HasPrefix(strings.ToLower(link), "magnet:") {
 			magnet = link
 			if m := magnetHashRe.FindStringSubmatch(link); len(m) > 1 {
@@ -254,10 +292,15 @@ func parseFallbackXMLWithSlugs(body []byte) ([]domain.CatalogItem, []string, err
 				break
 			}
 		}
+		if hash == "" && block != "" {
+			if m := eraiInfohashRe.FindStringSubmatch(block); len(m) > 1 {
+				hash = strings.ToLower(m[1])
+			}
+		}
 		if magnet == "" && torrent == "" && hash == "" {
 			continue
 		}
-		g := strings.TrimSpace(it.Guid)
+		g := guid
 		if g == "" {
 			g = link
 		}

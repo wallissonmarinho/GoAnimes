@@ -1,6 +1,7 @@
 package domain_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -66,4 +67,34 @@ func TestTorrentReleaseEpisodeSuffix_eraiStyle(t *testing.T) {
 	s := "[Torrent] Akuyaku Reijou wa Ringoku no Outaishi ni Dekiai sareru - 07 (HEVC) [1080p CR WEBRip HEVC AAC][us][br]"
 	require.Contains(t, domain.TorrentReleaseEpisodeSuffix(s), "1080p")
 	require.Contains(t, domain.TorrentReleaseEpisodeSuffix(s), "HEVC")
+}
+
+func TestPreferTorrentOverMagnetReleases_sameBtih_prefersTorrent(t *testing.T) {
+	hash := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	items := []domain.CatalogItem{
+		{ID: "goanimes:mag", Name: "[Magnet] Show - 01 [720p][br]", MagnetURL: "magnet:?xt=urn:btih:" + strings.ToUpper(hash) + "&dn=x", InfoHash: hash},
+		{ID: "goanimes:tor", Name: "[Torrent] Show - 01 [720p][br]", TorrentURL: "https://example.com/x.torrent", InfoHash: hash},
+	}
+	out := domain.PreferTorrentOverMagnetReleases(items)
+	require.Len(t, out, 1)
+	require.Equal(t, "goanimes:tor", out[0].ID)
+	require.NotEmpty(t, out[0].TorrentURL)
+}
+
+func TestPreferTorrentOverMagnetReleases_magnetOnly_kept(t *testing.T) {
+	items := []domain.CatalogItem{
+		{ID: "goanimes:m", Name: "[Magnet] Show - 01 [720p][br]", MagnetURL: "magnet:?xt=urn:btih:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb&dn=x"},
+	}
+	out := domain.PreferTorrentOverMagnetReleases(items)
+	require.Len(t, out, 1)
+	require.Equal(t, "goanimes:m", out[0].ID)
+}
+
+func TestPreferTorrentOverMagnetReleases_twoHashes_bothKept(t *testing.T) {
+	items := []domain.CatalogItem{
+		{ID: "a", Name: "[Magnet] Show - 01 [1080p][br]", MagnetURL: "magnet:?xt=urn:btih:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+		{ID: "b", Name: "[Magnet] Show - 01 [1080p HEVC][br]", MagnetURL: "magnet:?xt=urn:btih:cccccccccccccccccccccccccccccccccccccccc"},
+	}
+	out := domain.PreferTorrentOverMagnetReleases(items)
+	require.Len(t, out, 2)
 }

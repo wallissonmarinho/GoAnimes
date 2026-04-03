@@ -200,6 +200,110 @@ func SortItemsForStreamChoices(items []CatalogItem) {
 	})
 }
 
+var magnetBtihRe = regexp.MustCompile(`(?i)btih:([a-f0-9]{40})`)
+
+func normalizedInfoHashHex(it CatalogItem) string {
+	h := strings.ToLower(strings.TrimSpace(it.InfoHash))
+	if len(h) == 40 {
+		return h
+	}
+	if m := magnetBtihRe.FindStringSubmatch(it.MagnetURL); len(m) > 1 {
+		return strings.ToLower(m[1])
+	}
+	return ""
+}
+
+// streamDedupeKey groups magnet vs torrent rows that point at the same swarm (same btih), or falls back to URL identity.
+func streamDedupeKey(it CatalogItem) string {
+	if h := normalizedInfoHashHex(it); h != "" {
+		return "btih:" + h
+	}
+	if u := strings.TrimSpace(it.TorrentURL); u != "" {
+		return "torrent:" + u
+	}
+	if u := strings.TrimSpace(it.MagnetURL); u != "" {
+		return "magnet:" + u
+	}
+	return ""
+}
+
+func streamReleasePickScore(it CatalogItem) int {
+	n := 0
+	if strings.TrimSpace(it.TorrentURL) != "" {
+		n += 100
+	}
+	if strings.TrimSpace(it.InfoHash) != "" {
+		n += 10
+	}
+	if strings.TrimSpace(it.MagnetURL) != "" {
+		n += 1
+	}
+	return n
+}
+
+func pickPreferredStreamRelease(group []CatalogItem) CatalogItem {
+	if len(group) == 0 {
+		return CatalogItem{}
+	}
+	best := group[0]
+	bestScore := streamReleasePickScore(best)
+	for _, it := range group[1:] {
+		s := streamReleasePickScore(it)
+		if s > bestScore {
+			bestScore = s
+			best = it
+			continue
+		}
+		if s < bestScore {
+			continue
+		}
+		bt := strings.HasPrefix(strings.TrimSpace(strings.ToLower(best.Name)), "[torrent]")
+		itT := strings.HasPrefix(strings.TrimSpace(strings.ToLower(it.Name)), "[torrent]")
+		if itT && !bt {
+			best = it
+			continue
+		}
+		if !itT && bt {
+			continue
+		}
+		if strings.TrimSpace(it.ID) < strings.TrimSpace(best.ID) {
+			best = it
+		}
+	}
+	return best
+}
+
+// PreferTorrentOverMagnetReleases collapses Erai-style duplicate rows (same infohash: [Torrent] + [Magnet]).
+// Keeps one entry per swarm, preferring .torrent (+ infohash when present) over magnet-only.
+func PreferTorrentOverMagnetReleases(items []CatalogItem) []CatalogItem {
+	if len(items) < 2 {
+		return items
+	}
+	var singletons []CatalogItem
+	byKey := make(map[string][]CatalogItem)
+	keyOrder := make([]string, 0)
+	seen := make(map[string]struct{})
+	for _, it := range items {
+		k := streamDedupeKey(it)
+		if k == "" {
+			singletons = append(singletons, it)
+			continue
+		}
+		if _, ok := seen[k]; !ok {
+			seen[k] = struct{}{}
+			keyOrder = append(keyOrder, k)
+		}
+		byKey[k] = append(byKey[k], it)
+	}
+	out := make([]CatalogItem, 0, len(keyOrder)+len(singletons))
+	for _, k := range keyOrder {
+		out = append(out, pickPreferredStreamRelease(byKey[k]))
+	}
+	out = append(out, singletons...)
+	SortItemsForStreamChoices(out)
+	return out
+}
+
 // ItemsForEpisodeVideoID returns all releases for one logical episode (any quality).
 func ItemsForEpisodeVideoID(items []CatalogItem, videoID string) []CatalogItem {
 	var out []CatalogItem
@@ -212,6 +316,7 @@ func ItemsForEpisodeVideoID(items []CatalogItem, videoID string) []CatalogItem {
 		}
 	}
 	SortItemsForStreamChoices(out)
+	out = PreferTorrentOverMagnetReleases(out)
 	return out
 }
 
