@@ -138,7 +138,15 @@ type animeSearchResp struct {
 }
 
 type animeByIDResp struct {
-	Data jikanAnime `json:"data"`
+	Data jikanAnimeFull `json:"data"`
+}
+
+type jikanAnimeFull struct {
+	jikanAnime
+	External []struct {
+		Name string `json:"name"`
+		URL  string `json:"url"`
+	} `json:"external"`
 }
 
 type jikanAnime struct {
@@ -177,6 +185,17 @@ type episodesListResp struct {
 		URL   string `json:"url"`
 		Title string `json:"title"`
 	} `json:"data"`
+}
+
+// FetchEpisodeTitlesByMalID loads episode titles from MyAnimeList via Jikan (/anime/{id}/episodes), paginated.
+func (c *Client) FetchEpisodeTitlesByMalID(ctx context.Context, malID int) (map[int]string, error) {
+	if c == nil || c.getter == nil {
+		return nil, errors.New("jikan: nil client")
+	}
+	if malID <= 0 {
+		return nil, errors.New("jikan: invalid mal id")
+	}
+	return c.fetchEpisodeTitles(ctx, malID)
 }
 
 func (c *Client) fetchEpisodeTitles(ctx context.Context, malID int) (map[int]string, error) {
@@ -259,7 +278,7 @@ func (c *Client) SearchAnimeEnrichment(ctx context.Context, title string) (domai
 	if err := ctx.Err(); err != nil {
 		return zero, err
 	}
-	detailURL := c.base + "/anime/" + strconv.Itoa(sresp.Data[0].MalID)
+	detailURL := c.base + "/anime/" + strconv.Itoa(sresp.Data[0].MalID) + "/full"
 	body2, err := c.getBytesJikan(ctx, detailURL)
 	if err != nil {
 		return zero, err
@@ -268,15 +287,36 @@ func (c *Client) SearchAnimeEnrichment(ctx context.Context, title string) (domai
 	if err := json.Unmarshal(body2, &dresp); err != nil {
 		return zero, err
 	}
-	en := jikanAnimeToEnrichment(dresp.Data)
 	malID := sresp.Data[0].MalID
-	if eps, err := c.fetchEpisodeTitles(ctx, malID); err == nil && len(eps) > 0 {
+	en := jikanAnimeToEnrichment(dresp.Data.jikanAnime, dresp.Data.External)
+	en.MalID = malID
+	if eps, err := c.FetchEpisodeTitlesByMalID(ctx, malID); err == nil && len(eps) > 0 {
 		en.EpisodeTitleByNum = eps
 	}
 	return en, nil
 }
 
-func jikanAnimeToEnrichment(a jikanAnime) domain.AniListSeriesEnrichment {
+func imdbFromJikanExternals(ext []struct {
+	Name string `json:"name"`
+	URL  string `json:"url"`
+}) string {
+	for _, e := range ext {
+		if id := domain.NormalizeIMDbID(e.URL); id != "" {
+			return id
+		}
+		if strings.EqualFold(strings.TrimSpace(e.Name), "IMDb") || strings.EqualFold(strings.TrimSpace(e.Name), "IMDB") {
+			if id := domain.NormalizeIMDbID(e.URL); id != "" {
+				return id
+			}
+		}
+	}
+	return ""
+}
+
+func jikanAnimeToEnrichment(a jikanAnime, external []struct {
+	Name string `json:"name"`
+	URL  string `json:"url"`
+}) domain.AniListSeriesEnrichment {
 	title := strings.TrimSpace(a.Title)
 	if a.TitleEnglish != nil {
 		if t := strings.TrimSpace(*a.TitleEnglish); t != "" {
@@ -313,6 +353,7 @@ func jikanAnimeToEnrichment(a jikanAnime) domain.AniListSeriesEnrichment {
 		EpisodeLengthMin:  epMin,
 		TrailerYouTubeID:  trailer,
 		TitlePreferred:    title,
+		ImdbID: imdbFromJikanExternals(external),
 		AniListSearchVer:  domain.AniListSearcherVersion,
 	}
 	return out

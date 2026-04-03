@@ -16,8 +16,9 @@ import (
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/httpclient"
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/jikan"
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/kitsu"
-	rssadapter "github.com/wallissonmarinho/GoAnimes/internal/adapters/rss"
+	rssadapter 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/rss"
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/state"
+	"github.com/wallissonmarinho/GoAnimes/internal/adapters/tmdb"
 	"github.com/wallissonmarinho/GoAnimes/internal/core/domain"
 	"github.com/wallissonmarinho/GoAnimes/internal/core/ports"
 )
@@ -105,6 +106,8 @@ type RSSSyncRuntimeOptions struct {
 	JikanMinDelay   time.Duration // sleep after each Jikan enrichment; 0 → default 900ms (client also paces each HTTP call)
 	Kitsu           *kitsu.Client
 	KitsuMinDelay   time.Duration // sleep after each Kitsu enrichment; 0 → default 400ms (client also paces)
+	TMDB            *tmdb.Client
+	TMDBMinDelay    time.Duration // sleep after each TMDB call; 0 → default 250ms
 	SynopsisTrans   ports.SynopsisTranslator // optional: nil in tests; production passes gilang translator
 }
 
@@ -119,6 +122,8 @@ type RSSSyncService struct {
 	jikanDelay    time.Duration
 	kitsu         *kitsu.Client
 	kitsuDelay    time.Duration
+	tmdb          *tmdb.Client
+	tmdbDelay     time.Duration
 	synopsisTrans ports.SynopsisTranslator
 	log                 *slog.Logger
 	mu                  sync.Mutex
@@ -151,6 +156,10 @@ func NewRSSSyncService(repo ports.CatalogRepository, mem *state.CatalogStore, o 
 	if kdly <= 0 {
 		kdly = 400 * time.Millisecond
 	}
+	tmdly := o.TMDBMinDelay
+	if tmdly <= 0 {
+		tmdly = 250 * time.Millisecond
+	}
 	return &RSSSyncService{
 		repo:          repo,
 		mem:           mem,
@@ -161,6 +170,8 @@ func NewRSSSyncService(repo ports.CatalogRepository, mem *state.CatalogStore, o 
 		jikanDelay:    jdly,
 		kitsu:         o.Kitsu,
 		kitsuDelay:    kdly,
+		tmdb:          o.TMDB,
+		tmdbDelay:     tmdly,
 		synopsisTrans: o.SynopsisTrans,
 		log:           log,
 	}
@@ -395,6 +406,93 @@ func (s *RSSSyncService) enrichKitsuGaps(ctx context.Context, series []domain.Ca
 	}
 }
 
+// enrichJikanMalEpisodeTitles pulls MAL episode names via Jikan when MalID is known (e.g. AniList idMal),
+// without repeating a full Jikan anime search. Merge only fills episode numbers still missing in cache.
+func (s *RSSSyncService) enrichJikanMalEpisodeTitles(ctx context.Context, series []domain.CatalogSeries, cache map[string]domain.AniListSeriesEnrichment, syncNotes *[]string) {
+	if len(series) == 0 || s.jikan == nil {
+		return
+	}
+	n := 0
+	for _, ser := range series {
+		select {
+		case <-ctx.Done():
+			s.log.Warn("jikan mal episodes: stopped early (context done)", slog.Int("merged", n))
+			appendSyncNote(syncNotes, "jikan mal episodes: stopped early (context cancelled)")
+			return
+		default:
+		}
+		cur := cache[ser.ID]
+		if cur.MalID <= 0 {
+			continue
+		}
+		eps, err := s.jikan.FetchEpisodeTitlesByMalID(ctx, cur.MalID)
+		if err != nil {
+			s.log.Debug("jikan mal episodes failed", slog.Int("mal_id", cur.MalID), slog.String("series", ser.Name), slog.Any("err", err))
+			appendSyncNote(syncNotes, fmt.Sprintf("jikan mal episodes %d: %v", cur.MalID, err))
+			continue
+		}
+		if len(eps) == 0 {
+			continue
+		}
+		cache[ser.ID] = domain.MergeAniListEnrichment(cur, domain.AniListSeriesEnrichment{EpisodeTitleByNum: eps})
+		n++
+		if s.jikanDelay > 0 {
+			time.Sleep(s.jikanDelay)
+		}
+	}
+	if n > 0 {
+		s.log.Info("jikan: merged MAL episode titles by mal_id", slog.Int("series", n))
+	}
+}
+
+func (s *RSSSyncService) resolveStremioHeroBackgrounds(ctx context.Context, series []domain.CatalogSeries, cache map[string]domain.AniListSeriesEnrichment, syncNotes *[]string) {
+	if len(series) == 0 {
+		return
+	}
+	if s.tmdb == nil {
+		s.log.Info("tmdb: skipped (no API key or GOANIMES_TMDB_DISABLED; hero uses AniList/Kitsu only)")
+	}
+	n := 0
+	for i, ser := range series {
+		select {
+		case <-ctx.Done():
+			s.log.Warn("stremio hero: stopped early (context done)", slog.Int("resolved", n))
+			appendSyncNote(syncNotes, "stremio hero: stopped early (context cancelled)")
+			return
+		default:
+		}
+		en := cache[ser.ID]
+		search := ser.Name
+		var tmdbCands []domain.BackgroundCandidate
+		if s.tmdb != nil {
+			cands, err := TMDBBackdropCandidatesForEnrichment(ctx, s.tmdb, en, search)
+			if err != nil {
+				s.log.Debug("tmdb backdrop fetch failed", slog.String("series", ser.Name), slog.Any("err", err))
+				appendSyncNote(syncNotes, fmt.Sprintf("tmdb %q: %v", ser.Name, err))
+			} else {
+				tmdbCands = cands
+			}
+			if i > 0 && s.tmdbDelay > 0 {
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(s.tmdbDelay):
+				}
+			}
+		}
+		hero := strings.TrimSpace(domain.ResolveStremioHeroBackground(en, tmdbCands))
+		if hero == "" {
+			continue
+		}
+		en.StremioHeroBackgroundURL = hero
+		cache[ser.ID] = en
+		n++
+	}
+	if n > 0 {
+		s.log.Info("stremio hero: resolved backgrounds", slog.Int("series", n), slog.Bool("tmdb", s.tmdb != nil))
+	}
+}
+
 // Run fetches all RSS sources and rebuilds the catalog.
 func (s *RSSSyncService) Run(ctx context.Context) domain.SyncResult {
 	s.mu.Lock()
@@ -438,6 +536,9 @@ func (s *RSSSyncService) Run(ctx context.Context) domain.SyncResult {
 			AniListBySeries: anilistCache,
 		}
 		domain.EnsureSnapshotGrouped(&snap)
+		var emptyNotes []string
+		s.resolveStremioHeroBackgrounds(ctx, snap.Series, anilistCache, &emptyNotes)
+		snap.AniListBySeries = anilistCache
 		domain.ApplyAniListEnrichmentToSeries(&snap)
 		snap.LastSyncErrors = nil
 		_ = s.mem.SetAndPersist(ctx, s.repo, snap)
@@ -571,6 +672,8 @@ doneTorrentBackfill:
 	s.enrichAniListSeries(ctx, snap.Series, anilistCache, &enrichNotes)
 	s.enrichJikanGaps(ctx, snap.Series, anilistCache, &enrichNotes)
 	s.enrichKitsuGaps(ctx, snap.Series, anilistCache, &enrichNotes)
+	s.enrichJikanMalEpisodeTitles(ctx, snap.Series, anilistCache, &enrichNotes)
+	s.resolveStremioHeroBackgrounds(ctx, snap.Series, anilistCache, &enrichNotes)
 	pruneAniListCache(anilistCache, snap.Series)
 	snap.AniListBySeries = anilistCache
 	domain.ApplyAniListEnrichmentToSeries(&snap)

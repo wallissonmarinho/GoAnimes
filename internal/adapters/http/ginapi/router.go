@@ -8,6 +8,7 @@ import (
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/anilist"
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/jikan"
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/kitsu"
+	"github.com/wallissonmarinho/GoAnimes/internal/adapters/tmdb"
 	"github.com/wallissonmarinho/GoAnimes/internal/core/ports"
 )
 
@@ -23,6 +24,7 @@ type Deps struct {
 	AniList *anilist.Client    // optional: lazy-fetch when cache is empty
 	Jikan   *jikan.Client      // optional: MAL fallback when AniList left gaps
 	Kitsu   *kitsu.Client      // optional: Kitsu JSON:API when gaps remain after Jikan
+	TMDB    *tmdb.Client       // optional: backdrops via IMDb→TMDB find (GOANIMES_TMDB_API_KEY)
 	// SynopsisTrans optional (nil in tests); production wires gilang Google translate.
 	SynopsisTrans ports.SynopsisTranslator
 	Log           *slog.Logger

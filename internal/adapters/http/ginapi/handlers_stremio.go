@@ -25,7 +25,7 @@ const (
 	stremioTypeMovie     = "movie"
 	stremioTypeSeries    = "series"
 	// stremioManifestVersion: PATCH = fixes, tuning, deps, docs; MINOR = nova funcionalidade visível (API, sync, catálogo Stremio); MAJOR = contrato que parte instalações.
-	stremioManifestVersion = "1.4.1"
+	stremioManifestVersion = "1.5.0"
 )
 
 func stremioMetaOrStreamTypeOK(t string) bool {
@@ -106,13 +106,17 @@ func appendAniListCalendarVideo(seriesID string, season, nextEp int, en domain.A
 		title = "Episódio " + fmt.Sprintf("%d", nextEp)
 	}
 	title = title + " · agendado (AniList)"
-	*videos = append(*videos, gin.H{
+	row := gin.H{
 		"id":       vid,
 		"title":    title,
 		"released": released,
 		"season":   season,
 		"episode":  nextEp,
-	})
+	}
+	if thumb := strings.TrimSpace(en.PosterURL); thumb != "" {
+		row["thumbnail"] = thumb
+	}
+	*videos = append(*videos, row)
 }
 
 func stremioUnescapePathParam(s string) string {
@@ -281,6 +285,26 @@ func (h *handlers) getMeta(c *gin.Context) {
 				if err == nil {
 					h.deps.Catalog.MergeAniListEnrichment(ser.ID, add)
 					en = domain.MergeAniListEnrichment(en, add)
+					didLazyEnrich = true
+				}
+			}
+			if h.deps.TMDB != nil && strings.TrimSpace(en.StremioHeroBackgroundURL) == "" {
+				cands, terr := services.TMDBBackdropCandidatesForEnrichment(ctx, h.deps.TMDB, en, search)
+				if terr == nil {
+					hero := strings.TrimSpace(domain.ResolveStremioHeroBackground(en, cands))
+					if hero != "" {
+						h.deps.Catalog.ReplaceStremioHeroBackground(ser.ID, hero)
+						en.StremioHeroBackgroundURL = hero
+						didLazyEnrich = true
+					}
+				}
+			}
+			if h.deps.Jikan != nil && en.MalID > 0 {
+				eps, jerr := h.deps.Jikan.FetchEpisodeTitlesByMalID(ctx, en.MalID)
+				if jerr == nil && len(eps) > 0 {
+					addEp := domain.AniListSeriesEnrichment{EpisodeTitleByNum: eps}
+					h.deps.Catalog.MergeAniListEnrichment(ser.ID, addEp)
+					en = domain.MergeAniListEnrichment(en, addEp)
 					didLazyEnrich = true
 				}
 			}
@@ -467,8 +491,13 @@ func mergeAniListSeriesMeta(meta gin.H, en domain.AniListSeriesEnrichment) {
 	if en.EpisodeLengthMin > 0 {
 		meta["runtime"] = fmt.Sprintf("~%d min por episódio", en.EpisodeLengthMin)
 	}
-	// Stremio hero/backdrop looks bad with AniList’s ultra-wide banners; use cover art only.
-	bg := strings.TrimSpace(en.PosterURL)
+	bg := strings.TrimSpace(en.StremioHeroBackgroundURL)
+	if bg == "" {
+		bg = strings.TrimSpace(domain.ResolveStremioHeroBackground(en, nil))
+	}
+	if bg == "" {
+		bg = strings.TrimSpace(en.PosterURL)
+	}
 	if bg == "" {
 		if p, ok := meta["poster"].(string); ok {
 			bg = strings.TrimSpace(p)

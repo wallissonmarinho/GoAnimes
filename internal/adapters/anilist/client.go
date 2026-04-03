@@ -138,6 +138,7 @@ type MediaDetails struct {
 	// NextAiring* from AniList nextAiringEpisode (Stremio Calendar); unix 0 if not airing / unknown.
 	NextAiringUnix    int64
 	NextAiringEpisode int
+	MalID             int // AniList idMal → MAL / Jikan
 }
 
 // ToDomainEnrichment maps API details into the persisted enrichment shape.
@@ -147,9 +148,11 @@ func ToDomainEnrichment(d MediaDetails) domain.AniListSeriesEnrichment {
 		ep = map[int]string{}
 	}
 	desc := domain.LocalizeAniListDescriptionPTBR(d.Description)
+	banner := strings.TrimSpace(d.BackgroundURL)
 	out := domain.AniListSeriesEnrichment{
 		PosterURL:         d.PosterURL,
-		BackgroundURL:     d.BackgroundURL,
+		BackgroundURL:     banner,
+		AniListBannerURL:  banner,
 		Description:       desc,
 		Genres:            domain.TranslateAnimeGenresToPTBR(append([]string(nil), d.Genres...)),
 		StartYear:         d.StartYear,
@@ -157,6 +160,7 @@ func ToDomainEnrichment(d MediaDetails) domain.AniListSeriesEnrichment {
 		TrailerYouTubeID:  d.TrailerYouTubeID,
 		TitlePreferred:    d.Title,
 		TitleNative:       d.NativeTitle,
+		MalID:             d.MalID,
 		AniListSearchVer:  domain.AniListSearcherVersion,
 		EpisodeTitleByNum: ep,
 		NextAiringFromAniList: true,
@@ -189,6 +193,7 @@ type gqlPage struct {
 }
 
 type gqlMedia struct {
+	IDMal              *int                   `json:"idMal"`
 	Title              gqlTitle               `json:"title"`
 	CoverImage         gqlCoverImage          `json:"coverImage"`
 	BannerImage        *string                `json:"bannerImage"` // AniList: scalar URL (not { large })
@@ -235,6 +240,7 @@ type gqlCoverImage struct {
 const searchMediaQuery = `query ($search: String, $perPage: Int) {
   Page(page: 1, perPage: $perPage) {
     media(search: $search, type: ANIME, sort: SEARCH_MATCH, isAdult: false) {
+      idMal
       title { userPreferred english native romaji }
       coverImage { extraLarge large }
       bannerImage
@@ -303,6 +309,9 @@ func (c *Client) SearchAnimeMedia(ctx context.Context, title string) (MediaDetai
 		}
 		if m.BannerImage != nil {
 			out.BackgroundURL = strings.TrimSpace(*m.BannerImage)
+		}
+		if m.IDMal != nil && *m.IDMal > 0 {
+			out.MalID = *m.IDMal
 		}
 		out.Title = pickTitleLatin(m.Title)
 		out.NativeTitle = strings.TrimSpace(m.Title.Native)

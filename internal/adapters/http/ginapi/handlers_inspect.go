@@ -45,6 +45,8 @@ func (h *handlers) getInspectCatalog(c *gin.Context) {
 				"ani_list_search_ver":  en.AniListSearchVer,
 				"poster_url":           en.PosterURL,
 				"background_url":       en.BackgroundURL,
+				"stremio_hero_bg":      en.StremioHeroBackgroundURL,
+				"imdb_id":              en.ImdbID,
 				"description_len":      len(strings.TrimSpace(en.Description)),
 				"genres":               en.Genres,
 				"start_year":           en.StartYear,

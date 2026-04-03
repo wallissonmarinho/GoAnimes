@@ -20,11 +20,7 @@ func TestClient_SearchAnimeEnrichment(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"data":[{"mal_id":99}]}`))
 	})
-	mux.HandleFunc("/v4/anime/99", func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/v4/anime/99" {
-			http.NotFound(w, r)
-			return
-		}
+	mux.HandleFunc("/v4/anime/99/full", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{
 			"data": {
@@ -35,7 +31,8 @@ func TestClient_SearchAnimeEnrichment(t *testing.T) {
 				"duration": "24 min per ep",
 				"genres": [{"name": "Action"}],
 				"images": {"jpg": {"large_image_url": "https://cdn.example/l.jpg"}},
-				"trailer": {"youtube_id": "abc123xyz"}
+				"trailer": {"youtube_id": "abc123xyz"},
+				"external": []
 			}
 		}`))
 	})
@@ -66,4 +63,11 @@ func TestClient_SearchAnimeEnrichment(t *testing.T) {
 	require.Equal(t, "abc123xyz", en.TrailerYouTubeID)
 	require.Equal(t, "First", en.EpisodeTitleByNum[1])
 	require.Equal(t, "Second", en.EpisodeTitleByNum[2])
+}
+
+func TestClient_FetchEpisodeTitlesByMalID_invalid(t *testing.T) {
+	g := httpclient.NewGetter(5*time.Second, "GoAnimes/test", 1<<20)
+	c := jikan.NewClient(g, jikan.WithMinRequestInterval(0))
+	_, err := c.FetchEpisodeTitlesByMalID(context.Background(), 0)
+	require.Error(t, err)
 }

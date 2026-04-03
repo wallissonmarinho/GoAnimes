@@ -9,13 +9,19 @@ import (
 type AniListSeriesEnrichment struct {
 	PosterURL         string         `json:"poster,omitempty"`
 	BackgroundURL     string         `json:"background,omitempty"`
-	Description       string         `json:"description,omitempty"`
+	// AniListBannerURL is the wide banner from AniList (if any), used with Kitsu/TMDB to pick a Stremio hero image.
+	AniListBannerURL string `json:"al_banner,omitempty"`
+	// StremioHeroBackgroundURL is the chosen wide backdrop for Stremio meta.background (1280×720-oriented pick incl. TMDB).
+	StremioHeroBackgroundURL string `json:"hero_bg,omitempty"`
+	Description       string   `json:"description,omitempty"`
 	Genres            []string       `json:"genres,omitempty"`
 	StartYear         int            `json:"start_year,omitempty"`
 	EpisodeLengthMin  int            `json:"ep_min,omitempty"`
 	TrailerYouTubeID  string         `json:"trailer_yt,omitempty"`
 	TitlePreferred    string         `json:"title_pref,omitempty"`    // romaji / English / ASCII userPreferred (Stremio catalog listing)
 	TitleNative       string         `json:"title_native,omitempty"`  // Japanese (optional; meta detail)
+	MalID             int            `json:"mal_id,omitempty"`        // MyAnimeList id (AniList idMal / Jikan)
+	ImdbID            string         `json:"imdb,omitempty"`          // tt… when Jikan/MAL lists IMDb (TMDB find)
 	AniListSearchVer  int            `json:"al_search_ver,omitempty"` // bump forces refetch after search logic changes
 	EpisodeTitleByNum map[int]string `json:"ep_titles"`
 	// NextAiring* from AniList nextAiringEpisode (Stremio Calendar). NextAiringFromAniList=true means the last
@@ -82,6 +88,18 @@ func MergeAniListEnrichment(stored, add AniListSeriesEnrichment) AniListSeriesEn
 	}
 	if strings.TrimSpace(out.BackgroundURL) == "" {
 		out.BackgroundURL = strings.TrimSpace(add.BackgroundURL)
+	}
+	if strings.TrimSpace(out.AniListBannerURL) == "" {
+		out.AniListBannerURL = strings.TrimSpace(add.AniListBannerURL)
+	}
+	if strings.TrimSpace(out.StremioHeroBackgroundURL) == "" {
+		out.StremioHeroBackgroundURL = strings.TrimSpace(add.StremioHeroBackgroundURL)
+	}
+	if out.MalID == 0 && add.MalID > 0 {
+		out.MalID = add.MalID
+	}
+	if strings.TrimSpace(out.ImdbID) == "" {
+		out.ImdbID = strings.TrimSpace(add.ImdbID)
 	}
 	if out.StartYear == 0 && add.StartYear > 0 {
 		out.StartYear = add.StartYear

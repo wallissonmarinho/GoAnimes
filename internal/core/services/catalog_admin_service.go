@@ -95,4 +95,8 @@ func (s *CatalogAdminService) ReplaceAniListSynopsis(seriesID, description strin
 	s.store.ReplaceAniListSynopsis(seriesID, description)
 }
 
+func (s *CatalogAdminService) ReplaceStremioHeroBackground(seriesID, backgroundURL string) {
+	s.store.ReplaceStremioHeroBackground(seriesID, backgroundURL)
+}
+
 var _ ports.CatalogAdmin = (*CatalogAdminService)(nil)

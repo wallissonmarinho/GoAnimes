@@ -10,6 +10,7 @@ import (
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/httpclient"
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/jikan"
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/kitsu"
+	"github.com/wallissonmarinho/GoAnimes/internal/adapters/tmdb"
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/translate"
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/state"
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/storage"
@@ -52,7 +53,7 @@ func NewSynopsisTranslator(httpTimeout time.Duration, userAgent string, maxBody 
 }
 
 // NewRSSSyncService builds sync with concrete deps and returns optional API clients for HTTP handlers.
-func NewRSSSyncService(repo *storage.Catalog, mem *state.CatalogStore, o services.RSSSyncRuntimeOptions) (*services.RSSSyncService, *anilist.Client, *jikan.Client, *kitsu.Client) {
+func NewRSSSyncService(repo *storage.Catalog, mem *state.CatalogStore, o services.RSSSyncRuntimeOptions) (*services.RSSSyncService, *anilist.Client, *jikan.Client, *kitsu.Client, *tmdb.Client) {
 	var al *anilist.Client
 	if !anilistDisabled() {
 		// Smaller cap for JSON POST bodies; AniList responses are tiny.
@@ -87,7 +88,21 @@ func NewRSSSyncService(repo *storage.Catalog, mem *state.CatalogStore, o service
 			}
 		}
 	}
-	return services.NewRSSSyncService(repo, mem, o, nil), al, jk, ks
+	var tmdbCl *tmdb.Client
+	if !tmdbDisabled() {
+		key := strings.TrimSpace(os.Getenv("GOANIMES_TMDB_API_KEY"))
+		if key != "" {
+			g := httpclient.NewGetter(o.HTTPTimeout, o.UserAgent, 2<<20)
+			tmdbCl = tmdb.NewClient(g, key)
+			o.TMDB = tmdbCl
+			if o.TMDBMinDelay <= 0 {
+				if d, err := time.ParseDuration(getenv("GOANIMES_TMDB_MIN_DELAY", "250ms")); err == nil {
+					o.TMDBMinDelay = d
+				}
+			}
+		}
+	}
+	return services.NewRSSSyncService(repo, mem, o, nil), al, jk, ks, tmdbCl
 }
 
 func anilistDisabled() bool {
@@ -102,6 +117,11 @@ func jikanDisabled() bool {
 
 func kitsuDisabled() bool {
 	v := strings.ToLower(strings.TrimSpace(os.Getenv("GOANIMES_KITSU_DISABLED")))
+	return v == "1" || v == "true" || v == "yes"
+}
+
+func tmdbDisabled() bool {
+	v := strings.ToLower(strings.TrimSpace(os.Getenv("GOANIMES_TMDB_DISABLED")))
 	return v == "1" || v == "true" || v == "yes"
 }
 

@@ -35,6 +35,8 @@ type CatalogAdmin interface {
 	MergeAniListEnrichment(seriesID string, add domain.AniListSeriesEnrichment)
 	// ReplaceAniListSynopsis overwrites cached synopsis and the catalog row (e.g. optional machine translation).
 	ReplaceAniListSynopsis(seriesID, description string)
+	// ReplaceStremioHeroBackground sets the resolved wide backdrop for Stremio (sync or lazy TMDB).
+	ReplaceStremioHeroBackground(seriesID, backgroundURL string)
 }
 
 // SyncRunner runs RSS fetch + parse + filter.
