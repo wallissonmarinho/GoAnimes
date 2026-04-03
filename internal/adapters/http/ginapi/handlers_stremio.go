@@ -24,7 +24,7 @@ const (
 	stremioTypeMovie     = "movie"
 	stremioTypeSeries    = "series"
 	// stremioManifestVersion: PATCH = fixes, tuning, deps, docs; MINOR = nova funcionalidade visível (API, sync, catálogo Stremio); MAJOR = contrato que parte instalações.
-	stremioManifestVersion = "1.2.3"
+	stremioManifestVersion = "1.3.0"
 )
 
 func stremioMetaOrStreamTypeOK(t string) bool {
@@ -211,6 +211,14 @@ func (h *handlers) getMeta(c *gin.Context) {
 			}
 			if h.deps.Jikan != nil && domain.EnrichmentCouldUseJikan(en) {
 				add, err := h.deps.Jikan.SearchAnimeEnrichment(ctx, search)
+				if err == nil {
+					h.deps.Catalog.MergeAniListEnrichment(ser.ID, add)
+					en = domain.MergeAniListEnrichment(en, add)
+					didLazyEnrich = true
+				}
+			}
+			if h.deps.Kitsu != nil && domain.EnrichmentCouldUseJikan(en) {
+				add, err := h.deps.Kitsu.SearchAnimeEnrichment(ctx, search)
 				if err == nil {
 					h.deps.Catalog.MergeAniListEnrichment(ser.ID, add)
 					en = domain.MergeAniListEnrichment(en, add)

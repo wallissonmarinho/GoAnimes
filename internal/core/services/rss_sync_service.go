@@ -15,6 +15,7 @@ import (
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/btmeta"
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/httpclient"
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/jikan"
+	"github.com/wallissonmarinho/GoAnimes/internal/adapters/kitsu"
 	rssadapter "github.com/wallissonmarinho/GoAnimes/internal/adapters/rss"
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/state"
 	"github.com/wallissonmarinho/GoAnimes/internal/core/domain"
@@ -102,6 +103,8 @@ type RSSSyncRuntimeOptions struct {
 	AniListMinDelay time.Duration // extra sleep after each AniList success (client already paces requests); default 0
 	Jikan           *jikan.Client
 	JikanMinDelay   time.Duration // sleep after each Jikan enrichment; 0 → default 900ms (client also paces each HTTP call)
+	Kitsu           *kitsu.Client
+	KitsuMinDelay   time.Duration // sleep after each Kitsu enrichment; 0 → default 400ms (client also paces)
 	SynopsisTrans   ports.SynopsisTranslator // optional: synopsis translation (gilang googletranslate when enabled)
 }
 
@@ -114,10 +117,13 @@ type RSSSyncService struct {
 	anilistDelay time.Duration
 	jikan         *jikan.Client
 	jikanDelay    time.Duration
+	kitsu         *kitsu.Client
+	kitsuDelay    time.Duration
 	synopsisTrans ports.SynopsisTranslator
-	log           *slog.Logger
-	mu            sync.Mutex
-	syncRunning   atomic.Bool
+	log                 *slog.Logger
+	mu                  sync.Mutex
+	syncRunning         atomic.Bool
+	syncRunStartedUnix  atomic.Int64 // Unix nano UTC while Run holds the lock; 0 when idle
 }
 
 func NewRSSSyncService(repo ports.CatalogRepository, mem *state.CatalogStore, o RSSSyncRuntimeOptions, log *slog.Logger) *RSSSyncService {
@@ -141,6 +147,10 @@ func NewRSSSyncService(repo ports.CatalogRepository, mem *state.CatalogStore, o 
 	if jdly <= 0 {
 		jdly = 900 * time.Millisecond
 	}
+	kdly := o.KitsuMinDelay
+	if kdly <= 0 {
+		kdly = 400 * time.Millisecond
+	}
 	return &RSSSyncService{
 		repo:          repo,
 		mem:           mem,
@@ -149,6 +159,8 @@ func NewRSSSyncService(repo ports.CatalogRepository, mem *state.CatalogStore, o 
 		anilistDelay:  dly,
 		jikan:         o.Jikan,
 		jikanDelay:    jdly,
+		kitsu:         o.Kitsu,
+		kitsuDelay:    kdly,
 		synopsisTrans: o.SynopsisTrans,
 		log:           log,
 	}
@@ -160,6 +172,18 @@ func (s *RSSSyncService) SyncRunning() bool {
 		return false
 	}
 	return s.syncRunning.Load()
+}
+
+// SyncRunStartedAt returns UTC start time of the current Run, or zero if not running.
+func (s *RSSSyncService) SyncRunStartedAt() time.Time {
+	if s == nil || !s.syncRunning.Load() {
+		return time.Time{}
+	}
+	n := s.syncRunStartedUnix.Load()
+	if n == 0 {
+		return time.Time{}
+	}
+	return time.Unix(0, n).UTC()
 }
 
 func cloneAniListCache(m map[string]domain.AniListSeriesEnrichment) map[string]domain.AniListSeriesEnrichment {
@@ -222,22 +246,55 @@ func (s *RSSSyncService) enrichAniListSeries(ctx context.Context, series []domai
 			fails++
 			qlog := domain.NormalizeExternalAnimeSearchQuery(ser.Name)
 			s.log.Warn("anilist lookup failed", slog.String("series", ser.Name), slog.String("search_query", qlog), slog.Any("err", err))
+			cur := cache[ser.ID]
 			// Jikan/MAL na mesma passagem: AniList muitas vezes não tem título alternativo (ex. romanização do RSS).
-			if s.jikan != nil && domain.EnrichmentCouldUseJikan(cache[ser.ID]) {
+			if s.jikan != nil && domain.EnrichmentCouldUseJikan(cur) {
 				add, jerr := s.jikan.SearchAnimeEnrichment(ctx, ser.Name)
-				if jerr != nil {
-					s.log.Debug("jikan fallback after anilist failure", slog.String("series", ser.Name), slog.Any("err", jerr))
-					appendSyncNote(syncNotes, fmt.Sprintf("enrichment %q: anilist: %v; jikan: %v", qlog, err, jerr))
+				if jerr == nil {
+					merged := domain.MergeAniListEnrichment(cur, add)
+					merged.Description = TranslateSynopsisToPT(s.synopsisTrans, s.log, merged.Description)
+					cache[ser.ID] = merged
+					newN++
+					s.log.Info("jikan: filled series after anilist miss", slog.String("series", ser.Name), slog.String("search_query", qlog))
+					if s.jikanDelay > 0 {
+						time.Sleep(s.jikanDelay)
+					}
 					continue
 				}
-				merged := domain.MergeAniListEnrichment(cache[ser.ID], add)
-				merged.Description = TranslateSynopsisToPT(s.synopsisTrans, s.log, merged.Description)
-				cache[ser.ID] = merged
-				newN++
-				s.log.Info("jikan: filled series after anilist miss", slog.String("series", ser.Name), slog.String("search_query", qlog))
-				if s.jikanDelay > 0 {
-					time.Sleep(s.jikanDelay)
+				s.log.Debug("jikan fallback after anilist failure", slog.String("series", ser.Name), slog.Any("err", jerr))
+				if s.kitsu != nil && domain.EnrichmentCouldUseJikan(cur) {
+					addK, kerr := s.kitsu.SearchAnimeEnrichment(ctx, ser.Name)
+					if kerr == nil {
+						merged := domain.MergeAniListEnrichment(cur, addK)
+						merged.Description = TranslateSynopsisToPT(s.synopsisTrans, s.log, merged.Description)
+						cache[ser.ID] = merged
+						newN++
+						s.log.Info("kitsu: filled series after anilist+jikan miss", slog.String("series", ser.Name), slog.String("search_query", qlog))
+						if s.kitsuDelay > 0 {
+							time.Sleep(s.kitsuDelay)
+						}
+						continue
+					}
+					appendSyncNote(syncNotes, fmt.Sprintf("enrichment %q: anilist: %v; jikan: %v; kitsu: %v", qlog, err, jerr, kerr))
+					continue
 				}
+				appendSyncNote(syncNotes, fmt.Sprintf("enrichment %q: anilist: %v; jikan: %v", qlog, err, jerr))
+				continue
+			}
+			if s.kitsu != nil && domain.EnrichmentCouldUseJikan(cur) {
+				addK, kerr := s.kitsu.SearchAnimeEnrichment(ctx, ser.Name)
+				if kerr == nil {
+					merged := domain.MergeAniListEnrichment(cur, addK)
+					merged.Description = TranslateSynopsisToPT(s.synopsisTrans, s.log, merged.Description)
+					cache[ser.ID] = merged
+					newN++
+					s.log.Info("kitsu: filled series after anilist miss (no jikan)", slog.String("series", ser.Name), slog.String("search_query", qlog))
+					if s.kitsuDelay > 0 {
+						time.Sleep(s.kitsuDelay)
+					}
+					continue
+				}
+				appendSyncNote(syncNotes, fmt.Sprintf("enrichment %q: anilist: %v; kitsu: %v", qlog, err, kerr))
 				continue
 			}
 			appendSyncNote(syncNotes, fmt.Sprintf("anilist %q: %v", qlog, err))
@@ -296,15 +353,60 @@ func (s *RSSSyncService) enrichJikanGaps(ctx context.Context, series []domain.Ca
 	}
 }
 
+func (s *RSSSyncService) enrichKitsuGaps(ctx context.Context, series []domain.CatalogSeries, cache map[string]domain.AniListSeriesEnrichment, syncNotes *[]string) {
+	if len(series) == 0 || s.kitsu == nil {
+		if s.kitsu == nil {
+			s.log.Info("kitsu: skipped (set GOANIMES_KITSU_DISABLED=true to disable; no client)")
+		}
+		return
+	}
+	n := 0
+	for _, ser := range series {
+		select {
+		case <-ctx.Done():
+			s.log.Warn("kitsu: stopped early (context done)", slog.Int("merged", n))
+			appendSyncNote(syncNotes, "kitsu: stopped early (context cancelled)")
+			return
+		default:
+		}
+		if strings.TrimSpace(ser.Name) == "" {
+			continue
+		}
+		cur := cache[ser.ID]
+		if !domain.EnrichmentCouldUseJikan(cur) {
+			continue
+		}
+		add, err := s.kitsu.SearchAnimeEnrichment(ctx, ser.Name)
+		if err != nil {
+			s.log.Debug("kitsu lookup skipped or failed", slog.String("series", ser.Name), slog.Any("err", err))
+			appendSyncNote(syncNotes, fmt.Sprintf("kitsu %q: %v", ser.Name, err))
+			continue
+		}
+		merged := domain.MergeAniListEnrichment(cur, add)
+		merged.Description = TranslateSynopsisToPT(s.synopsisTrans, s.log, merged.Description)
+		cache[ser.ID] = merged
+		n++
+		if s.kitsuDelay > 0 {
+			time.Sleep(s.kitsuDelay)
+		}
+	}
+	if n > 0 {
+		s.log.Info("kitsu: filled gaps", slog.Int("series", n))
+	}
+}
+
 // Run fetches all RSS sources and rebuilds the catalog.
 func (s *RSSSyncService) Run(ctx context.Context) domain.SyncResult {
-	s.syncRunning.Store(true)
-	defer s.syncRunning.Store(false)
-
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	started := time.Now().UTC()
+	s.syncRunStartedUnix.Store(started.UnixNano())
+	s.syncRunning.Store(true)
+	defer func() {
+		s.syncRunning.Store(false)
+		s.syncRunStartedUnix.Store(0)
+	}()
 	prevSnap, _ := s.repo.LoadCatalogSnapshot(ctx)
 	anilistCache := cloneAniListCache(prevSnap.AniListBySeries)
 	live := s.mem.Snapshot()
@@ -468,6 +570,7 @@ doneTorrentBackfill:
 	var enrichNotes []string
 	s.enrichAniListSeries(ctx, snap.Series, anilistCache, &enrichNotes)
 	s.enrichJikanGaps(ctx, snap.Series, anilistCache, &enrichNotes)
+	s.enrichKitsuGaps(ctx, snap.Series, anilistCache, &enrichNotes)
 	pruneAniListCache(anilistCache, snap.Series)
 	snap.AniListBySeries = anilistCache
 	domain.ApplyAniListEnrichmentToSeries(&snap)

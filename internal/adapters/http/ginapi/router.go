@@ -7,6 +7,7 @@ import (
 
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/anilist"
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/jikan"
+	"github.com/wallissonmarinho/GoAnimes/internal/adapters/kitsu"
 	"github.com/wallissonmarinho/GoAnimes/internal/core/ports"
 )
 
@@ -21,6 +22,7 @@ type Deps struct {
 	Catalog ports.CatalogAdmin // RSS admin, sync-status from DB, live Stremio catalog (memory), persistence after lazy enrich
 	AniList *anilist.Client    // optional: lazy-fetch when cache is empty
 	Jikan   *jikan.Client      // optional: MAL fallback when AniList left gaps
+	Kitsu   *kitsu.Client      // optional: Kitsu JSON:API when gaps remain after Jikan
 	// SynopsisTrans optional; translate.FromEnv when GOANIMES_GOOGLE_GTX_TRANSLATE or GOANIMES_GOOGLE_CLIENTS5_TRANSLATE.
 	SynopsisTrans ports.SynopsisTranslator
 	Log           *slog.Logger

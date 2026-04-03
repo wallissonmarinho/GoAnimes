@@ -2,6 +2,7 @@ package ports
 
 import (
 	"context"
+	"time"
 
 	"github.com/wallissonmarinho/GoAnimes/internal/core/domain"
 )
@@ -41,4 +42,6 @@ type SyncRunner interface {
 	Run(ctx context.Context) domain.SyncResult
 	// SyncRunning is true while Run is executing (interval job or manual rebuild).
 	SyncRunning() bool
+	// SyncRunStartedAt is UTC start of the in-progress Run, or zero if not running.
+	SyncRunStartedAt() time.Time
 }

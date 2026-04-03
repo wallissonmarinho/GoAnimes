@@ -38,18 +38,31 @@ func (h *handlers) getSyncStatus(c *gin.Context) {
 	if h.deps.Sync != nil {
 		running = h.deps.Sync.SyncRunning()
 	}
-	// While Run() is in progress, DB still holds the *previous* completed snapshot; flat
-	// started_at/finished_at would falsely imply the current job already finished.
+	// While Run() is in progress, DB still holds the *previous* completed snapshot.
+	// started_at is the live run start; finished_at stays null until persist.
+	// ok/message/item_count/errors at top level are only for the last *completed* run — when a job is in flight they are null and the same data is under last_sync_*.
 	resp := gin.H{
-		"ok":           snap.OK,
-		"message":      snap.Message,
-		"item_count":   snap.ItemCount,
-		"errors":       errs,
 		"sync_running": running,
 	}
 	if running {
-		resp["started_at"] = nil
+		resp["ok"] = nil
+		resp["message"] = nil
+		resp["item_count"] = nil
+		resp["errors"] = nil
 		resp["finished_at"] = nil
+		curStart := time.Time{}
+		if h.deps.Sync != nil {
+			curStart = h.deps.Sync.SyncRunStartedAt()
+		}
+		if !curStart.IsZero() {
+			resp["started_at"] = curStart
+		} else {
+			resp["started_at"] = nil
+		}
+		resp["last_sync_ok"] = snap.OK
+		resp["last_sync_message"] = snap.Message
+		resp["last_sync_item_count"] = snap.ItemCount
+		resp["last_sync_errors"] = errs
 		if !snap.StartedAt.IsZero() {
 			resp["last_sync_started_at"] = snap.StartedAt
 		}
@@ -57,6 +70,10 @@ func (h *handlers) getSyncStatus(c *gin.Context) {
 			resp["last_sync_finished_at"] = snap.FinishedAt
 		}
 	} else {
+		resp["ok"] = snap.OK
+		resp["message"] = snap.Message
+		resp["item_count"] = snap.ItemCount
+		resp["errors"] = errs
 		resp["started_at"] = snap.StartedAt
 		resp["finished_at"] = snap.FinishedAt
 	}

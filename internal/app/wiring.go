@@ -9,6 +9,7 @@ import (
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/anilist"
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/httpclient"
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/jikan"
+	"github.com/wallissonmarinho/GoAnimes/internal/adapters/kitsu"
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/translate"
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/state"
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/storage"
@@ -52,7 +53,7 @@ func SynopsisTranslatorFromEnv(httpTimeout time.Duration, userAgent string, maxB
 }
 
 // NewRSSSyncService builds sync with concrete deps and returns optional API clients for HTTP handlers.
-func NewRSSSyncService(repo *storage.Catalog, mem *state.CatalogStore, o services.RSSSyncRuntimeOptions) (*services.RSSSyncService, *anilist.Client, *jikan.Client) {
+func NewRSSSyncService(repo *storage.Catalog, mem *state.CatalogStore, o services.RSSSyncRuntimeOptions) (*services.RSSSyncService, *anilist.Client, *jikan.Client, *kitsu.Client) {
 	var al *anilist.Client
 	if !anilistDisabled() {
 		// Smaller cap for JSON POST bodies; AniList responses are tiny.
@@ -76,7 +77,18 @@ func NewRSSSyncService(repo *storage.Catalog, mem *state.CatalogStore, o service
 			}
 		}
 	}
-	return services.NewRSSSyncService(repo, mem, o, nil), al, jk
+	var ks *kitsu.Client
+	if !kitsuDisabled() {
+		g := httpclient.NewGetter(o.HTTPTimeout, o.UserAgent, 2<<20)
+		ks = kitsu.NewClient(g)
+		o.Kitsu = ks
+		if o.KitsuMinDelay <= 0 {
+			if d, err := time.ParseDuration(getenv("GOANIMES_KITSU_MIN_DELAY", "400ms")); err == nil {
+				o.KitsuMinDelay = d
+			}
+		}
+	}
+	return services.NewRSSSyncService(repo, mem, o, nil), al, jk, ks
 }
 
 func anilistDisabled() bool {
@@ -86,6 +98,11 @@ func anilistDisabled() bool {
 
 func jikanDisabled() bool {
 	v := strings.ToLower(strings.TrimSpace(os.Getenv("GOANIMES_JIKAN_DISABLED")))
+	return v == "1" || v == "true" || v == "yes"
+}
+
+func kitsuDisabled() bool {
+	v := strings.ToLower(strings.TrimSpace(os.Getenv("GOANIMES_KITSU_DISABLED")))
 	return v == "1" || v == "true" || v == "yes"
 }
 
