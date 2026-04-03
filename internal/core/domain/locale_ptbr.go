@@ -98,6 +98,42 @@ var reSourceSuffix = regexp.MustCompile(`(?i)\(\s*Source:\s*([^)]+)\)`)
 // reSynopsisAttributionTail matches a trailing AniList-style source line (English or already localized).
 var reSynopsisAttributionTail = regexp.MustCompile(`(?is)\s*\(\s*(?:Source|Fonte):\s*[^)]+\)\s*$`)
 
+// reEnglishAnimeCour matches the TV-broadcast jargon "cour" (not the French "course"). MT often maps it to court→tribunal in pt.
+var reEnglishAnimeCour = regexp.MustCompile(`(?i)\bcours\b`)
+
+var reEnglishAnimeCourSingular = regexp.MustCompile(`(?i)\bcour\b`)
+
+// rePTOrdinalTribunal matches bogus "… tribunal" where the source meant season/cour (Google Translate artefact).
+var rePTOrdinalTribunal = []*regexp.Regexp{
+	regexp.MustCompile(`(?i)\bO\s+segundo\s+tribunal\b`),
+	regexp.MustCompile(`(?i)\bA\s+segunda\s+tribunal\b`),
+	regexp.MustCompile(`(?i)\bO\s+primeiro\s+tribunal\b`),
+	regexp.MustCompile(`(?i)\bA\s+primeira\s+tribunal\b`),
+	regexp.MustCompile(`(?i)\bO\s+terceiro\s+tribunal\b`),
+	regexp.MustCompile(`(?i)\bA\s+terceira\s+tribunal\b`),
+	regexp.MustCompile(`(?i)\bO\s+quarto\s+tribunal\b`),
+	regexp.MustCompile(`(?i)\bA\s+quarta\s+tribunal\b`),
+	regexp.MustCompile(`(?i)\bsegundo\s+tribunal\b`),
+	regexp.MustCompile(`(?i)\bprimeiro\s+tribunal\b`),
+	regexp.MustCompile(`(?i)\bterceiro\s+tribunal\b`),
+	regexp.MustCompile(`(?i)\bquarto\s+tribunal\b`),
+}
+
+var rePTOrdinalTribunalRepl = []string{
+	"A segunda temporada",
+	"A segunda temporada",
+	"A primeira temporada",
+	"A primeira temporada",
+	"A terceira temporada",
+	"A terceira temporada",
+	"A quarta temporada",
+	"A quarta temporada",
+	"segunda temporada",
+	"primeira temporada",
+	"terceira temporada",
+	"quarta temporada",
+}
+
 // synopsisLikelyEnglishRE matches common English words in AniList-style blurbs (default language is English).
 var synopsisLikelyEnglishRE = regexp.MustCompile(`(?i)\b(the|and|with|that|from|their|will|this|have|been|was|were|his|her|for|not|you|all|can|out|just|into|about|to|of|in|is|it|as|at|be|he|or|on|an|we|they|she|them|then|than|who|years|year|one|two|earth|life|back|time|story|world|after|when|where|what|young|old|new|first|last|giant|robot|battle|must|war|evil|save|return|human|boy|girl|home|school|friend|power|space|planet|city|people|again|still|even|only|such|through|between|against|while|during|before|because|another|something|everything|nothing|himself|herself|themselves)\b`)
 
@@ -164,6 +200,27 @@ func SynopsisBodyLooksEnglish(body string) bool {
 	return false
 }
 
+// PrepareEnglishSynopsisBodyForPTTranslate rewrites anime-specific English before machine translation to reduce cour→court→tribunal glitches in pt-BR.
+func PrepareEnglishSynopsisBodyForPTTranslate(body string) string {
+	if strings.TrimSpace(body) == "" {
+		return body
+	}
+	s := reEnglishAnimeCour.ReplaceAllString(body, "seasons")
+	s = reEnglishAnimeCourSingular.ReplaceAllString(s, "season")
+	return s
+}
+
+// FixPortugueseSynopsisTranslationGlitches corrects recurring MT errors in cached or fresh pt-BR blurbs.
+func FixPortugueseSynopsisTranslationGlitches(s string) string {
+	if strings.TrimSpace(s) == "" {
+		return s
+	}
+	for i, re := range rePTOrdinalTribunal {
+		s = re.ReplaceAllString(s, rePTOrdinalTribunalRepl[i])
+	}
+	return s
+}
+
 // LocalizeAniListDescriptionPTBR keeps the AniList English blurb but normalizes the attribution line to Portuguese.
 // AniList’s public GraphQL API does not return descriptions in pt-BR; GoAnimes translates via gilang in-process.
 func LocalizeAniListDescriptionPTBR(s string) string {
@@ -171,7 +228,7 @@ func LocalizeAniListDescriptionPTBR(s string) string {
 	if s == "" {
 		return s
 	}
-	return reSourceSuffix.ReplaceAllStringFunc(s, func(m string) string {
+	s = reSourceSuffix.ReplaceAllStringFunc(s, func(m string) string {
 		sub := reSourceSuffix.FindStringSubmatch(m)
 		if len(sub) < 2 {
 			return m
@@ -179,6 +236,7 @@ func LocalizeAniListDescriptionPTBR(s string) string {
 		src := strings.TrimSpace(sub[1])
 		return "(Fonte: " + src + ")"
 	})
+	return FixPortugueseSynopsisTranslationGlitches(s)
 }
 
 // StremioGenreFilterOptions returns the full sorted pt-BR palette (AniList→pt mapping). The Stremio manifest

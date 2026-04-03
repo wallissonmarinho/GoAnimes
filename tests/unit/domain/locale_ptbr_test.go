@@ -21,6 +21,20 @@ func TestLocalizeAniListDescriptionPTBR(t *testing.T) {
 	require.Equal(t, "", domain.LocalizeAniListDescriptionPTBR("  "))
 }
 
+func TestPrepareEnglishSynopsisBodyForPTTranslate_courToSeason(t *testing.T) {
+	require.Equal(t, "The second season of Fire Force.",
+		domain.PrepareEnglishSynopsisBodyForPTTranslate("The second cour of Fire Force."))
+	require.Equal(t, "Of course we go.",
+		domain.PrepareEnglishSynopsisBodyForPTTranslate("Of course we go."))
+}
+
+func TestFixPortugueseSynopsisTranslationGlitches_tribunalToTemporada(t *testing.T) {
+	in := "O segundo tribunal de Enen no Shouboutai. (Fonte: Crunchyroll News)"
+	want := "A segunda temporada de Enen no Shouboutai. (Fonte: Crunchyroll News)"
+	require.Equal(t, want, domain.FixPortugueseSynopsisTranslationGlitches(in))
+	require.Equal(t, want, domain.LocalizeAniListDescriptionPTBR(in))
+}
+
 func TestSplitSynopsisBodyAndAttribution(t *testing.T) {
 	body, attr := domain.SplitSynopsisBodyAndAttribution("The hero wins. (Fonte: Crunchyroll)")
 	require.Equal(t, "The hero wins.", body)

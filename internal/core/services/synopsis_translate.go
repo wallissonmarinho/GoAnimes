@@ -21,11 +21,12 @@ func TranslateSynopsisToPT(tr ports.SynopsisTranslator, log *slog.Logger, descri
 	localized := domain.LocalizeAniListDescriptionPTBR(description)
 	body, attr := domain.SplitSynopsisBodyAndAttribution(localized)
 	if body == "" {
-		return description
+		return localized
 	}
 	if !domain.SynopsisBodyLooksEnglish(body) {
-		return description
+		return localized
 	}
+	body = domain.PrepareEnglishSynopsisBodyForPTTranslate(body)
 	out, err := tr.Translate(body, "en", "pt")
 	if err != nil {
 		if log != nil {
@@ -33,5 +34,6 @@ func TranslateSynopsisToPT(tr ports.SynopsisTranslator, log *slog.Logger, descri
 		}
 		return description
 	}
+	out = domain.FixPortugueseSynopsisTranslationGlitches(strings.TrimSpace(out))
 	return domain.JoinSynopsisBodyAndAttribution(out, attr)
 }
