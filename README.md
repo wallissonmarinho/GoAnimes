@@ -57,6 +57,9 @@ Autenticação: `Authorization: Bearer <chave>` ou `X-Admin-API-Key: <chave>`.
 | `GOANIMES_SYNC_INTERVAL` | Intervalo de sync (default `30m`) |
 | `GOANIMES_HTTP_TIMEOUT` | Timeout HTTP ao buscar RSS (default `45s`) |
 | `GOANIMES_ERAI_MAX_PER_ANIME_FEEDS` | Máx. GETs a feeds por anime num sync Erai (default `200`; `0` = sem limite) |
+| `GOANIMES_ERAI_PER_ANIME_DELAY` | Pausa entre cada GET `anime-list/{slug}/feed` (default `400ms`; ex. `800ms`, `1s`) — reduz HTTP 429 |
+| `GOANIMES_ERAI_PER_ANIME_MAX_ATTEMPTS` | Tentativas por slug em 429/503 (default `5`; máx. `20`) |
+| `GOANIMES_ERAI_PER_ANIME_RETRY_BACKOFF` | Primeiro backoff se não houver cabeçalho `Retry-After` (default `2s`; depois dobra até ~90s) |
 | `DATABASE_URL` | Postgres opcional (`postgres://` / `postgresql://`) |
 
 ## Docker

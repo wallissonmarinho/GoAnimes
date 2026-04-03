@@ -306,13 +306,14 @@ func jikanAnimeToEnrichment(a jikanAnime) domain.AniListSeriesEnrichment {
 		trailer = strings.TrimSpace(*a.Trailer.YoutubeID)
 	}
 	out := domain.AniListSeriesEnrichment{
-		PosterURL:        poster,
-		Description:      desc,
-		Genres:           domain.TranslateAnimeGenresToPTBR(genres),
-		StartYear:        year,
-		EpisodeLengthMin: epMin,
-		TrailerYouTubeID: trailer,
-		TitlePreferred:   title,
+		PosterURL:         poster,
+		Description:       desc,
+		Genres:            domain.TranslateAnimeGenresToPTBR(genres),
+		StartYear:         year,
+		EpisodeLengthMin:  epMin,
+		TrailerYouTubeID:  trailer,
+		TitlePreferred:    title,
+		AniListSearchVer:  domain.AniListSearcherVersion,
 	}
 	return out
 }

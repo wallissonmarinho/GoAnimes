@@ -38,13 +38,27 @@ func (h *handlers) getSyncStatus(c *gin.Context) {
 	if h.deps.Sync != nil {
 		running = h.deps.Sync.SyncRunning()
 	}
-	c.JSON(http.StatusOK, gin.H{
+	// While Run() is in progress, DB still holds the *previous* completed snapshot; flat
+	// started_at/finished_at would falsely imply the current job already finished.
+	resp := gin.H{
 		"ok":           snap.OK,
 		"message":      snap.Message,
 		"item_count":   snap.ItemCount,
-		"started_at":   snap.StartedAt,
-		"finished_at":  snap.FinishedAt,
 		"errors":       errs,
 		"sync_running": running,
-	})
+	}
+	if running {
+		resp["started_at"] = nil
+		resp["finished_at"] = nil
+		if !snap.StartedAt.IsZero() {
+			resp["last_sync_started_at"] = snap.StartedAt
+		}
+		if !snap.FinishedAt.IsZero() {
+			resp["last_sync_finished_at"] = snap.FinishedAt
+		}
+	} else {
+		resp["started_at"] = snap.StartedAt
+		resp["finished_at"] = snap.FinishedAt
+	}
+	c.JSON(http.StatusOK, resp)
 }

@@ -52,6 +52,47 @@ func maxEraiPerAnimeFeedFetches() int {
 	return n
 }
 
+// eraiPerAnimeFetchDelay is the pause between successive per-anime Erai feed GETs (reduces 429).
+func eraiPerAnimeFetchDelay() time.Duration {
+	v := strings.TrimSpace(os.Getenv("GOANIMES_ERAI_PER_ANIME_DELAY"))
+	if v == "" {
+		return 400 * time.Millisecond
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil || d < 0 {
+		return 400 * time.Millisecond
+	}
+	return d
+}
+
+// eraiPerAnimeFetchMaxAttempts is GET retries per slug on 429/503 (default 5 = 1 try + up to 4 backoff waits).
+func eraiPerAnimeFetchMaxAttempts() int {
+	v := strings.TrimSpace(os.Getenv("GOANIMES_ERAI_PER_ANIME_MAX_ATTEMPTS"))
+	if v == "" {
+		return 5
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 1 {
+		return 5
+	}
+	if n > 20 {
+		return 20
+	}
+	return n
+}
+
+func eraiPerAnimeRetryBaseBackoff() time.Duration {
+	v := strings.TrimSpace(os.Getenv("GOANIMES_ERAI_PER_ANIME_RETRY_BACKOFF"))
+	if v == "" {
+		return 2 * time.Second
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil || d < 0 {
+		return 2 * time.Second
+	}
+	return d
+}
+
 // RSSSyncRuntimeOptions configures outbound fetch.
 type RSSSyncRuntimeOptions struct {
 	HTTPTimeout     time.Duration
@@ -181,6 +222,24 @@ func (s *RSSSyncService) enrichAniListSeries(ctx context.Context, series []domai
 			fails++
 			qlog := domain.NormalizeExternalAnimeSearchQuery(ser.Name)
 			s.log.Warn("anilist lookup failed", slog.String("series", ser.Name), slog.String("search_query", qlog), slog.Any("err", err))
+			// Jikan/MAL na mesma passagem: AniList muitas vezes não tem título alternativo (ex. romanização do RSS).
+			if s.jikan != nil && domain.EnrichmentCouldUseJikan(cache[ser.ID]) {
+				add, jerr := s.jikan.SearchAnimeEnrichment(ctx, ser.Name)
+				if jerr != nil {
+					s.log.Debug("jikan fallback after anilist failure", slog.String("series", ser.Name), slog.Any("err", jerr))
+					appendSyncNote(syncNotes, fmt.Sprintf("enrichment %q: anilist: %v; jikan: %v", qlog, err, jerr))
+					continue
+				}
+				merged := domain.MergeAniListEnrichment(cache[ser.ID], add)
+				merged.Description = TranslateSynopsisToPT(s.synopsisTrans, s.log, merged.Description)
+				cache[ser.ID] = merged
+				newN++
+				s.log.Info("jikan: filled series after anilist miss", slog.String("series", ser.Name), slog.String("search_query", qlog))
+				if s.jikanDelay > 0 {
+					time.Sleep(s.jikanDelay)
+				}
+				continue
+			}
 			appendSyncNote(syncNotes, fmt.Sprintf("anilist %q: %v", qlog, err))
 			continue
 		}
@@ -322,15 +381,26 @@ func (s *RSSSyncService) Run(ctx context.Context) domain.SyncResult {
 	}
 	perAnimeCap := maxEraiPerAnimeFeedFetches()
 	perAnimeOK := 0
-	for _, job := range eraiJobs {
+	perAnimeDelay := eraiPerAnimeFetchDelay()
+	perAnimeAttempts := eraiPerAnimeFetchMaxAttempts()
+	perAnimeBackoff := eraiPerAnimeRetryBaseBackoff()
+	for i, job := range eraiJobs {
 		if perAnimeCap > 0 && perAnimeOK >= perAnimeCap {
 			break
+		}
+		if i > 0 && perAnimeDelay > 0 {
+			select {
+			case <-ctx.Done():
+				errs = append(errs, fmt.Sprintf("erai anime-list: cancelled during pacing (%v)", ctx.Err()))
+				goto eraiPerAnimeDone
+			case <-time.After(perAnimeDelay):
+			}
 		}
 		u := rssadapter.BuildEraiPerAnimeFeedURL(job.origin, job.slug, job.token)
 		if u == "" {
 			continue
 		}
-		body, ferr := s.getter.GetBytes(u)
+		body, ferr := s.getter.GetBytesGETRetry(ctx, u, perAnimeAttempts, perAnimeBackoff)
 		if ferr != nil {
 			errs = append(errs, fmt.Sprintf("erai anime-list %s: %v", job.slug, ferr))
 			continue
@@ -343,10 +413,13 @@ func (s *RSSSyncService) Run(ctx context.Context) domain.SyncResult {
 		}
 		rssBatch = append(rssBatch, subItems...)
 	}
+eraiPerAnimeDone:
 	s.log.Info("erai per-anime rss",
 		slog.Int("slugs_queued", len(eraiJobs)),
 		slog.Int("fetched", perAnimeOK),
 		slog.Int("per_anime_cap", perAnimeCap),
+		slog.Duration("per_anime_delay", perAnimeDelay),
+		slog.Int("per_anime_max_attempts", perAnimeAttempts),
 	)
 	merged := domain.MergeCatalogItemsByID(prevSnap.Items, rssBatch)
 	s.log.Info("catalog merge",
