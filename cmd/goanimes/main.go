@@ -60,7 +60,7 @@ func main() {
 		MaxBodyBytes: int64Env("GOANIMES_MAX_BODY_BYTES", 50<<20),
 		UserAgent:    getenv("GOANIMES_USER_AGENT", "GoAnimes/1.0"),
 	})
-	rssAdmin := app.NewRSSSourceAdmin(cat)
+	catalogAdmin := app.NewCatalogAdmin(cat, mem)
 
 	if getenv("GIN_MODE", "") == "release" {
 		gin.SetMode(gin.ReleaseMode)
@@ -72,12 +72,11 @@ func main() {
 	serviceName := getenv("OTEL_SERVICE_NAME", "goanimes")
 	observability.RegisterGin(engine, serviceName)
 	ginapi.Register(engine, ginapi.Config{AdminAPIKey: app.AdminAPIKey()}, ginapi.Deps{
-		Sync:     syncSvc,
-		RSSAdmin: rssAdmin,
-		Store:    mem,
-		AniList:  anilistClient,
-		Jikan:    jikanClient,
-		Log:      lg,
+		Sync:    syncSvc,
+		Catalog: catalogAdmin,
+		AniList: anilistClient,
+		Jikan:   jikanClient,
+		Log:     lg,
 	})
 
 	addr := listenAddr()

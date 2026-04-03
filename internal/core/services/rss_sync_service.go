@@ -18,6 +18,24 @@ import (
 	"github.com/wallissonmarinho/GoAnimes/internal/core/ports"
 )
 
+// maxPersistedSyncErrors caps lines stored in DB (RSS + enrichment); further issues stay in logs only.
+const maxPersistedSyncErrors = 250
+
+func appendSyncNote(notes *[]string, line string) {
+	if notes == nil || len(*notes) >= maxPersistedSyncErrors {
+		return
+	}
+	*notes = append(*notes, line)
+}
+
+func capPersistedSyncLines(lines []string) []string {
+	if len(lines) <= maxPersistedSyncErrors {
+		return lines
+	}
+	out := append([]string(nil), lines[:maxPersistedSyncErrors]...)
+	return append(out, fmt.Sprintf("… and %d more (see server logs)", len(lines)-maxPersistedSyncErrors))
+}
+
 // RSSSyncRuntimeOptions configures outbound fetch.
 type RSSSyncRuntimeOptions struct {
 	HTTPTimeout     time.Duration
@@ -95,7 +113,7 @@ func pruneAniListCache(m map[string]domain.AniListSeriesEnrichment, series []dom
 	}
 }
 
-func (s *RSSSyncService) enrichAniListSeries(ctx context.Context, series []domain.CatalogSeries, cache map[string]domain.AniListSeriesEnrichment) {
+func (s *RSSSyncService) enrichAniListSeries(ctx context.Context, series []domain.CatalogSeries, cache map[string]domain.AniListSeriesEnrichment, syncNotes *[]string) {
 	if len(series) == 0 {
 		return
 	}
@@ -123,6 +141,7 @@ func (s *RSSSyncService) enrichAniListSeries(ctx context.Context, series []domai
 		select {
 		case <-ctx.Done():
 			s.log.Warn("anilist: stopped early (context done)", slog.Int("new_rows", newN), slog.Int("failures", fails))
+			appendSyncNote(syncNotes, "anilist: stopped early (context cancelled)")
 			return
 		default:
 		}
@@ -133,23 +152,10 @@ func (s *RSSSyncService) enrichAniListSeries(ctx context.Context, series []domai
 		if err != nil {
 			fails++
 			s.log.Warn("anilist lookup failed", slog.String("series", ser.Name), slog.Any("err", err))
+			appendSyncNote(syncNotes, fmt.Sprintf("anilist %q: %v", ser.Name, err))
 			continue
 		}
-		epTitles := det.EpisodeTitleByNum
-		if epTitles == nil {
-			epTitles = map[int]string{}
-		}
-		cache[ser.ID] = domain.AniListSeriesEnrichment{
-			PosterURL:         det.PosterURL,
-			BackgroundURL:     det.BackgroundURL,
-			Description:       det.Description,
-			Genres:            det.Genres,
-			StartYear:         det.StartYear,
-			EpisodeLengthMin:  det.EpisodeLengthMin,
-			TrailerYouTubeID:  det.TrailerYouTubeID,
-			TitlePreferred:    det.Title,
-			EpisodeTitleByNum: epTitles,
-		}
+		cache[ser.ID] = anilist.ToDomainEnrichment(det)
 		newN++
 		if s.anilistDelay > 0 {
 			time.Sleep(s.anilistDelay)
@@ -158,7 +164,7 @@ func (s *RSSSyncService) enrichAniListSeries(ctx context.Context, series []domai
 	s.log.Info("anilist: finished", slog.Int("new_or_refreshed", newN), slog.Int("lookup_failures", fails))
 }
 
-func (s *RSSSyncService) enrichJikanGaps(ctx context.Context, series []domain.CatalogSeries, cache map[string]domain.AniListSeriesEnrichment) {
+func (s *RSSSyncService) enrichJikanGaps(ctx context.Context, series []domain.CatalogSeries, cache map[string]domain.AniListSeriesEnrichment, syncNotes *[]string) {
 	if len(series) == 0 || s.jikan == nil {
 		if s.jikan == nil {
 			s.log.Info("jikan: skipped (set GOANIMES_JIKAN_DISABLED=true to disable; no client)")
@@ -170,6 +176,7 @@ func (s *RSSSyncService) enrichJikanGaps(ctx context.Context, series []domain.Ca
 		select {
 		case <-ctx.Done():
 			s.log.Warn("jikan: stopped early (context done)", slog.Int("merged", n))
+			appendSyncNote(syncNotes, "jikan: stopped early (context cancelled)")
 			return
 		default:
 		}
@@ -183,6 +190,7 @@ func (s *RSSSyncService) enrichJikanGaps(ctx context.Context, series []domain.Ca
 		add, err := s.jikan.SearchAnimeEnrichment(ctx, ser.Name)
 		if err != nil {
 			s.log.Debug("jikan lookup skipped or failed", slog.String("series", ser.Name), slog.Any("err", err))
+			appendSyncNote(syncNotes, fmt.Sprintf("jikan %q: %v", ser.Name, err))
 			continue
 		}
 		cache[ser.ID] = domain.MergeAniListEnrichment(cur, add)
@@ -225,8 +233,8 @@ func (s *RSSSyncService) Run(ctx context.Context) domain.SyncResult {
 		}
 		domain.EnsureSnapshotGrouped(&snap)
 		domain.ApplyAniListEnrichmentToSeries(&snap)
-		s.mem.Set(snap)
-		_ = s.repo.SaveCatalogSnapshot(ctx, snap)
+		snap.LastSyncErrors = nil
+		_ = s.mem.SetAndPersist(ctx, s.repo, snap)
 		return domain.SyncResult{Message: snap.Message}
 	}
 
@@ -278,16 +286,19 @@ func (s *RSSSyncService) Run(ctx context.Context) domain.SyncResult {
 		Items:      merged,
 	}
 	domain.EnsureSnapshotGrouped(&snap)
-	s.enrichAniListSeries(ctx, snap.Series, anilistCache)
-	s.enrichJikanGaps(ctx, snap.Series, anilistCache)
+	var enrichNotes []string
+	s.enrichAniListSeries(ctx, snap.Series, anilistCache, &enrichNotes)
+	s.enrichJikanGaps(ctx, snap.Series, anilistCache, &enrichNotes)
 	pruneAniListCache(anilistCache, snap.Series)
 	snap.AniListBySeries = anilistCache
 	domain.ApplyAniListEnrichmentToSeries(&snap)
 	snap.Message = fmt.Sprintf("synced %d episodes in %d series from %d feed(s)", len(merged), len(snap.Series), len(sources))
-	s.mem.Set(snap)
-	if saveErr := s.repo.SaveCatalogSnapshot(ctx, snap); saveErr != nil {
+	snap.LastSyncErrors = capPersistedSyncLines(append(append([]string{}, errs...), enrichNotes...))
+	if saveErr := s.mem.SetAndPersist(ctx, s.repo, snap); saveErr != nil {
 		errs = append(errs, "save snapshot: "+saveErr.Error())
 		s.log.Error("save snapshot", slog.Any("err", saveErr))
+		snap.LastSyncErrors = capPersistedSyncLines(append(snap.LastSyncErrors, errs[len(errs)-1]))
+		s.mem.Set(snap)
 	}
 	return domain.SyncResult{Message: snap.Message, Errors: errs}
 }

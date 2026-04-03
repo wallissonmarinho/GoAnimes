@@ -23,7 +23,7 @@ func TestClient_SearchAnimeMedia(t *testing.T) {
 					"media": [{
 						"title": {"userPreferred": "試験ユーザー優先", "english": "Test Anime EN", "native": "試験アニメ", "romaji": "Test Anime Romaji"},
 						"coverImage": {"extraLarge": "https://cdn.example/poster.jpg", "large": ""},
-						"bannerImage": {"large": "https://cdn.example/banner.jpg"},
+						"bannerImage": "https://cdn.example/banner.jpg",
 						"description": "A <b>fine</b> show.",
 						"genres": ["Action", "Comedy"],
 						"seasonYear": 2024,

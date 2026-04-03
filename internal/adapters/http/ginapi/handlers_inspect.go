@@ -19,7 +19,7 @@ func (h *handlers) registerInspectRoutes(admin *gin.RouterGroup) {
 }
 
 func (h *handlers) getInspectCatalog(c *gin.Context) {
-	snap := h.deps.Store.Snapshot()
+	snap := h.deps.Catalog.Snapshot()
 	seriesOut := make([]gin.H, 0, len(snap.Series))
 	for _, s := range snap.Series {
 		en := snap.AniListBySeries[s.ID]
@@ -86,8 +86,8 @@ func (h *handlers) getInspectSeries(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "missing id query parameter (Stremio series id, e.g. goanimes:series:…)"})
 		return
 	}
-	snap := h.deps.Store.Snapshot()
-	ser, ok := h.deps.Store.SeriesByID(id)
+	snap := h.deps.Catalog.Snapshot()
+	ser, ok := h.deps.Catalog.SeriesByID(id)
 	if !ok {
 		c.JSON(http.StatusNotFound, gin.H{"error": "series not found", "id": id})
 		return

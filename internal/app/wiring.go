@@ -32,9 +32,9 @@ func HydrateCatalogStore(ctx context.Context, repo ports.CatalogRepository, mem 
 	mem.Set(snap)
 }
 
-// NewRSSSourceAdmin wires admin use case.
-func NewRSSSourceAdmin(repo *storage.Catalog) *services.RSSSourceAdminService {
-	return services.NewRSSSourceAdminService(repo)
+// NewCatalogAdmin wires admin + Stremio catalog façade (repo + in-memory store).
+func NewCatalogAdmin(repo *storage.Catalog, store *state.CatalogStore) *services.CatalogAdminService {
+	return services.NewCatalogAdminService(repo, store)
 }
 
 // NewRSSSyncService builds sync with concrete deps and returns optional API clients for HTTP handlers.

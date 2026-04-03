@@ -101,7 +101,7 @@ type gqlPage struct {
 type gqlMedia struct {
 	Title              gqlTitle               `json:"title"`
 	CoverImage         gqlCoverImage          `json:"coverImage"`
-	BannerImage        *gqlCoverImage         `json:"bannerImage"`
+	BannerImage        *string                `json:"bannerImage"` // AniList: scalar URL (not { large })
 	Description        *string                `json:"description"`
 	Genres             []string               `json:"genres"`
 	SeasonYear         *int                   `json:"seasonYear"`
@@ -141,7 +141,7 @@ const searchMediaQuery = `query ($search: String, $perPage: Int) {
     media(search: $search, type: ANIME, sort: SEARCH_MATCH, isAdult: false) {
       title { userPreferred english native romaji }
       coverImage { extraLarge large }
-      bannerImage { large }
+      bannerImage
       description(asHtml: false)
       genres
       seasonYear
@@ -197,7 +197,7 @@ func (c *Client) SearchAnimeMedia(ctx context.Context, title string) (MediaDetai
 		out.PosterURL = strings.TrimSpace(m.CoverImage.Large)
 	}
 	if m.BannerImage != nil {
-		out.BackgroundURL = strings.TrimSpace(m.BannerImage.Large)
+		out.BackgroundURL = strings.TrimSpace(*m.BannerImage)
 	}
 	out.Title = pickTitleLatin(m.Title)
 	out.NativeTitle = strings.TrimSpace(m.Title.Native)

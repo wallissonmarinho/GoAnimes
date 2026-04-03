@@ -11,6 +11,7 @@ import (
 	ginapi "github.com/wallissonmarinho/GoAnimes/internal/adapters/http/ginapi"
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/state"
 	"github.com/wallissonmarinho/GoAnimes/internal/core/domain"
+	"github.com/wallissonmarinho/GoAnimes/internal/core/services"
 )
 
 func TestStremioRoutes_catalogMetaStream(t *testing.T) {
@@ -56,8 +57,8 @@ func TestStremioRoutes_catalogMetaStream(t *testing.T) {
 	e.Use(ginapi.CorsMiddleware())
 	e.Use(gin.Recovery())
 	ginapi.Register(e, ginapi.Config{AdminAPIKey: ""}, ginapi.Deps{
-		Store: store,
-		Log:   nil,
+		Catalog: services.NewCatalogAdminService(nil, store),
+		Log:     nil,
 	})
 
 	w := httptest.NewRecorder()
@@ -108,7 +109,7 @@ func TestCORSPreflight(t *testing.T) {
 	e := gin.New()
 	e.Use(ginapi.CorsMiddleware())
 	e.Use(gin.Recovery())
-	ginapi.Register(e, ginapi.Config{}, ginapi.Deps{Store: &state.CatalogStore{}})
+	ginapi.Register(e, ginapi.Config{}, ginapi.Deps{Catalog: services.NewCatalogAdminService(nil, &state.CatalogStore{})})
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodOptions, "/manifest.json", nil)

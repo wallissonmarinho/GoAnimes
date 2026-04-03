@@ -3,6 +3,7 @@ package ginapi
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -65,7 +66,7 @@ func stremioUnescapePathParam(s string) string {
 func (h *handlers) getManifest(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"id":          "org.goanimes",
-		"version":     "1.0.11",
+		"version":     "1.0.12",
 		"name":        "GoAnimes",
 		"description": "RSS anime torrents with pt-BR (Erai [br]) filter",
 		"types":       []string{stremioTypeAnime, stremioTypeMovie, stremioTypeSeries},
@@ -88,7 +89,7 @@ func (h *handlers) getCatalog(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{})
 		return
 	}
-	snap := h.deps.Store.Snapshot()
+	snap := h.deps.Catalog.Snapshot()
 	metas := make([]gin.H, 0, len(snap.Series))
 	for _, s := range snap.Series {
 		genres := []string{"Anime"}
@@ -124,42 +125,52 @@ func (h *handlers) getMeta(c *gin.Context) {
 	}
 	// Discover is under "anime"; some clients still request /meta/anime/:id for series rows.
 	if domain.IsSeriesStremioID(id) {
-		ser, ok := h.deps.Store.SeriesByID(id)
+		ser, ok := h.deps.Catalog.SeriesByID(id)
 		if !ok {
 			c.JSON(http.StatusNotFound, gin.H{})
 			return
 		}
-		snap := h.deps.Store.Snapshot()
+		snap := h.deps.Catalog.Snapshot()
 		groups := domain.GroupItemsByEpisode(snap.Items, id)
 		keys := domain.OrderedEpisodeKeys(groups)
-		en := h.deps.Store.AniListEnrichment(ser.ID)
+		en := h.deps.Catalog.AniListEnrichment(ser.ID)
 		search := domain.AniListSearchQueryFromItems(snap.Items, ser.ID)
 		if strings.TrimSpace(search) == "" {
 			search = ser.Name
 		}
+		didLazyEnrich := false
 		if strings.TrimSpace(search) != "" {
 			ctx, cancel := context.WithTimeout(c.Request.Context(), 14*time.Second)
 			if h.deps.AniList != nil && domain.AniListNeedsRefetch(en) {
 				det, err := h.deps.AniList.SearchAnimeMedia(ctx, search)
 				if err == nil {
 					add := anilist.ToDomainEnrichment(det)
-					h.deps.Store.MergeAniListEnrichment(ser.ID, add)
+					h.deps.Catalog.MergeAniListEnrichment(ser.ID, add)
 					en = domain.MergeAniListEnrichment(en, add)
+					didLazyEnrich = true
 				}
 			}
 			if h.deps.Jikan != nil && domain.EnrichmentCouldUseJikan(en) {
 				add, err := h.deps.Jikan.SearchAnimeEnrichment(ctx, search)
 				if err == nil {
-					h.deps.Store.MergeAniListEnrichment(ser.ID, add)
+					h.deps.Catalog.MergeAniListEnrichment(ser.ID, add)
 					en = domain.MergeAniListEnrichment(en, add)
+					didLazyEnrich = true
 				}
 			}
 			cancel()
 		}
-		if s2, ok := h.deps.Store.SeriesByID(id); ok {
+		if didLazyEnrich {
+			pctx, pcancel := context.WithTimeout(context.Background(), 60*time.Second)
+			if err := h.deps.Catalog.PersistActiveCatalog(pctx); err != nil && h.deps.Log != nil {
+				h.deps.Log.Warn("persist catalog after lazy enrichment", slog.Any("err", err))
+			}
+			pcancel()
+		}
+		if s2, ok := h.deps.Catalog.SeriesByID(id); ok {
 			ser = s2
 		}
-		en = h.deps.Store.AniListEnrichment(ser.ID)
+		en = h.deps.Catalog.AniListEnrichment(ser.ID)
 		videos := make([]gin.H, 0, len(keys))
 		for _, k := range keys {
 			group := groups[k]
@@ -194,7 +205,7 @@ func (h *handlers) getMeta(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"meta": meta})
 		return
 	}
-	it, ok := h.deps.Store.ItemByID(id)
+	it, ok := h.deps.Catalog.ItemByID(id)
 	if !ok {
 		c.JSON(http.StatusNotFound, gin.H{})
 		return
@@ -224,7 +235,7 @@ func (h *handlers) getStream(c *gin.Context) {
 		return
 	}
 	if domain.IsEpisodeVideoStremioID(id) {
-		snap := h.deps.Store.Snapshot()
+		snap := h.deps.Catalog.Snapshot()
 		releases := domain.ItemsForEpisodeVideoID(snap.Items, id)
 		if len(releases) == 0 {
 			c.JSON(http.StatusNotFound, gin.H{})
@@ -244,7 +255,7 @@ func (h *handlers) getStream(c *gin.Context) {
 		return
 	}
 
-	it, ok := h.deps.Store.ItemByID(id)
+	it, ok := h.deps.Catalog.ItemByID(id)
 	if !ok {
 		c.JSON(http.StatusNotFound, gin.H{})
 		return

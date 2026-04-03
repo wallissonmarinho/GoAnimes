@@ -25,10 +25,14 @@ func (h *handlers) postRebuild(c *gin.Context) {
 }
 
 func (h *handlers) getSyncStatus(c *gin.Context) {
-	snap, err := h.deps.RSSAdmin.LoadSyncStatus(c.Request.Context())
+	snap, err := h.deps.Catalog.LoadSyncStatus(c.Request.Context())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+	errs := snap.LastSyncErrors
+	if errs == nil {
+		errs = []string{}
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"ok":          snap.OK,
@@ -36,5 +40,6 @@ func (h *handlers) getSyncStatus(c *gin.Context) {
 		"item_count":  snap.ItemCount,
 		"started_at":  snap.StartedAt,
 		"finished_at": snap.FinishedAt,
+		"errors":      errs,
 	})
 }

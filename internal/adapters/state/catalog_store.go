@@ -1,15 +1,19 @@
 package state
 
 import (
+	"context"
 	"sync"
 
 	"github.com/wallissonmarinho/GoAnimes/internal/core/domain"
+	"github.com/wallissonmarinho/GoAnimes/internal/core/ports"
 )
 
-// CatalogStore holds the latest Stremio catalog in RAM.
+// CatalogStore holds the latest Stremio catalog in RAM (hydrated from DB at startup and updated on sync).
+// saveMu serializes snapshot writes so lazy Stremio enrichment persistence does not race RSS sync saves.
 type CatalogStore struct {
-	mu   sync.RWMutex
-	snap domain.CatalogSnapshot
+	mu     sync.RWMutex
+	saveMu sync.Mutex
+	snap   domain.CatalogSnapshot
 }
 
 // Set replaces the in-memory snapshot.
@@ -93,4 +97,30 @@ func (c *CatalogStore) ItemsBySeriesID(seriesID string) []domain.CatalogItem {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return domain.SortEpisodes(c.snap.Items, seriesID)
+}
+
+// SetAndPersist replaces the snapshot in memory and writes it to the catalog repository (used by RSS sync).
+func (c *CatalogStore) SetAndPersist(ctx context.Context, repo ports.CatalogRepository, snap domain.CatalogSnapshot) error {
+	if repo == nil {
+		c.Set(snap)
+		return nil
+	}
+	c.saveMu.Lock()
+	defer c.saveMu.Unlock()
+	c.mu.Lock()
+	c.snap = snap
+	c.mu.Unlock()
+	return repo.SaveCatalogSnapshot(ctx, snap)
+}
+
+// PersistSnapshot writes the current in-memory snapshot to the repository (e.g. after lazy AniList/Jikan merge in Stremio meta).
+func (c *CatalogStore) PersistSnapshot(ctx context.Context, repo ports.CatalogRepository) error {
+	if repo == nil {
+		return nil
+	}
+	c.saveMu.Lock()
+	defer c.saveMu.Unlock()
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return repo.SaveCatalogSnapshot(ctx, c.snap)
 }

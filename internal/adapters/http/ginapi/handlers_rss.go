@@ -28,7 +28,7 @@ func (h *handlers) postRSSSource(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid json"})
 		return
 	}
-	created, err := h.deps.RSSAdmin.CreateRSSSource(c.Request.Context(), body.URL, body.Label)
+	created, err := h.deps.Catalog.CreateRSSSource(c.Request.Context(), body.URL, body.Label)
 	if err != nil {
 		if errors.Is(err, domain.ErrDuplicateRSSSourceURL) {
 			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
@@ -45,7 +45,7 @@ func (h *handlers) postRSSSource(c *gin.Context) {
 }
 
 func (h *handlers) listRSSSources(c *gin.Context) {
-	list, err := h.deps.RSSAdmin.ListRSSSources(c.Request.Context())
+	list, err := h.deps.Catalog.ListRSSSources(c.Request.Context())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -59,7 +59,7 @@ func (h *handlers) deleteRSSSource(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "bad id"})
 		return
 	}
-	if delErr := h.deps.RSSAdmin.DeleteRSSSource(c.Request.Context(), id); delErr != nil {
+	if delErr := h.deps.Catalog.DeleteRSSSource(c.Request.Context(), id); delErr != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": delErr.Error()})
 		return
 	}

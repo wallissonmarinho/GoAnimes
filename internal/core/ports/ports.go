@@ -17,12 +17,21 @@ type CatalogRepository interface {
 	LoadCatalogSnapshot(ctx context.Context) (domain.CatalogSnapshot, error)
 }
 
-// RSSAdmin manages RSS source registration.
-type RSSAdmin interface {
+// CatalogAdmin manages RSS sources and persisted sync status from the DB, and exposes the live catalog
+// used by Stremio (memory store), matching the GoTV split: CatalogAdmin for admin/DB + hot cache for public reads.
+type CatalogAdmin interface {
 	CreateRSSSource(ctx context.Context, url, label string) (*domain.RSSSource, error)
 	ListRSSSources(ctx context.Context) ([]domain.RSSSource, error)
 	DeleteRSSSource(ctx context.Context, id string) error
 	LoadSyncStatus(ctx context.Context) (domain.CatalogSnapshot, error)
+
+	PersistActiveCatalog(ctx context.Context) error
+
+	Snapshot() domain.CatalogSnapshot
+	SeriesByID(seriesID string) (domain.CatalogSeries, bool)
+	ItemByID(id string) (domain.CatalogItem, bool)
+	AniListEnrichment(seriesID string) domain.AniListSeriesEnrichment
+	MergeAniListEnrichment(seriesID string, add domain.AniListSeriesEnrichment)
 }
 
 // SyncRunner runs RSS fetch + parse + filter.

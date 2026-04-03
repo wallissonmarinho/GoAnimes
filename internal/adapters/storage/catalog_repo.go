@@ -123,15 +123,20 @@ func (r *catalogRepo) DeleteRSSSource(ctx context.Context, id string) error {
 }
 
 type catalogPayload struct {
-	Items           []domain.CatalogItem                        `json:"items"`
-	AniListPosters  map[string]string                           `json:"anilist_posters,omitempty"` // legacy: poster URL only
-	AniListSeries   map[string]domain.AniListSeriesEnrichment `json:"anilist_series,omitempty"`
+	Items            []domain.CatalogItem                        `json:"items"`
+	LastSyncErrors   []string                                    `json:"last_sync_errors,omitempty"`
+	AniListPosters   map[string]string                           `json:"anilist_posters,omitempty"` // legacy: poster URL only
+	AniListSeries    map[string]domain.AniListSeriesEnrichment   `json:"anilist_series,omitempty"`
 }
 
 func marshalCatalogPayload(snap domain.CatalogSnapshot) ([]byte, error) {
 	p := catalogPayload{
-		Items:         snap.Items,
-		AniListSeries: snap.AniListBySeries,
+		Items:          snap.Items,
+		LastSyncErrors: snap.LastSyncErrors,
+		AniListSeries:  snap.AniListBySeries,
+	}
+	if len(p.LastSyncErrors) == 0 {
+		p.LastSyncErrors = nil
 	}
 	if len(p.AniListSeries) == 0 {
 		p.AniListSeries = nil
@@ -157,6 +162,7 @@ func unmarshalCatalogPayload(raw []byte) (domain.CatalogSnapshot, error) {
 		return domain.CatalogSnapshot{}, err
 	}
 	snap.Items = p.Items
+	snap.LastSyncErrors = append([]string(nil), p.LastSyncErrors...)
 	snap.AniListBySeries = p.AniListSeries
 	if snap.AniListBySeries == nil {
 		snap.AniListBySeries = make(map[string]domain.AniListSeriesEnrichment)

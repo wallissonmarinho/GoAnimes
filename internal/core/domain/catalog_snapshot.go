@@ -32,13 +32,14 @@ type CatalogItem struct {
 
 // CatalogSnapshot is persisted merge output for hydration after restart.
 type CatalogSnapshot struct {
-	OK             bool
-	Message        string
-	ItemCount      int
-	StartedAt      time.Time
-	FinishedAt     time.Time
-	Items          []CatalogItem
-	Series          []CatalogSeries                        `json:"-"`
+	OK              bool
+	Message         string
+	ItemCount       int
+	StartedAt       time.Time
+	FinishedAt      time.Time
+	Items           []CatalogItem
+	LastSyncErrors  []string // RSS/save/enrichment issues from last successful snapshot write; stored in items_json
+	Series          []CatalogSeries                    `json:"-"`
 	AniListBySeries map[string]AniListSeriesEnrichment `json:"-"` // persisted as anilist_series (+ legacy anilist_posters)
 }
 
