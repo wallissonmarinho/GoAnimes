@@ -43,7 +43,7 @@ func (c Chain) Translate(text, source, target string) (string, error) {
 }
 
 // Merge flattens non-nil translators and nested Chains into one Chain (order preserved).
-// Use in main to combine translate.FromEnv(getter) with custom adapters (e.g. Google, DeepL).
+// Use in main to combine translate.NewSynopsisTranslator(getter) with custom adapters (e.g. DeepL).
 func Merge(ts ...ports.SynopsisTranslator) ports.SynopsisTranslator {
 	var nodes []ports.SynopsisTranslator
 	for _, t := range ts {

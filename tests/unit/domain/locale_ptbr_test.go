@@ -41,6 +41,7 @@ func TestSynopsisBodyLooksEnglish(t *testing.T) {
 	require.True(t, domain.SynopsisBodyLooksEnglish(tetsuo))
 	// Already pt-BR: do not flag as English.
 	require.False(t, domain.SynopsisBodyLooksEnglish("Tetsuo retorna à Terra congelada. É uma história sobre robôs gigantes. Muito emocionante."))
-	// Long Latin text without common English tokens (fallback path).
+	// Latin text without common English tokens (fallback path once length ≥ 50).
+	require.True(t, domain.SynopsisBodyLooksEnglish(strings.Repeat("Zorblax Vexnor Klympt. ", 3)))
 	require.True(t, domain.SynopsisBodyLooksEnglish(strings.Repeat("Zorblax Vexnor Klympt. ", 6)))
 }

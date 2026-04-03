@@ -156,15 +156,16 @@ func SynopsisBodyLooksEnglish(body string) bool {
 	if synopsisLikelyEnglishRE.MatchString(body) {
 		return true
 	}
-	if len(body) >= 80 && !synopsisLikelyPortugueseRE.MatchString(body) && synopsisBodyMostlyLatinLetters(body) {
+	// Medium/long Latin blurbs that never hit the keyword list (proper nouns, odd wording) still
+	// need translation; 80 chars was too strict and skipped many real AniList EN blurbs (~50–79).
+	if len(body) >= 50 && !synopsisLikelyPortugueseRE.MatchString(body) && synopsisBodyMostlyLatinLetters(body) {
 		return true
 	}
 	return false
 }
 
 // LocalizeAniListDescriptionPTBR keeps the AniList English blurb but normalizes the attribution line to Portuguese.
-// AniList’s public GraphQL API does not return descriptions in pt-BR; optional translation uses
-// GOANIMES_GOOGLE_GTX_TRANSLATE or GOANIMES_GOOGLE_CLIENTS5_TRANSLATE + gilang googletranslate (see translate.FromEnv).
+// AniList’s public GraphQL API does not return descriptions in pt-BR; GoAnimes translates via gilang in-process.
 func LocalizeAniListDescriptionPTBR(s string) string {
 	s = strings.TrimSpace(s)
 	if s == "" {

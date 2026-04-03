@@ -25,7 +25,7 @@ const (
 	stremioTypeMovie     = "movie"
 	stremioTypeSeries    = "series"
 	// stremioManifestVersion: PATCH = fixes, tuning, deps, docs; MINOR = nova funcionalidade visível (API, sync, catálogo Stremio); MAJOR = contrato que parte instalações.
-	stremioManifestVersion = "1.4.0"
+	stremioManifestVersion = "1.4.1"
 )
 
 func stremioMetaOrStreamTypeOK(t string) bool {
@@ -300,7 +300,7 @@ func (h *handlers) getMeta(c *gin.Context) {
 		}
 		en = h.deps.Catalog.AniListEnrichment(ser.ID)
 		// Sinopse vinha muitas vezes só em EN do sync; géneros já vão para PT por mapa. Traduz ao abrir a série
-		// quando GOANIMES_GOOGLE_*_TRANSLATE estiver ativo (idempotente se já estiver em PT).
+		// sinopse en→pt via gilang quando o corpo parecer inglês (idempotente se já estiver em PT).
 		if h.deps.SynopsisTrans != nil && strings.TrimSpace(en.Description) != "" {
 			newDesc := services.TranslateSynopsisToPT(h.deps.SynopsisTrans, h.deps.Log, en.Description)
 			if newDesc != en.Description && strings.TrimSpace(newDesc) != "" {

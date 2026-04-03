@@ -23,7 +23,7 @@ type Deps struct {
 	AniList *anilist.Client    // optional: lazy-fetch when cache is empty
 	Jikan   *jikan.Client      // optional: MAL fallback when AniList left gaps
 	Kitsu   *kitsu.Client      // optional: Kitsu JSON:API when gaps remain after Jikan
-	// SynopsisTrans optional; translate.FromEnv when GOANIMES_GOOGLE_GTX_TRANSLATE or GOANIMES_GOOGLE_CLIENTS5_TRANSLATE.
+	// SynopsisTrans optional (nil in tests); production wires gilang Google translate.
 	SynopsisTrans ports.SynopsisTranslator
 	Log           *slog.Logger
 }

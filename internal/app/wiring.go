@@ -39,9 +39,8 @@ func NewCatalogAdmin(repo *storage.Catalog, store *state.CatalogStore) *services
 	return services.NewCatalogAdminService(repo, store)
 }
 
-// SynopsisTranslatorFromEnv builds optional synopsis translation from translate.FromEnv (gilang) when
-// GOANIMES_GOOGLE_GTX_TRANSLATE or GOANIMES_GOOGLE_CLIENTS5_TRANSLATE is set. Uses same HTTP timeout as RSS sync getter.
-func SynopsisTranslatorFromEnv(httpTimeout time.Duration, userAgent string, maxBody int64) ports.SynopsisTranslator {
+// NewSynopsisTranslator wires gilang Google Translate for AniList synopsis en→pt (always on; no env toggle).
+func NewSynopsisTranslator(httpTimeout time.Duration, userAgent string, maxBody int64) ports.SynopsisTranslator {
 	if httpTimeout <= 0 {
 		httpTimeout = 45 * time.Second
 	}
@@ -49,7 +48,7 @@ func SynopsisTranslatorFromEnv(httpTimeout time.Duration, userAgent string, maxB
 		maxBody = 50 << 20
 	}
 	g := httpclient.NewGetter(httpTimeout, userAgent, maxBody)
-	return translate.FromEnv(g)
+	return translate.NewSynopsisTranslator(g)
 }
 
 // NewRSSSyncService builds sync with concrete deps and returns optional API clients for HTTP handlers.

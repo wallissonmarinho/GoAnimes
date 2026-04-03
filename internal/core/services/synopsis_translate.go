@@ -11,7 +11,11 @@ import (
 // TranslateSynopsisToPT runs ports.SynopsisTranslator on the synopsis body (en→pt) when tr is non-nil.
 // The trailing "(Source: …)" / "(Fonte: …)" line is preserved and not sent to the translator.
 func TranslateSynopsisToPT(tr ports.SynopsisTranslator, log *slog.Logger, description string) string {
-	if tr == nil || strings.TrimSpace(description) == "" {
+	// Split guards so the debugger shows whether the skip is empty text vs nil translator.
+	if strings.TrimSpace(description) == "" {
+		return description
+	}
+	if tr == nil {
 		return description
 	}
 	localized := domain.LocalizeAniListDescriptionPTBR(description)

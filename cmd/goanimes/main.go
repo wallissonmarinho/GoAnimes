@@ -58,7 +58,8 @@ func main() {
 	httpTimeout := durationEnv("GOANIMES_HTTP_TIMEOUT", 45*time.Second)
 	maxBody := int64Env("GOANIMES_MAX_BODY_BYTES", 50<<20)
 	ua := getenv("GOANIMES_USER_AGENT", "GoAnimes/1.0")
-	synopsisTr := app.SynopsisTranslatorFromEnv(httpTimeout, ua, maxBody)
+	synopsisTr := app.NewSynopsisTranslator(httpTimeout, ua, maxBody)
+	slog.Info("synopsis translation", slog.String("translator", synopsisTr.Name()))
 	syncSvc, anilistClient, jikanClient, kitsuClient := app.NewRSSSyncService(cat, mem, services.RSSSyncRuntimeOptions{
 		HTTPTimeout:   httpTimeout,
 		MaxBodyBytes:  maxBody,

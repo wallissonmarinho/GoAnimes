@@ -105,7 +105,7 @@ type RSSSyncRuntimeOptions struct {
 	JikanMinDelay   time.Duration // sleep after each Jikan enrichment; 0 → default 900ms (client also paces each HTTP call)
 	Kitsu           *kitsu.Client
 	KitsuMinDelay   time.Duration // sleep after each Kitsu enrichment; 0 → default 400ms (client also paces)
-	SynopsisTrans   ports.SynopsisTranslator // optional: synopsis translation (gilang googletranslate when enabled)
+	SynopsisTrans   ports.SynopsisTranslator // optional: nil in tests; production passes gilang translator
 }
 
 // RSSSyncService fetches RSS sources, filters pt-BR (Erai [br]), updates memory + DB snapshot.
@@ -341,7 +341,7 @@ func (s *RSSSyncService) enrichJikanGaps(ctx context.Context, series []domain.Ca
 			continue
 		}
 		merged := domain.MergeAniListEnrichment(cur, add)
-		merged.Description = TranslateSynopsisToPT(s.synopsisTrans, s.log, merged.Description)
+					merged.Description = TranslateSynopsisToPT(s.synopsisTrans, s.log, merged.Description)
 		cache[ser.ID] = merged
 		n++
 		if s.jikanDelay > 0 {
@@ -383,7 +383,7 @@ func (s *RSSSyncService) enrichKitsuGaps(ctx context.Context, series []domain.Ca
 			continue
 		}
 		merged := domain.MergeAniListEnrichment(cur, add)
-		merged.Description = TranslateSynopsisToPT(s.synopsisTrans, s.log, merged.Description)
+					merged.Description = TranslateSynopsisToPT(s.synopsisTrans, s.log, merged.Description)
 		cache[ser.ID] = merged
 		n++
 		if s.kitsuDelay > 0 {
