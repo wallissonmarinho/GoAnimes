@@ -4,6 +4,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"unicode"
 )
 
 // translateGenreENtoPT maps AniList/MAL English genre labels to Brazilian Portuguese.
@@ -97,8 +98,11 @@ var reSourceSuffix = regexp.MustCompile(`(?i)\(\s*Source:\s*([^)]+)\)`)
 // reSynopsisAttributionTail matches a trailing AniList-style source line (English or already localized).
 var reSynopsisAttributionTail = regexp.MustCompile(`(?is)\s*\(\s*(?:Source|Fonte):\s*[^)]+\)\s*$`)
 
-// synopsisLikelyEnglishRE matches common English function words in long blurbs (AniList default language).
-var synopsisLikelyEnglishRE = regexp.MustCompile(`(?i)\b(the|and|with|that|from|their|will|this|have|been|was|were|his|her|for|not|you|all|can|out|just|into|about)\b`)
+// synopsisLikelyEnglishRE matches common English words in AniList-style blurbs (default language is English).
+var synopsisLikelyEnglishRE = regexp.MustCompile(`(?i)\b(the|and|with|that|from|their|will|this|have|been|was|were|his|her|for|not|you|all|can|out|just|into|about|to|of|in|is|it|as|at|be|he|or|on|an|we|they|she|them|then|than|who|years|year|one|two|earth|life|back|time|story|world|after|when|where|what|young|old|new|first|last|giant|robot|battle|must|war|evil|save|return|human|boy|girl|home|school|friend|power|space|planet|city|people|again|still|even|only|such|through|between|against|while|during|before|because|another|something|everything|nothing|himself|herself|themselves)\b`)
+
+// synopsisLikelyPortugueseRE catches obvious pt-BR so we do not send already-local blurbs to the translator.
+var synopsisLikelyPortugueseRE = regexp.MustCompile(`(?i)\b(não|nao|você|voce|também|tambem|está|estão|estamos|será|serão|muito|pelo|pelas|história|historia|primeira|segunda|temporada|anos|cidades|título|titulo|sinopse|episódio|episodio)\b`)
 
 // SplitSynopsisBodyAndAttribution separates the main blurb from a trailing "(Source: …)" or "(Fonte: …)" line.
 func SplitSynopsisBodyAndAttribution(s string) (body string, attribution string) {
@@ -128,13 +132,34 @@ func JoinSynopsisBodyAndAttribution(body, attribution string) string {
 	return body + " " + attribution
 }
 
+func synopsisBodyMostlyLatinLetters(body string) bool {
+	var letters, latin int
+	for _, r := range body {
+		if unicode.IsLetter(r) {
+			letters++
+			if r <= unicode.MaxASCII && ((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z')) {
+				latin++
+			}
+		}
+	}
+	return letters >= 12 && latin*4 >= letters*3
+}
+
 // SynopsisBodyLooksEnglish is a cheap heuristic to avoid re-translating text that is already pt-BR.
+// Long Latin blurbs without typical English tokens (e.g. proper-noun-heavy AniList copy) still qualify
+// when they do not look Portuguese — fixes cases like Snowball Earth staying in English.
 func SynopsisBodyLooksEnglish(body string) bool {
 	body = strings.TrimSpace(body)
 	if len(body) < 20 {
 		return false
 	}
-	return synopsisLikelyEnglishRE.MatchString(body)
+	if synopsisLikelyEnglishRE.MatchString(body) {
+		return true
+	}
+	if len(body) >= 80 && !synopsisLikelyPortugueseRE.MatchString(body) && synopsisBodyMostlyLatinLetters(body) {
+		return true
+	}
+	return false
 }
 
 // LocalizeAniListDescriptionPTBR keeps the AniList English blurb but normalizes the attribution line to Portuguese.

@@ -111,3 +111,22 @@ func TestParseFeedWithEraiSlugs_collectsAnimeListSlugs(t *testing.T) {
 	require.Len(t, items, 1)
 	require.Equal(t, []string{"otonari-no-tenshi"}, slugs)
 }
+
+func TestParseFeedWithEraiSlugs_collectsSlugFromEncodesLinkInDescription(t *testing.T) {
+	const xmlDoc = `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:erai="http://www.erai-raws.info/dtd">
+<channel>
+<item>
+<title>Champignon no Majo - 12 (HEVC)</title>
+<link>https://t.erai-raws.info/Torrent/2026/Winter/Champignon/x.torrent</link>
+<guid isPermaLink="false">g-enc</guid>
+<description><![CDATA[ <a href="https://www.erai-raws.info/encodes/champignon-no-majo-12-hevc/">mkv</a> ]]></description>
+<erai:subtitles>[us][br][mx]</erai:subtitles>
+</item>
+</channel>
+</rss>`
+	items, slugs, err := rssadapter.ParseFeedWithEraiSlugs([]byte(xmlDoc))
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	require.Equal(t, []string{"champignon-no-majo"}, slugs)
+}

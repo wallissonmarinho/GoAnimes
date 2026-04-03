@@ -34,12 +34,17 @@ func (h *handlers) getSyncStatus(c *gin.Context) {
 	if errs == nil {
 		errs = []string{}
 	}
+	running := false
+	if h.deps.Sync != nil {
+		running = h.deps.Sync.SyncRunning()
+	}
 	c.JSON(http.StatusOK, gin.H{
-		"ok":          snap.OK,
-		"message":     snap.Message,
-		"item_count":  snap.ItemCount,
-		"started_at":  snap.StartedAt,
-		"finished_at": snap.FinishedAt,
-		"errors":      errs,
+		"ok":           snap.OK,
+		"message":      snap.Message,
+		"item_count":   snap.ItemCount,
+		"started_at":   snap.StartedAt,
+		"finished_at":  snap.FinishedAt,
+		"errors":       errs,
+		"sync_running": running,
 	})
 }

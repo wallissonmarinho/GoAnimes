@@ -228,6 +228,7 @@ func parseFallbackXMLWithSlugs(body []byte) ([]domain.CatalogItem, []string, err
 		}
 		slugAcc = append(slugAcc, ExtractEraiAnimeListSlugs(block, it.Link, it.Guid, it.Title)...)
 		slugAcc = append(slugAcc, ExtractEraiAnimeListSlugsFromEpisodeLinks(block, it.Link, it.Guid, it.Title)...)
+		slugAcc = append(slugAcc, ExtractEraiAnimeListSlugsFromEncodesLinks(block, it.Link, it.Guid, it.Title)...)
 		sub := extractEraiSubtitles(block)
 		if sub == "" {
 			continue

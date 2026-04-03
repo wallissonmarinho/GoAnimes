@@ -39,4 +39,6 @@ type CatalogAdmin interface {
 // SyncRunner runs RSS fetch + parse + filter.
 type SyncRunner interface {
 	Run(ctx context.Context) domain.SyncResult
+	// SyncRunning is true while Run is executing (interval job or manual rebuild).
+	SyncRunning() bool
 }

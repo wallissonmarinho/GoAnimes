@@ -38,7 +38,7 @@ Autenticação: `Authorization: Bearer <chave>` ou `X-Admin-API-Key: <chave>`.
 | GET | `/api/v1/rss-sources` | Lista fontes |
 | DELETE | `/api/v1/rss-sources/:id` | Remove |
 | POST | `/api/v1/rebuild` | Sincroniza feeds agora (202) |
-| GET | `/api/v1/sync-status` | Último estado do sync |
+| GET | `/api/v1/sync-status` | Último estado do sync persistido + **`sync_running`** (`true` enquanto um sync está a correr — intervalo ou `POST /rebuild`) |
 
 ## Postman
 

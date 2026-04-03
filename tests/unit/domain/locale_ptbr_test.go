@@ -1,6 +1,7 @@
 package domain_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -34,4 +35,12 @@ func TestSplitSynopsisBodyAndAttribution(t *testing.T) {
 func TestSynopsisBodyLooksEnglish(t *testing.T) {
 	require.True(t, domain.SynopsisBodyLooksEnglish("Having spent his childhood in the slums, he now enjoys peace."))
 	require.False(t, domain.SynopsisBodyLooksEnglish("Curto demais"))
+	// Proper-noun-heavy AniList English without "the/and/…" should still be treated as English for translation.
+	tetsuo := "Tetsuo Yukio returns to frozen Earth. Shogakukan military arc. Yukio stands alone against ice."
+	require.False(t, domain.SynopsisBodyLooksEnglish("Tetsuo short."))
+	require.True(t, domain.SynopsisBodyLooksEnglish(tetsuo))
+	// Already pt-BR: do not flag as English.
+	require.False(t, domain.SynopsisBodyLooksEnglish("Tetsuo retorna à Terra congelada. É uma história sobre robôs gigantes. Muito emocionante."))
+	// Long Latin text without common English tokens (fallback path).
+	require.True(t, domain.SynopsisBodyLooksEnglish(strings.Repeat("Zorblax Vexnor Klympt. ", 6)))
 }

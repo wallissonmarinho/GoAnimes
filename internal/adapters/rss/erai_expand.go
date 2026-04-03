@@ -20,6 +20,36 @@ var eraiEpisodePageSlugRes = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)/episodes/([a-z0-9][-a-z0-9.]*)/`),
 }
 
+// eraiEncodesPageSlugRes matches /encodes/{slug}/ (encoded releases; description links differ from /episodes/).
+var eraiEncodesPageSlugRes = []*regexp.Regexp{
+	regexp.MustCompile(`(?i)https?://(?:www\.)?erai-raws\.info/encodes/([a-z0-9][-a-z0-9.]*)/`),
+	regexp.MustCompile(`(?i)/encodes/([a-z0-9][-a-z0-9.]*)/`),
+}
+
+// eraiEncodePathTails strips URL path segments like champignon-no-majo-12-hevc → champignon-no-majo-12 before episode parsing.
+var eraiEncodePathTails = []string{
+	"-hevc", "-hdr", "-10bit", "-av1", "-web", "-h264", "-x264", "-vp9",
+}
+
+func stripEraiEncodesPathSegment(seg string) string {
+	s := strings.TrimSpace(strings.ToLower(seg))
+	if s == "" {
+		return ""
+	}
+	for {
+		prev := s
+		for _, suf := range eraiEncodePathTails {
+			if strings.HasSuffix(s, suf) {
+				s = strings.TrimSuffix(s, suf)
+			}
+		}
+		if s == prev {
+			break
+		}
+	}
+	return s
+}
+
 var (
 	eraiEpTailAudioRe   = regexp.MustCompile(`(?i)-(chinese|japanese)-audio$`)
 	eraiEpTailMultiRe   = regexp.MustCompile(`(?i)-multi$`)
@@ -157,6 +187,32 @@ func ExtractEraiAnimeListSlugsFromEpisodeLinks(haystacks ...string) []string {
 	return out
 }
 
+// ExtractEraiAnimeListSlugsFromEncodesLinks finds …/encodes/… URLs and derives anime-list slugs (same tail rules as /episodes/).
+func ExtractEraiAnimeListSlugsFromEncodesLinks(haystacks ...string) []string {
+	seen := make(map[string]struct{})
+	var out []string
+	for _, h := range haystacks {
+		for _, re := range eraiEncodesPageSlugRes {
+			for _, m := range re.FindAllStringSubmatch(h, -1) {
+				if len(m) < 2 {
+					continue
+				}
+				trimmed := stripEraiEncodesPathSegment(m[1])
+				slug := EraiAnimeListSlugFromEpisodeSlug(trimmed)
+				if slug == "" {
+					continue
+				}
+				if _, ok := seen[slug]; ok {
+					continue
+				}
+				seen[slug] = struct{}{}
+				out = append(out, slug)
+			}
+		}
+	}
+	return out
+}
+
 func discoverSlugsFromGofeedItem(raw string, item *gofeed.Item) []string {
 	if item == nil {
 		return nil
@@ -170,6 +226,7 @@ func discoverSlugsFromGofeedItem(raw string, item *gofeed.Item) []string {
 	var slugs []string
 	slugs = append(slugs, ExtractEraiAnimeListSlugs(hay...)...)
 	slugs = append(slugs, ExtractEraiAnimeListSlugsFromEpisodeLinks(hay...)...)
+	slugs = append(slugs, ExtractEraiAnimeListSlugsFromEncodesLinks(hay...)...)
 	return slugs
 }
 

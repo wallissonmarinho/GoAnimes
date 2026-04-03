@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/anilist"
@@ -75,6 +76,7 @@ type RSSSyncService struct {
 	synopsisTrans ports.SynopsisTranslator
 	log           *slog.Logger
 	mu            sync.Mutex
+	syncRunning   atomic.Bool
 }
 
 func NewRSSSyncService(repo ports.CatalogRepository, mem *state.CatalogStore, o RSSSyncRuntimeOptions, log *slog.Logger) *RSSSyncService {
@@ -109,6 +111,14 @@ func NewRSSSyncService(repo ports.CatalogRepository, mem *state.CatalogStore, o 
 		synopsisTrans: o.SynopsisTrans,
 		log:           log,
 	}
+}
+
+// SyncRunning reports whether Run is in progress.
+func (s *RSSSyncService) SyncRunning() bool {
+	if s == nil {
+		return false
+	}
+	return s.syncRunning.Load()
 }
 
 func cloneAniListCache(m map[string]domain.AniListSeriesEnrichment) map[string]domain.AniListSeriesEnrichment {
@@ -229,6 +239,9 @@ func (s *RSSSyncService) enrichJikanGaps(ctx context.Context, series []domain.Ca
 
 // Run fetches all RSS sources and rebuilds the catalog.
 func (s *RSSSyncService) Run(ctx context.Context) domain.SyncResult {
+	s.syncRunning.Store(true)
+	defer s.syncRunning.Store(false)
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
