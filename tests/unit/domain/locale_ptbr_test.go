@@ -22,10 +22,12 @@ func TestLocalizeAniListDescriptionPTBR(t *testing.T) {
 }
 
 func TestPrepareEnglishSynopsisBodyForPTTranslate_courToSeason(t *testing.T) {
-	require.Equal(t, "The second season of Fire Force.",
+	require.Equal(t, "The second part of Fire Force.",
 		domain.PrepareEnglishSynopsisBodyForPTTranslate("The second cour of Fire Force."))
 	require.Equal(t, "Of course we go.",
 		domain.PrepareEnglishSynopsisBodyForPTTranslate("Of course we go."))
+	require.Equal(t, "The third and final part of the fourth season of Dr.STONE.",
+		domain.PrepareEnglishSynopsisBodyForPTTranslate("The third and final cour of the fourth season of Dr.STONE."))
 }
 
 func TestFixPortugueseSynopsisTranslationGlitches_tribunalToTemporada(t *testing.T) {
@@ -33,6 +35,12 @@ func TestFixPortugueseSynopsisTranslationGlitches_tribunalToTemporada(t *testing
 	want := "A segunda temporada de Enen no Shouboutai. (Fonte: Crunchyroll News)"
 	require.Equal(t, want, domain.FixPortugueseSynopsisTranslationGlitches(in))
 	require.Equal(t, want, domain.LocalizeAniListDescriptionPTBR(in))
+}
+
+func TestFixPortugueseSynopsisTranslationGlitches_terceiroEUltimoTribunal(t *testing.T) {
+	in := "O terceiro e último tribunal da quarta temporada de Dr.STONE."
+	want := "A terceira e última parte da quarta temporada de Dr.STONE."
+	require.Equal(t, want, domain.FixPortugueseSynopsisTranslationGlitches(in))
 }
 
 func TestSplitSynopsisBodyAndAttribution(t *testing.T) {

@@ -98,10 +98,22 @@ var reSourceSuffix = regexp.MustCompile(`(?i)\(\s*Source:\s*([^)]+)\)`)
 // reSynopsisAttributionTail matches a trailing AniList-style source line (English or already localized).
 var reSynopsisAttributionTail = regexp.MustCompile(`(?is)\s*\(\s*(?:Source|Fonte):\s*[^)]+\)\s*$`)
 
+// reEnglishFinalCour: "third and final cour of the fourth season" → "part" avoids cour→court→tribunal and avoids "season of the fourth season".
+var reEnglishFinalCour = regexp.MustCompile(`(?i)\band\s+final\s+cour\b`)
+
+// reEnglishCourOf: "second cour of X" → "second part of X".
+var reEnglishCourOf = regexp.MustCompile(`(?i)\bcour\s+of\s+`)
+
 // reEnglishAnimeCour matches the TV-broadcast jargon "cour" (not the French "course"). MT often maps it to court→tribunal in pt.
 var reEnglishAnimeCour = regexp.MustCompile(`(?i)\bcours\b`)
 
 var reEnglishAnimeCourSingular = regexp.MustCompile(`(?i)\bcour\b`)
+
+// rePTEUltimoTribunalWithArt matches "O terceiro e último tribunal" (MT artefact for "… final cour …").
+var rePTEUltimoTribunalWithArt = regexp.MustCompile(`(?i)\b(o|a)\s+(primeiro|primeira|segundo|segunda|terceiro|terceira|quarto|quarta)\s+e\s+(último|ultimo|última|ultima)\s+tribunal\b`)
+
+// rePTEUltimoTribunalNoArt matches without leading article.
+var rePTEUltimoTribunalNoArt = regexp.MustCompile(`(?i)\b(primeiro|primeira|segundo|segunda|terceiro|terceira|quarto|quarta)\s+e\s+(último|ultimo|última|ultima)\s+tribunal\b`)
 
 // rePTOrdinalTribunal matches bogus "… tribunal" where the source meant season/cour (Google Translate artefact).
 var rePTOrdinalTribunal = []*regexp.Regexp{
@@ -205,9 +217,26 @@ func PrepareEnglishSynopsisBodyForPTTranslate(body string) string {
 	if strings.TrimSpace(body) == "" {
 		return body
 	}
-	s := reEnglishAnimeCour.ReplaceAllString(body, "seasons")
+	s := reEnglishFinalCour.ReplaceAllString(body, "and final part")
+	s = reEnglishCourOf.ReplaceAllString(s, "part of ")
+	s = reEnglishAnimeCour.ReplaceAllString(s, "seasons")
 	s = reEnglishAnimeCourSingular.ReplaceAllString(s, "season")
 	return s
+}
+
+func ptOrdinalToEUltimaParte(ord string) string {
+	switch strings.ToLower(strings.TrimSpace(ord)) {
+	case "primeiro", "primeira":
+		return "primeira e última parte"
+	case "segundo", "segunda":
+		return "segunda e última parte"
+	case "terceiro", "terceira":
+		return "terceira e última parte"
+	case "quarto", "quarta":
+		return "quarta e última parte"
+	default:
+		return ""
+	}
 }
 
 // FixPortugueseSynopsisTranslationGlitches corrects recurring MT errors in cached or fresh pt-BR blurbs.
@@ -215,6 +244,28 @@ func FixPortugueseSynopsisTranslationGlitches(s string) string {
 	if strings.TrimSpace(s) == "" {
 		return s
 	}
+	s = rePTEUltimoTribunalWithArt.ReplaceAllStringFunc(s, func(full string) string {
+		sub := rePTEUltimoTribunalWithArt.FindStringSubmatch(full)
+		if len(sub) < 3 {
+			return full
+		}
+		phrase := ptOrdinalToEUltimaParte(sub[2])
+		if phrase == "" {
+			return full
+		}
+		return "A " + phrase
+	})
+	s = rePTEUltimoTribunalNoArt.ReplaceAllStringFunc(s, func(full string) string {
+		sub := rePTEUltimoTribunalNoArt.FindStringSubmatch(full)
+		if len(sub) < 2 {
+			return full
+		}
+		phrase := ptOrdinalToEUltimaParte(sub[1])
+		if phrase == "" {
+			return full
+		}
+		return phrase
+	})
 	for i, re := range rePTOrdinalTribunal {
 		s = re.ReplaceAllString(s, rePTOrdinalTribunalRepl[i])
 	}
