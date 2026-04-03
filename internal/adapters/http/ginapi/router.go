@@ -26,6 +26,7 @@ type Deps struct {
 	Log      *slog.Logger
 }
 
+// handlers binds Gin routes to ports. See handlers_public.go, handlers_admin.go, handlers_stremio.go, handlers_rss.go, handlers_sync.go, middleware.go.
 type handlers struct {
 	cfg  Config
 	deps Deps
@@ -41,22 +42,6 @@ func newHandlers(cfg Config, d Deps) *handlers {
 // Register attaches routes to the engine.
 func Register(engine *gin.Engine, cfg Config, d Deps) {
 	h := newHandlers(cfg, d)
-
-	engine.GET("/health", h.getHealth)
-
-	pub := engine.Group("")
-	{
-		pub.GET("/manifest.json", h.getManifest)
-		pub.GET("/catalog/:type/:catalog_id", h.getCatalog)
-		pub.GET("/meta/:type/:meta_id", h.getMeta)
-		pub.GET("/stream/:type/:stream_id", h.getStream)
-	}
-
-	admin := engine.Group("/api/v1")
-	admin.Use(adminAuthMiddleware(cfg.AdminAPIKey, d.Log))
-	{
-		h.registerRSSSourceRoutes(admin)
-		admin.POST("/rebuild", h.postRebuild)
-		admin.GET("/sync-status", h.getSyncStatus)
-	}
+	h.registerPublic(engine)
+	h.registerAdminV1(engine)
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"log"
 	"log/slog"
 	"net/http"
 	"os"
@@ -14,6 +15,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	ginapi "github.com/wallissonmarinho/GoAnimes/internal/adapters/http/ginapi"
+	"github.com/wallissonmarinho/GoAnimes/internal/adapters/observability"
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/scheduler"
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/state"
 	"github.com/wallissonmarinho/GoAnimes/internal/app"
@@ -25,8 +27,11 @@ func main() {
 		os.Exit(runMigrateCLI(os.Args[2:]))
 	}
 
-	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{})))
-	lg := slog.Default()
+	otelShutdown, lg, err := observability.Setup(context.Background())
+	if err != nil {
+		log.Fatal(err)
+	}
+	slog.SetDefault(lg)
 
 	dataDir := getenv("GOANIMES_DATA_DIR", "./data")
 	if mkErr := os.MkdirAll(dataDir, 0o755); mkErr != nil {
@@ -64,6 +69,8 @@ func main() {
 	engine := gin.New()
 	engine.Use(ginapi.CorsMiddleware())
 	engine.Use(gin.Recovery())
+	serviceName := getenv("OTEL_SERVICE_NAME", "goanimes")
+	observability.RegisterGin(engine, serviceName)
 	ginapi.Register(engine, ginapi.Config{AdminAPIKey: app.AdminAPIKey()}, ginapi.Deps{
 		Sync:     syncSvc,
 		RSSAdmin: rssAdmin,
@@ -103,6 +110,8 @@ func main() {
 		time.Sleep(2 * time.Second)
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 		defer cancel()
+		ctx, span := observability.StartSyncSpan(ctx, "sync.initial")
+		defer span.End()
 		res := syncSvc.Run(ctx)
 		if len(res.Errors) > 0 {
 			slog.Warn("initial sync warnings", slog.Any("errors", res.Errors))
@@ -118,6 +127,7 @@ func main() {
 	shCtx, shCancel := context.WithTimeout(context.Background(), 25*time.Second)
 	defer shCancel()
 	_ = srv.Shutdown(shCtx)
+	_ = otelShutdown(shCtx)
 }
 
 func listenAddr() string {

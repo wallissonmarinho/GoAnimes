@@ -63,19 +63,16 @@ docker build -t goanimes .
 docker run -p 8080:8080 -v "$(pwd)/data:/app/data" goanimes
 ```
 
-## Fly.io
+## Deploy (VM / Docker Compose)
 
-1. Ajuste `app` em `fly.toml`.
-2. `fly volumes create goanimes_data --region gru --size 1`
-3. `fly secrets set GOANIMES_ADMIN_API_KEY=...`
-4. `fly deploy`
+Em produção o layout típico é **Docker Compose** com Caddy (ex.: pasta `deploy/oracle` no repositório de infra, com `GoAnimes` e `GoTV` como pastas irmãs). Variáveis e volumes: README desse compose.
 
 ## GitHub Actions
 
-- **`ci`** — `go test` + build em **PRs** para `main`/`master` e em **push** para outras branches. **Não** corre em push direto em `main`/`master` (evita duplicar testes com o fly-deploy).
-- **`fly-deploy`** — job **`test`** + job **`deploy`** em push para `main`/`master` (ou manual). É o único workflow que corre ao merges na branch principal.
+- **`ci`** — `go test` + build em **PRs** para `main`/`master` e em **push** para outras branches. **Não** corre em push direto em `main`/`master` (evita duplicar testes com o oracle-deploy).
+- **`oracle-deploy`** — `go test` + deploy por **SSH** na VM (pull do repo + `docker compose build/up` do serviço GoAnimes) em push para `main`/`master` ou manual.
 
-Secret do deploy: **`FLY_API_TOKEN`** (`fly tokens create deploy -x 999999h`).
+Secrets: **`OCI_VM_HOST`**, **`OCI_VM_USER`**, **`OCI_SSH_PRIVATE_KEY`**; opcional **`OCI_DEPLOY_ROOT`** (default `/opt/go`). Detalhes no próprio workflow `.github/workflows/oracle-deploy.yml`.
 
 ## Migrations
 

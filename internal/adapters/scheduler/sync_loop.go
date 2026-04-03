@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/wallissonmarinho/GoAnimes/internal/adapters/observability"
 	"github.com/wallissonmarinho/GoAnimes/internal/core/ports"
 )
 
@@ -43,6 +44,8 @@ func (l *SyncLoop) fire() {
 	}()
 	runCtx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
+	runCtx, span := observability.StartSyncSpan(runCtx, "sync.scheduled")
+	defer span.End()
 	res := l.Sync.Run(runCtx)
 	if len(res.Errors) > 0 {
 		l.Log.Warn("sync job warnings",

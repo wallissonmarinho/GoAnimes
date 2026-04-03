@@ -1,4 +1,4 @@
-# CI em branches de trabalho e PRs. Push em main/master NÃO dispara isto — o fly-deploy já corre test+deploy.
+# CI em branches de trabalho e PRs. Push em main/master NÃO dispara isto — o oracle-deploy já corre test+deploy.
 name: ci
 
 on:

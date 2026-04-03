@@ -276,10 +276,6 @@ func streamFromCatalogItem(it domain.CatalogItem, bingeGroup string) gin.H {
 	return nil
 }
 
-func (h *handlers) getHealth(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"status": "ok"})
-}
-
 func mergeAniListSeriesMeta(meta gin.H, en domain.AniListSeriesEnrichment) {
 	if strings.TrimSpace(en.Description) != "" {
 		meta["description"] = en.Description
