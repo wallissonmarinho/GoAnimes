@@ -135,6 +135,9 @@ type MediaDetails struct {
 	EpisodeLengthMin  int
 	TrailerYouTubeID  string
 	EpisodeTitleByNum map[int]string
+	// NextAiring* from AniList nextAiringEpisode (Stremio Calendar); unix 0 if not airing / unknown.
+	NextAiringUnix    int64
+	NextAiringEpisode int
 }
 
 // ToDomainEnrichment maps API details into the persisted enrichment shape.
@@ -144,7 +147,7 @@ func ToDomainEnrichment(d MediaDetails) domain.AniListSeriesEnrichment {
 		ep = map[int]string{}
 	}
 	desc := domain.LocalizeAniListDescriptionPTBR(d.Description)
-	return domain.AniListSeriesEnrichment{
+	out := domain.AniListSeriesEnrichment{
 		PosterURL:         d.PosterURL,
 		BackgroundURL:     d.BackgroundURL,
 		Description:       desc,
@@ -156,7 +159,11 @@ func ToDomainEnrichment(d MediaDetails) domain.AniListSeriesEnrichment {
 		TitleNative:       d.NativeTitle,
 		AniListSearchVer:  domain.AniListSearcherVersion,
 		EpisodeTitleByNum: ep,
+		NextAiringFromAniList: true,
+		NextAiringUnix:       d.NextAiringUnix,
+		NextAiringEpisode:    d.NextAiringEpisode,
 	}
+	return out
 }
 
 type gqlRequest struct {
@@ -192,6 +199,12 @@ type gqlMedia struct {
 	Duration           *int                   `json:"duration"`
 	Trailer            *gqlTrailer            `json:"trailer"`
 	StreamingEpisodes  []gqlStreamingEpisode  `json:"streamingEpisodes"`
+	NextAiringEpisode  *gqlNextAiring         `json:"nextAiringEpisode"`
+}
+
+type gqlNextAiring struct {
+	AiringAt *int `json:"airingAt"` // Unix seconds UTC
+	Episode  *int `json:"episode"`
 }
 
 type gqlStreamingEpisode struct {
@@ -232,6 +245,7 @@ const searchMediaQuery = `query ($search: String, $perPage: Int) {
       duration
       trailer { id site }
       streamingEpisodes { title }
+      nextAiringEpisode { airingAt episode }
     }
   }
 }`
@@ -320,7 +334,12 @@ func (c *Client) SearchAnimeMedia(ctx context.Context, title string) (MediaDetai
 			}
 			out.EpisodeTitleByNum = domain.EpisodeTitlesFromStreamingList(raw)
 		}
-		if out.PosterURL == "" && out.BackgroundURL == "" && out.Description == "" && out.Title == "" && out.NativeTitle == "" && out.EpisodeLengthMin == 0 && len(out.Genres) == 0 && out.StartYear == 0 && out.TrailerYouTubeID == "" && len(out.EpisodeTitleByNum) == 0 {
+		if m.NextAiringEpisode != nil && m.NextAiringEpisode.AiringAt != nil && *m.NextAiringEpisode.AiringAt > 0 &&
+			m.NextAiringEpisode.Episode != nil && *m.NextAiringEpisode.Episode > 0 {
+			out.NextAiringUnix = int64(*m.NextAiringEpisode.AiringAt)
+			out.NextAiringEpisode = *m.NextAiringEpisode.Episode
+		}
+		if out.PosterURL == "" && out.BackgroundURL == "" && out.Description == "" && out.Title == "" && out.NativeTitle == "" && out.EpisodeLengthMin == 0 && len(out.Genres) == 0 && out.StartYear == 0 && out.TrailerYouTubeID == "" && len(out.EpisodeTitleByNum) == 0 && out.NextAiringUnix == 0 {
 			lastErr = errors.New("anilist: empty media payload")
 			continue
 		}

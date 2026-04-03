@@ -30,6 +30,7 @@ func TestClient_SearchAnimeMedia(t *testing.T) {
 						"startDate": {"year": 2024},
 						"duration": 24,
 						"trailer": {"id": "abc123xyz", "site": "youtube"},
+						"nextAiringEpisode": {"airingAt": 1735689600, "episode": 5},
 						"streamingEpisodes": [
 							{"title": "Episode 1 - Pilot"},
 							{"title": "Episode 2 - The Chase"}
@@ -57,6 +58,8 @@ func TestClient_SearchAnimeMedia(t *testing.T) {
 	require.Equal(t, "abc123xyz", res.TrailerYouTubeID)
 	require.Equal(t, "Pilot", res.EpisodeTitleByNum[1])
 	require.Equal(t, "The Chase", res.EpisodeTitleByNum[2])
+	require.Equal(t, int64(1735689600), res.NextAiringUnix)
+	require.Equal(t, 5, res.NextAiringEpisode)
 }
 
 func TestClient_SearchAnimeMedia_picksBestMatchAmongResults(t *testing.T) {

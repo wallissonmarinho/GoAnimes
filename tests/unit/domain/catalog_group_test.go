@@ -87,13 +87,27 @@ func TestAniListSearchQueryFromItems(t *testing.T) {
 func TestEnsureSnapshotGrouped(t *testing.T) {
 	snap := &domain.CatalogSnapshot{
 		Items: []domain.CatalogItem{
-			{ID: "goanimes:a", Name: "[Torrent] Zeta Show - 02 [1080p][br]"},
-			{ID: "goanimes:b", Name: "[Torrent] Alpha Show - 01 [720p][br]"},
+			{ID: "goanimes:a", Name: "[Torrent] Zeta Show - 02 [1080p][br]", Released: "2026-04-01"},
+			{ID: "goanimes:b", Name: "[Torrent] Alpha Show - 01 [720p][br]", Released: "2026-04-03"},
 		},
 	}
 	domain.EnsureSnapshotGrouped(snap)
 	require.Len(t, snap.Series, 2)
+	// Catalog order: newest RSS pubDate first (Alpha newer than Zeta).
 	require.Equal(t, "Alpha Show", snap.Series[0].Name)
 	require.Equal(t, "Zeta Show", snap.Series[1].Name)
 	require.NotEmpty(t, snap.Items[0].SeriesID)
+}
+
+func TestBuildSeriesList_ordersByNewestRSSDate(t *testing.T) {
+	items := []domain.CatalogItem{
+		{SeriesID: "s-old", SeriesName: "Old Anime", Released: "2026-01-01"},
+		{SeriesID: "s-new", SeriesName: "New Anime", Released: "2026-04-03T14:36:02Z"},
+		{SeriesID: "s-mid", SeriesName: "Mid Anime", Released: "2026-03-15"},
+	}
+	list := domain.BuildSeriesList(items)
+	require.Len(t, list, 3)
+	require.Equal(t, "New Anime", list[0].Name)
+	require.Equal(t, "Mid Anime", list[1].Name)
+	require.Equal(t, "Old Anime", list[2].Name)
 }

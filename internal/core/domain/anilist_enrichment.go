@@ -1,6 +1,9 @@
 package domain
 
-import "strings"
+import (
+	"strings"
+	"time"
+)
 
 // AniListSeriesEnrichment is cached Stremio-facing metadata from AniList (per series id).
 type AniListSeriesEnrichment struct {
@@ -15,6 +18,11 @@ type AniListSeriesEnrichment struct {
 	TitleNative       string         `json:"title_native,omitempty"` // Japanese (optional; meta detail)
 	AniListSearchVer  int            `json:"al_search_ver,omitempty"`  // bump forces refetch after search logic changes
 	EpisodeTitleByNum map[int]string `json:"ep_titles"`
+	// NextAiring* from AniList nextAiringEpisode (Stremio Calendar). NextAiringFromAniList=true means the last
+	// AniList fetch set these values (including zeros when nothing is scheduled); Jikan/Kitsu merges must not overwrite.
+	NextAiringUnix       int64 `json:"next_air_unix,omitempty"`    // Unix seconds; 0 = none
+	NextAiringEpisode    int   `json:"next_air_ep,omitempty"`      // next broadcast episode number
+	NextAiringFromAniList bool `json:"next_air_from_al,omitempty"` // merge: only update airing when true on add
 }
 
 // AniListNeedsRefetch is true when we should call AniList again (missing data or legacy poster-only row).
@@ -30,6 +38,10 @@ func AniListNeedsRefetch(en AniListSeriesEnrichment) bool {
 	}
 	// nil = snapshot row from before episode titles were stored; fetch once to populate streamingEpisodes.
 	if en.EpisodeTitleByNum == nil {
+		return true
+	}
+	// Refresh schedule after the announced air time so Calendar gets the next slot.
+	if en.NextAiringFromAniList && en.NextAiringUnix > 0 && time.Now().Unix() >= en.NextAiringUnix+3600 {
 		return true
 	}
 	return false
@@ -98,6 +110,11 @@ func MergeAniListEnrichment(stored, add AniListSeriesEnrichment) AniListSeriesEn
 				out.EpisodeTitleByNum[k] = v
 			}
 		}
+	}
+	if add.NextAiringFromAniList {
+		out.NextAiringUnix = add.NextAiringUnix
+		out.NextAiringEpisode = add.NextAiringEpisode
+		out.NextAiringFromAniList = true
 	}
 	return out
 }

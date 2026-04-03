@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const stremioPrefix = "goanimes"
@@ -34,29 +35,43 @@ func EpisodeVideoStremioID(seriesID string, season, episode int, isSpecial bool)
 	return stremioPrefix + ":vid:" + hex.EncodeToString(sum[:8])
 }
 
-// epSortKey groups catalog items into one Stremio video row.
-type epSortKey struct {
+// EpSortKey groups catalog items into one Stremio video row.
+type EpSortKey struct {
 	Season  int
 	Episode int
 	Special bool
 }
 
-// GroupItemsByEpisode buckets releases for one series (SD/720/1080 → same bucket).
-func GroupItemsByEpisode(items []CatalogItem, seriesID string) map[epSortKey][]CatalogItem {
-	m := make(map[epSortKey][]CatalogItem)
+// MaxSeasonAmongSeriesItems is the highest Season on items for seriesID (min 1).
+func MaxSeasonAmongSeriesItems(items []CatalogItem, seriesID string) int {
+	maxS := 1
 	for _, it := range items {
 		if it.SeriesID != seriesID {
 			continue
 		}
-		k := epSortKey{Season: it.Season, Episode: it.Episode, Special: it.IsSpecial}
+		if it.Season > maxS {
+			maxS = it.Season
+		}
+	}
+	return maxS
+}
+
+// GroupItemsByEpisode buckets releases for one series (SD/720/1080 → same bucket).
+func GroupItemsByEpisode(items []CatalogItem, seriesID string) map[EpSortKey][]CatalogItem {
+	m := make(map[EpSortKey][]CatalogItem)
+	for _, it := range items {
+		if it.SeriesID != seriesID {
+			continue
+		}
+		k := EpSortKey{Season: it.Season, Episode: it.Episode, Special: it.IsSpecial}
 		m[k] = append(m[k], it)
 	}
 	return m
 }
 
 // OrderedEpisodeKeys sorts group keys for the meta videos list.
-func OrderedEpisodeKeys(m map[epSortKey][]CatalogItem) []epSortKey {
-	keys := make([]epSortKey, 0, len(m))
+func OrderedEpisodeKeys(m map[EpSortKey][]CatalogItem) []EpSortKey {
+	keys := make([]EpSortKey, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)
 	}
@@ -442,29 +457,56 @@ func AssignSeriesFields(items []CatalogItem) {
 	}
 }
 
-// BuildSeriesList returns one CatalogSeries per distinct SeriesID (sorted by name).
+type seriesListAgg struct {
+	row    CatalogSeries
+	maxT   time.Time
+	hasMax bool
+}
+
+// BuildSeriesList returns one CatalogSeries per distinct SeriesID, ordered by the **newest RSS pubDate**
+// among that series’ items (Released field). Series with no parseable date sort last, then by name.
 func BuildSeriesList(items []CatalogItem) []CatalogSeries {
-	seen := make(map[string]CatalogSeries)
+	byID := make(map[string]*seriesListAgg)
 	for _, it := range items {
 		if it.SeriesID == "" {
 			continue
 		}
-		if _, ok := seen[it.SeriesID]; ok {
-			continue
+		g, ok := byID[it.SeriesID]
+		if !ok {
+			byID[it.SeriesID] = &seriesListAgg{
+				row: CatalogSeries{
+					ID:     it.SeriesID,
+					Name:   it.SeriesName,
+					Poster: SeriesPosterURL(it.SeriesName),
+				},
+			}
+			g = byID[it.SeriesID]
 		}
-		seen[it.SeriesID] = CatalogSeries{
-			ID:     it.SeriesID,
-			Name:   it.SeriesName,
-			Poster: SeriesPosterURL(it.SeriesName),
+		if t, ok := ParseItemReleasedDate(it.Released); ok {
+			if !g.hasMax || t.After(g.maxT) {
+				g.maxT = t
+				g.hasMax = true
+			}
 		}
 	}
-	out := make([]CatalogSeries, 0, len(seen))
-	for _, s := range seen {
-		out = append(out, s)
+	ptrs := make([]*seriesListAgg, 0, len(byID))
+	for _, g := range byID {
+		ptrs = append(ptrs, g)
 	}
-	sort.Slice(out, func(i, j int) bool {
-		return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name)
+	sort.SliceStable(ptrs, func(i, j int) bool {
+		a, b := ptrs[i], ptrs[j]
+		if a.hasMax != b.hasMax {
+			return a.hasMax
+		}
+		if a.hasMax && b.hasMax && !a.maxT.Equal(b.maxT) {
+			return a.maxT.After(b.maxT)
+		}
+		return strings.ToLower(a.row.Name) < strings.ToLower(b.row.Name)
 	})
+	out := make([]CatalogSeries, len(ptrs))
+	for i, p := range ptrs {
+		out[i] = p.row
+	}
 	return out
 }
 

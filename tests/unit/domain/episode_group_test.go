@@ -9,6 +9,18 @@ import (
 	"github.com/wallissonmarinho/GoAnimes/internal/core/domain"
 )
 
+func TestMaxSeasonAmongSeriesItems(t *testing.T) {
+	sid := domain.SeriesStremioID("Show")
+	items := []domain.CatalogItem{
+		{SeriesID: sid, Season: 1, Episode: 1},
+		{SeriesID: sid, Season: 3, Episode: 2},
+		{SeriesID: "other", Season: 99, Episode: 1},
+	}
+	require.Equal(t, 3, domain.MaxSeasonAmongSeriesItems(items, sid))
+	require.Equal(t, 1, domain.MaxSeasonAmongSeriesItems(nil, sid))
+	require.Equal(t, 1, domain.MaxSeasonAmongSeriesItems([]domain.CatalogItem{{SeriesID: sid, Season: 0, Episode: 1}}, sid))
+}
+
 func TestGroupItemsByEpisode_oneRowMultipleReleases(t *testing.T) {
 	sid := domain.SeriesStremioID("Test Show")
 	items := []domain.CatalogItem{

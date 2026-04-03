@@ -50,3 +50,36 @@ func TestMergeAniListEnrichment_keepsStored(t *testing.T) {
 	require.Equal(t, "A", out.Description)
 	require.Equal(t, []string{"Drama"}, out.Genres)
 }
+
+func TestMergeAniListEnrichment_jikanDoesNotWipeNextAiring(t *testing.T) {
+	stored := domain.AniListSeriesEnrichment{
+		NextAiringFromAniList: true,
+		NextAiringUnix:        1700000000,
+		NextAiringEpisode:     7,
+	}
+	add := domain.AniListSeriesEnrichment{
+		Description: "from jikan",
+		// NextAiringFromAniList false → must not clear AniList schedule
+	}
+	out := domain.MergeAniListEnrichment(stored, add)
+	require.Equal(t, int64(1700000000), out.NextAiringUnix)
+	require.Equal(t, 7, out.NextAiringEpisode)
+	require.True(t, out.NextAiringFromAniList)
+	require.Equal(t, "from jikan", out.Description)
+}
+
+func TestMergeAniListEnrichment_anilistUpdatesNextAiring(t *testing.T) {
+	stored := domain.AniListSeriesEnrichment{
+		NextAiringFromAniList: true,
+		NextAiringUnix:        100,
+		NextAiringEpisode:     1,
+	}
+	add := domain.AniListSeriesEnrichment{
+		NextAiringFromAniList: true,
+		NextAiringUnix:        200,
+		NextAiringEpisode:     2,
+	}
+	out := domain.MergeAniListEnrichment(stored, add)
+	require.Equal(t, int64(200), out.NextAiringUnix)
+	require.Equal(t, 2, out.NextAiringEpisode)
+}

@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 
@@ -24,7 +25,7 @@ const (
 	stremioTypeMovie     = "movie"
 	stremioTypeSeries    = "series"
 	// stremioManifestVersion: PATCH = fixes, tuning, deps, docs; MINOR = nova funcionalidade visível (API, sync, catálogo Stremio); MAJOR = contrato que parte instalações.
-	stremioManifestVersion = "1.3.1"
+	stremioManifestVersion = "1.4.0"
 )
 
 func stremioMetaOrStreamTypeOK(t string) bool {
@@ -54,6 +55,64 @@ func stremioVideoReleasedISO(raw string) string {
 		}
 	}
 	return "1970-01-01T00:00:00.000Z"
+}
+
+func sortStremioMetaVideosByReleased(videos []gin.H) {
+	parse := func(s string) time.Time {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			return time.Time{}
+		}
+		if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
+			return t
+		}
+		if t, err := time.Parse(time.RFC3339, s); err == nil {
+			return t
+		}
+		return time.Time{}
+	}
+	sort.SliceStable(videos, func(i, j int) bool {
+		si, _ := videos[i]["released"].(string)
+		sj, _ := videos[j]["released"].(string)
+		ti, tj := parse(si), parse(sj)
+		if ti.IsZero() && tj.IsZero() {
+			return false
+		}
+		if ti.IsZero() {
+			return false
+		}
+		if tj.IsZero() {
+			return true
+		}
+		return ti.Before(tj)
+	})
+}
+
+// appendAniListCalendarVideo adds a synthetic Stremio video row when AniList reports a next episode
+// air time but the RSS catalog has no release for that episode yet (Stremio Calendar).
+func appendAniListCalendarVideo(seriesID string, season, nextEp int, en domain.AniListSeriesEnrichment, groups map[domain.EpSortKey][]domain.CatalogItem, videos *[]gin.H) {
+	if !en.NextAiringFromAniList || en.NextAiringUnix <= 0 || nextEp <= 0 {
+		return
+	}
+	k := domain.EpSortKey{Season: season, Episode: nextEp, Special: false}
+	if g, ok := groups[k]; ok && len(g) > 0 {
+		return
+	}
+	vid := domain.EpisodeVideoStremioID(seriesID, season, nextEp, false)
+	t := time.Unix(en.NextAiringUnix, 0).UTC()
+	released := t.Format(time.RFC3339Nano)
+	title := domain.EpisodeListTitle(nextEp, false, en.EpisodeTitleByNum, "")
+	if strings.TrimSpace(title) == "" {
+		title = "Episódio " + fmt.Sprintf("%d", nextEp)
+	}
+	title = title + " · agendado (AniList)"
+	*videos = append(*videos, gin.H{
+		"id":       vid,
+		"title":    title,
+		"released": released,
+		"season":   season,
+		"episode":  nextEp,
+	})
 }
 
 func stremioUnescapePathParam(s string) string {
@@ -276,6 +335,9 @@ func (h *handlers) getMeta(c *gin.Context) {
 				"episode":  epNum,
 			})
 		}
+		calSeason := domain.MaxSeasonAmongSeriesItems(snap.Items, id)
+		appendAniListCalendarVideo(ser.ID, calSeason, en.NextAiringEpisode, en, groups, &videos)
+		sortStremioMetaVideosByReleased(videos)
 		// Must match catalog manifest type ("anime"). If meta.type is "series" while the catalog is
 		// "anime", many Stremio clients skip synopsis, genres, and similar fields on the detail screen.
 		meta := gin.H{
@@ -324,7 +386,8 @@ func (h *handlers) getStream(c *gin.Context) {
 		snap := h.deps.Catalog.Snapshot()
 		releases := domain.ItemsForEpisodeVideoID(snap.Items, id)
 		if len(releases) == 0 {
-			c.JSON(http.StatusNotFound, gin.H{})
+			// Calendário pode listar episódio agendado (AniList) antes do RSS; ainda sem torrent.
+			c.JSON(http.StatusOK, gin.H{"streams": []any{}})
 			return
 		}
 		streams := make([]gin.H, 0, len(releases))
