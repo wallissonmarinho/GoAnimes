@@ -142,12 +142,13 @@ func TorrentReleaseEpisodeSuffix(releaseTitle string) string {
 
 // EpisodeListTitle is the Stremio row label without quality (qualities show as stream choices).
 // epTitles is optional AniList/Jikan episode titles keyed by episode number (season 1 assumed).
-// releaseHint is optional (e.g. TorrentReleaseEpisodeSuffix from the RSS release name) when epTitles is empty.
+// releaseHint is optional legacy text when epTitles is empty; Stremio list rows omit it so codec tags
+// from Erai titles do not replace human episode titles (quality stays on stream entries only).
 func EpisodeListTitle(episode int, isSpecial bool, epTitles map[int]string, releaseHint string) string {
 	if isSpecial {
-		return "Special"
+		return "Especial"
 	}
-	base := "E" + strconv.Itoa(episode)
+	base := "Episódio " + strconv.Itoa(episode)
 	if epTitles != nil {
 		if t, ok := epTitles[episode]; ok {
 			t = strings.TrimSpace(t)
@@ -162,16 +163,10 @@ func EpisodeListTitle(episode int, isSpecial bool, epTitles map[int]string, rele
 	return base
 }
 
-// EpisodeListTitleForGroup picks the best-quality release in the group and builds the Stremio episode row title
-// (AniList/Jikan title when present, otherwise a suffix from the torrent release name).
+// EpisodeListTitleForGroup builds the Stremio episode row title (AniList/Jikan when present, else Episódio N only).
 func EpisodeListTitleForGroup(episode int, special bool, epTitles map[int]string, group []CatalogItem) string {
-	if len(group) == 0 {
-		return EpisodeListTitle(episode, special, epTitles, "")
-	}
-	g := append([]CatalogItem(nil), group...)
-	SortItemsForStreamChoices(g)
-	hint := TorrentReleaseEpisodeSuffix(g[0].Name)
-	return EpisodeListTitle(episode, special, epTitles, hint)
+	_ = group
+	return EpisodeListTitle(episode, special, epTitles, "")
 }
 
 // StreamQualityRank higher = preferred default ordering in the stream picker.

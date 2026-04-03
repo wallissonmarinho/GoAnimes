@@ -94,8 +94,52 @@ func TranslateAnimeGenresToPTBR(genres []string) []string {
 
 var reSourceSuffix = regexp.MustCompile(`(?i)\(\s*Source:\s*([^)]+)\)`)
 
+// reSynopsisAttributionTail matches a trailing AniList-style source line (English or already localized).
+var reSynopsisAttributionTail = regexp.MustCompile(`(?is)\s*\(\s*(?:Source|Fonte):\s*[^)]+\)\s*$`)
+
+// synopsisLikelyEnglishRE matches common English function words in long blurbs (AniList default language).
+var synopsisLikelyEnglishRE = regexp.MustCompile(`(?i)\b(the|and|with|that|from|their|will|this|have|been|was|were|his|her|for|not|you|all|can|out|just|into|about)\b`)
+
+// SplitSynopsisBodyAndAttribution separates the main blurb from a trailing "(Source: …)" or "(Fonte: …)" line.
+func SplitSynopsisBodyAndAttribution(s string) (body string, attribution string) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return "", ""
+	}
+	loc := reSynopsisAttributionTail.FindStringIndex(s)
+	if loc == nil {
+		return s, ""
+	}
+	body = strings.TrimSpace(s[:loc[0]])
+	attr := strings.TrimSpace(s[loc[0]:loc[1]])
+	return body, attr
+}
+
+// JoinSynopsisBodyAndAttribution joins body and attribution with a single space.
+func JoinSynopsisBodyAndAttribution(body, attribution string) string {
+	body = strings.TrimSpace(body)
+	attribution = strings.TrimSpace(attribution)
+	if body == "" {
+		return attribution
+	}
+	if attribution == "" {
+		return body
+	}
+	return body + " " + attribution
+}
+
+// SynopsisBodyLooksEnglish is a cheap heuristic to avoid re-translating text that is already pt-BR.
+func SynopsisBodyLooksEnglish(body string) bool {
+	body = strings.TrimSpace(body)
+	if len(body) < 20 {
+		return false
+	}
+	return synopsisLikelyEnglishRE.MatchString(body)
+}
+
 // LocalizeAniListDescriptionPTBR keeps the AniList English blurb but normalizes the attribution line to Portuguese.
-// AniList’s public GraphQL schema has no description language parameter; full machine translation would need an external API.
+// AniList’s public GraphQL API does not return descriptions in pt-BR; optional translation uses
+// GOANIMES_GOOGLE_GTX_TRANSLATE or GOANIMES_GOOGLE_CLIENTS5_TRANSLATE + gilang googletranslate (see translate.FromEnv).
 func LocalizeAniListDescriptionPTBR(s string) string {
 	s = strings.TrimSpace(s)
 	if s == "" {

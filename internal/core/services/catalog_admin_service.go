@@ -91,4 +91,8 @@ func (s *CatalogAdminService) MergeAniListEnrichment(seriesID string, add domain
 	s.store.MergeAniListEnrichment(seriesID, add)
 }
 
+func (s *CatalogAdminService) ReplaceAniListSynopsis(seriesID, description string) {
+	s.store.ReplaceAniListSynopsis(seriesID, description)
+}
+
 var _ ports.CatalogAdmin = (*CatalogAdminService)(nil)

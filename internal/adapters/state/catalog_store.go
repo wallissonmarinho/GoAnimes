@@ -2,6 +2,7 @@ package state
 
 import (
 	"context"
+	"strings"
 	"sync"
 
 	"github.com/wallissonmarinho/GoAnimes/internal/core/domain"
@@ -87,6 +88,28 @@ func (c *CatalogStore) MergeAniListEnrichment(seriesID string, add domain.AniLis
 	for i := range c.snap.Series {
 		if c.snap.Series[i].ID == seriesID {
 			domain.ApplyEnrichmentToCatalogSeries(&c.snap.Series[i], merged)
+			break
+		}
+	}
+}
+
+// ReplaceAniListSynopsis sets the cached synopsis and refreshes the catalog series row.
+func (c *CatalogStore) ReplaceAniListSynopsis(seriesID, description string) {
+	description = strings.TrimSpace(description)
+	if seriesID == "" {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.snap.AniListBySeries == nil {
+		c.snap.AniListBySeries = make(map[string]domain.AniListSeriesEnrichment)
+	}
+	e := c.snap.AniListBySeries[seriesID]
+	e.Description = description
+	c.snap.AniListBySeries[seriesID] = e
+	for i := range c.snap.Series {
+		if c.snap.Series[i].ID == seriesID {
+			domain.ApplyEnrichmentToCatalogSeries(&c.snap.Series[i], e)
 			break
 		}
 	}

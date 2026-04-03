@@ -50,11 +50,16 @@ func TestEpisodeTitlesFromStreamingList(t *testing.T) {
 
 func TestEpisodeListTitle_withAniListTitles(t *testing.T) {
 	titles := map[int]string{3: "Killing Magic"}
-	require.Equal(t, "E3 · Killing Magic", domain.EpisodeListTitle(3, false, titles, ""))
-	require.Equal(t, "E3 · from torrent tail", domain.EpisodeListTitle(3, false, nil, "from torrent tail"))
-	require.Equal(t, "E3", domain.EpisodeListTitle(3, false, nil, ""))
-	require.Equal(t, "E3", domain.EpisodeListTitle(3, false, map[int]string{5: "other"}, ""))
-	require.Equal(t, "Special", domain.EpisodeListTitle(0, true, titles, ""))
+	require.Equal(t, "Episódio 3 · Killing Magic", domain.EpisodeListTitle(3, false, titles, ""))
+	require.Equal(t, "Episódio 3 · from torrent tail", domain.EpisodeListTitle(3, false, nil, "from torrent tail"))
+	require.Equal(t, "Episódio 3", domain.EpisodeListTitle(3, false, nil, ""))
+	require.Equal(t, "Episódio 3", domain.EpisodeListTitle(3, false, map[int]string{5: "other"}, ""))
+	require.Equal(t, "Especial", domain.EpisodeListTitle(0, true, titles, ""))
+}
+
+func TestEpisodeListTitleForGroup_skipsTorrentNoise(t *testing.T) {
+	group := []domain.CatalogItem{{Name: "[Torrent] X - 01 (HEVC) [1080p CR WEBRip HEVC AAC][us][br]"}}
+	require.Equal(t, "Episódio 1", domain.EpisodeListTitleForGroup(1, false, nil, group))
 }
 
 func TestTorrentReleaseEpisodeSuffix_eraiStyle(t *testing.T) {

@@ -55,10 +55,15 @@ func main() {
 	mem := &state.CatalogStore{}
 	app.HydrateCatalogStore(context.Background(), cat, mem)
 
+	httpTimeout := durationEnv("GOANIMES_HTTP_TIMEOUT", 45*time.Second)
+	maxBody := int64Env("GOANIMES_MAX_BODY_BYTES", 50<<20)
+	ua := getenv("GOANIMES_USER_AGENT", "GoAnimes/1.0")
+	synopsisTr := app.SynopsisTranslatorFromEnv(httpTimeout, ua, maxBody)
 	syncSvc, anilistClient, jikanClient := app.NewRSSSyncService(cat, mem, services.RSSSyncRuntimeOptions{
-		HTTPTimeout:  durationEnv("GOANIMES_HTTP_TIMEOUT", 45*time.Second),
-		MaxBodyBytes: int64Env("GOANIMES_MAX_BODY_BYTES", 50<<20),
-		UserAgent:    getenv("GOANIMES_USER_AGENT", "GoAnimes/1.0"),
+		HTTPTimeout:   httpTimeout,
+		MaxBodyBytes:  maxBody,
+		UserAgent:     ua,
+		SynopsisTrans: synopsisTr,
 	})
 	catalogAdmin := app.NewCatalogAdmin(cat, mem)
 
@@ -72,11 +77,12 @@ func main() {
 	serviceName := getenv("OTEL_SERVICE_NAME", "goanimes")
 	observability.RegisterGin(engine, serviceName)
 	ginapi.Register(engine, ginapi.Config{AdminAPIKey: app.AdminAPIKey()}, ginapi.Deps{
-		Sync:    syncSvc,
-		Catalog: catalogAdmin,
-		AniList: anilistClient,
-		Jikan:   jikanClient,
-		Log:     lg,
+		Sync:          syncSvc,
+		Catalog:       catalogAdmin,
+		AniList:       anilistClient,
+		Jikan:         jikanClient,
+		SynopsisTrans: synopsisTr,
+		Log:           lg,
 	})
 
 	addr := listenAddr()

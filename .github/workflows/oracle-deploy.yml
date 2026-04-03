@@ -1,17 +1,21 @@
 # Deploy na VM Oracle (Docker Compose) após push na branch principal.
-# Build da imagem roda no GitHub Actions; na VM só docker pull + up (leve para Micro).
 #
-# Na VM: ${ROOT}/GoAnimes, ${ROOT}/deploy/oracle — ver deploy/oracle/README.md
-# Compose na VM GoAnimes: docker-compose.goanimes.yml
+# Job deploy: environment: prd → tudo o que definires em Secrets/Variables do ambiente **prd**
+# (e Repository secrets OCI/GHCR) é passado por SSH e gravado em deploy/oracle/.env.goanimes.deploy
+# na VM — não precisas de editar à mão na Oracle para estas chaves.
 #
-# Secrets (Settings → Secrets → Actions):
-#   OCI_VM_HOST, OCI_VM_USER, OCI_SSH_PRIVATE_KEY
-#   OCI_DEPLOY_ROOT — opcional; default /opt/go (ex.: /home/ubuntu/www)
+# Repository secrets: OCI_VM_HOST, OCI_VM_USER, OCI_SSH_PRIVATE_KEY; opcional OCI_DEPLOY_ROOT, GHCR_*
 #
-# Imagem: ghcr.io/<owner>/goanimes:main (pública no GHCR ou use login abaixo)
-# Opcional (pacote GHCR privado):
-#   GHCR_PULL_TOKEN — PAT com read:packages
-#   GHCR_USER       — usuário GitHub (ex.: wallissonmarinho)
+# Environment **prd** — Secrets (sensível): GOANIMES_ADMIN_API_KEY, ADMIN_API_KEY, DATABASE_URL,
+#   GOANIMES_SQLITE_DSN, GOANIMES_ENV_B64 (opcional: ficheiro .env extra em base64, ver README)
+#
+# Environment **prd** — Variables (tuning): GOANIMES_GOOGLE_GTX_TRANSLATE, GOANIMES_GOOGLE_CLIENTS5_TRANSLATE,
+#   GOANIMES_SYNC_INTERVAL, GOANIMES_HTTP_TIMEOUT, GOANIMES_ERAI_MAX_PER_ANIME_FEEDS,
+#   GOANIMES_ANILIST_DISABLED, GOANIMES_JIKAN_DISABLED, GOANIMES_ANILIST_MIN_DELAY, GOANIMES_JIKAN_MIN_DELAY,
+#   GOANIMES_MAX_BODY_BYTES, GOANIMES_USER_AGENT, PORT, GOANIMES_ADDR, GOANIMES_DATA_DIR, GIN_MODE,
+#   OTEL_SERVICE_NAME, OTEL_SDK_DISABLED, OTEL_EXPORTER_OTLP_ENDPOINT, OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
+#
+# ACME / Caddy continuam no .env na VM (não são enviados por este workflow).
 name: oracle-deploy
 
 on:
@@ -75,6 +79,7 @@ jobs:
   deploy:
     needs: image
     runs-on: ubuntu-latest
+    environment: prd
     steps:
       - name: GHCR owner for VM compose
         id: ghcr
@@ -88,21 +93,83 @@ jobs:
           GHCR_USER: ${{ secrets.GHCR_USER }}
           GOANIMES_GHCR_OWNER: ${{ steps.ghcr.outputs.owner }}
           GOANIMES_IMAGE_TAG: main
+          GOANIMES_ADMIN_API_KEY: ${{ secrets.GOANIMES_ADMIN_API_KEY }}
+          ADMIN_API_KEY: ${{ secrets.ADMIN_API_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          GOANIMES_SQLITE_DSN: ${{ secrets.GOANIMES_SQLITE_DSN }}
+          GOANIMES_ENV_B64: ${{ secrets.GOANIMES_ENV_B64 }}
+          GOANIMES_GOOGLE_GTX_TRANSLATE: ${{ vars.GOANIMES_GOOGLE_GTX_TRANSLATE }}
+          GOANIMES_GOOGLE_CLIENTS5_TRANSLATE: ${{ vars.GOANIMES_GOOGLE_CLIENTS5_TRANSLATE }}
+          GOANIMES_SYNC_INTERVAL: ${{ vars.GOANIMES_SYNC_INTERVAL }}
+          GOANIMES_HTTP_TIMEOUT: ${{ vars.GOANIMES_HTTP_TIMEOUT }}
+          GOANIMES_ERAI_MAX_PER_ANIME_FEEDS: ${{ vars.GOANIMES_ERAI_MAX_PER_ANIME_FEEDS }}
+          GOANIMES_ANILIST_DISABLED: ${{ vars.GOANIMES_ANILIST_DISABLED }}
+          GOANIMES_JIKAN_DISABLED: ${{ vars.GOANIMES_JIKAN_DISABLED }}
+          GOANIMES_ANILIST_MIN_DELAY: ${{ vars.GOANIMES_ANILIST_MIN_DELAY }}
+          GOANIMES_JIKAN_MIN_DELAY: ${{ vars.GOANIMES_JIKAN_MIN_DELAY }}
+          GOANIMES_MAX_BODY_BYTES: ${{ vars.GOANIMES_MAX_BODY_BYTES }}
+          GOANIMES_USER_AGENT: ${{ vars.GOANIMES_USER_AGENT }}
+          PORT: ${{ vars.PORT }}
+          GOANIMES_ADDR: ${{ vars.GOANIMES_ADDR }}
+          GOANIMES_DATA_DIR: ${{ vars.GOANIMES_DATA_DIR }}
+          GIN_MODE: ${{ vars.GIN_MODE }}
+          OTEL_SERVICE_NAME: ${{ vars.OTEL_SERVICE_NAME }}
+          OTEL_SDK_DISABLED: ${{ vars.OTEL_SDK_DISABLED }}
+          OTEL_EXPORTER_OTLP_ENDPOINT: ${{ vars.OTEL_EXPORTER_OTLP_ENDPOINT }}
+          OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: ${{ vars.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT }}
         with:
           host: ${{ secrets.OCI_VM_HOST }}
           username: ${{ secrets.OCI_VM_USER }}
           key: ${{ secrets.OCI_SSH_PRIVATE_KEY }}
           command_timeout: 30m
-          envs: OCI_DEPLOY_ROOT,GHCR_PULL_TOKEN,GHCR_USER,GOANIMES_GHCR_OWNER,GOANIMES_IMAGE_TAG
+          envs: OCI_DEPLOY_ROOT,GHCR_PULL_TOKEN,GHCR_USER,GOANIMES_GHCR_OWNER,GOANIMES_IMAGE_TAG,GOANIMES_ADMIN_API_KEY,ADMIN_API_KEY,DATABASE_URL,GOANIMES_SQLITE_DSN,GOANIMES_ENV_B64,GOANIMES_GOOGLE_GTX_TRANSLATE,GOANIMES_GOOGLE_CLIENTS5_TRANSLATE,GOANIMES_SYNC_INTERVAL,GOANIMES_HTTP_TIMEOUT,GOANIMES_ERAI_MAX_PER_ANIME_FEEDS,GOANIMES_ANILIST_DISABLED,GOANIMES_JIKAN_DISABLED,GOANIMES_ANILIST_MIN_DELAY,GOANIMES_JIKAN_MIN_DELAY,GOANIMES_MAX_BODY_BYTES,GOANIMES_USER_AGENT,PORT,GOANIMES_ADDR,GOANIMES_DATA_DIR,GIN_MODE,OTEL_SERVICE_NAME,OTEL_SDK_DISABLED,OTEL_EXPORTER_OTLP_ENDPOINT,OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
           script_stop: true
           script: |
             set -euo pipefail
             ROOT="${OCI_DEPLOY_ROOT:-/opt/go}"
             export GOANIMES_GHCR_OWNER="${GOANIMES_GHCR_OWNER}"
             export GOANIMES_IMAGE_TAG="${GOANIMES_IMAGE_TAG:-main}"
+            ORACLE_DIR="${ROOT}/deploy/oracle"
+            DEPLOY_ENV="${ORACLE_DIR}/.env.goanimes.deploy"
+            umask 077
+            : > "${DEPLOY_ENV}"
+            write_kv() {
+              _k="$1"
+              _v="$2"
+              [ -n "${_v}" ] || return 0
+              printf '%s=%s\n' "${_k}" "${_v}" >> "${DEPLOY_ENV}"
+            }
+            write_kv GOANIMES_ADMIN_API_KEY "${GOANIMES_ADMIN_API_KEY:-}"
+            write_kv ADMIN_API_KEY "${ADMIN_API_KEY:-}"
+            write_kv DATABASE_URL "${DATABASE_URL:-}"
+            write_kv GOANIMES_SQLITE_DSN "${GOANIMES_SQLITE_DSN:-}"
+            write_kv GOANIMES_GOOGLE_GTX_TRANSLATE "${GOANIMES_GOOGLE_GTX_TRANSLATE:-}"
+            write_kv GOANIMES_GOOGLE_CLIENTS5_TRANSLATE "${GOANIMES_GOOGLE_CLIENTS5_TRANSLATE:-}"
+            write_kv GOANIMES_SYNC_INTERVAL "${GOANIMES_SYNC_INTERVAL:-}"
+            write_kv GOANIMES_HTTP_TIMEOUT "${GOANIMES_HTTP_TIMEOUT:-}"
+            write_kv GOANIMES_ERAI_MAX_PER_ANIME_FEEDS "${GOANIMES_ERAI_MAX_PER_ANIME_FEEDS:-}"
+            write_kv GOANIMES_ANILIST_DISABLED "${GOANIMES_ANILIST_DISABLED:-}"
+            write_kv GOANIMES_JIKAN_DISABLED "${GOANIMES_JIKAN_DISABLED:-}"
+            write_kv GOANIMES_ANILIST_MIN_DELAY "${GOANIMES_ANILIST_MIN_DELAY:-}"
+            write_kv GOANIMES_JIKAN_MIN_DELAY "${GOANIMES_JIKAN_MIN_DELAY:-}"
+            write_kv GOANIMES_MAX_BODY_BYTES "${GOANIMES_MAX_BODY_BYTES:-}"
+            write_kv GOANIMES_USER_AGENT "${GOANIMES_USER_AGENT:-}"
+            write_kv PORT "${PORT:-}"
+            write_kv GOANIMES_ADDR "${GOANIMES_ADDR:-}"
+            write_kv GOANIMES_DATA_DIR "${GOANIMES_DATA_DIR:-}"
+            write_kv GIN_MODE "${GIN_MODE:-}"
+            write_kv OTEL_SERVICE_NAME "${OTEL_SERVICE_NAME:-}"
+            write_kv OTEL_SDK_DISABLED "${OTEL_SDK_DISABLED:-}"
+            write_kv OTEL_EXPORTER_OTLP_ENDPOINT "${OTEL_EXPORTER_OTLP_ENDPOINT:-}"
+            write_kv OTEL_EXPORTER_OTLP_TRACES_ENDPOINT "${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-}"
+            if [ -n "${GOANIMES_ENV_B64:-}" ]; then
+              printf '%s' "${GOANIMES_ENV_B64}" | base64 -d >> "${DEPLOY_ENV}" || { echo "GOANIMES_ENV_B64: base64 decode failed" >&2; exit 1; }
+              printf '\n' >> "${DEPLOY_ENV}"
+            fi
+            chmod 600 "${DEPLOY_ENV}" || true
             if [ -n "${GHCR_PULL_TOKEN:-}" ]; then
               echo "$GHCR_PULL_TOKEN" | docker login ghcr.io -u "${GHCR_USER:-${GOANIMES_GHCR_OWNER}}" --password-stdin
             fi
-            cd "${ROOT}/deploy/oracle"
+            cd "${ORACLE_DIR}"
             docker compose -f docker-compose.goanimes.yml pull goanimes
             docker compose -f docker-compose.goanimes.yml up -d goanimes

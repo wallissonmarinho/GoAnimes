@@ -75,7 +75,7 @@ Em produção o layout típico é **Docker Compose** com Caddy (ex.: pasta `depl
 - **`ci`** — `go test` + build em **PRs** para `main`/`master` e em **push** para outras branches. **Não** corre em push direto em `main`/`master` (evita duplicar testes com o oracle-deploy).
 - **`oracle-deploy`** — `go test` + deploy por **SSH** na VM (pull do repo + `docker compose build/up` do serviço GoAnimes) em push para `main`/`master` ou manual.
 
-Secrets: **`OCI_VM_HOST`**, **`OCI_VM_USER`**, **`OCI_SSH_PRIVATE_KEY`**; opcional **`OCI_DEPLOY_ROOT`** (default `/opt/go`). Detalhes no próprio workflow `.github/workflows/oracle-deploy.yml`.
+O job **deploy** usa **`environment: prd`**. **Repository secrets:** **`OCI_*`**, **`GHCR_*`**. No ambiente **`prd`**, tudo o que definires como **Secret** ou **Variable** (nomes listados no comentário do `.github/workflows/oracle-deploy.yml`) é gravado em **`deploy/oracle/.env.goanimes.deploy`** na VM a cada deploy — não precisas de SSH para essas chaves. Secret opcional **`GOANIMES_ENV_B64`**: conteúdo extra em base64 (ex. `base64 -i snippet.env | tr -d '\n'`) acrescentado ao fim do ficheiro. **`ACME_EMAIL`** (Caddy) continua no **`.env`** na VM.
 
 ## Migrations
 

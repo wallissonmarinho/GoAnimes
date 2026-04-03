@@ -9,6 +9,7 @@ import (
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/anilist"
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/httpclient"
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/jikan"
+	"github.com/wallissonmarinho/GoAnimes/internal/adapters/translate"
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/state"
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/storage"
 	"github.com/wallissonmarinho/GoAnimes/internal/core/domain"
@@ -35,6 +36,19 @@ func HydrateCatalogStore(ctx context.Context, repo ports.CatalogRepository, mem 
 // NewCatalogAdmin wires admin + Stremio catalog façade (repo + in-memory store).
 func NewCatalogAdmin(repo *storage.Catalog, store *state.CatalogStore) *services.CatalogAdminService {
 	return services.NewCatalogAdminService(repo, store)
+}
+
+// SynopsisTranslatorFromEnv builds optional synopsis translation from translate.FromEnv (gilang) when
+// GOANIMES_GOOGLE_GTX_TRANSLATE or GOANIMES_GOOGLE_CLIENTS5_TRANSLATE is set. Uses same HTTP timeout as RSS sync getter.
+func SynopsisTranslatorFromEnv(httpTimeout time.Duration, userAgent string, maxBody int64) ports.SynopsisTranslator {
+	if httpTimeout <= 0 {
+		httpTimeout = 45 * time.Second
+	}
+	if maxBody <= 0 {
+		maxBody = 50 << 20
+	}
+	g := httpclient.NewGetter(httpTimeout, userAgent, maxBody)
+	return translate.FromEnv(g)
 }
 
 // NewRSSSyncService builds sync with concrete deps and returns optional API clients for HTTP handlers.

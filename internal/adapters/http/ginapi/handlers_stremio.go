@@ -14,6 +14,7 @@ import (
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/anilist"
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/rss"
 	"github.com/wallissonmarinho/GoAnimes/internal/core/domain"
+	"github.com/wallissonmarinho/GoAnimes/internal/core/services"
 )
 
 const (
@@ -23,7 +24,7 @@ const (
 	stremioTypeMovie     = "movie"
 	stremioTypeSeries    = "series"
 	// stremioManifestVersion: PATCH = fixes, tuning, deps, docs; MINOR = nova funcionalidade visível (API, sync, catálogo Stremio); MAJOR = contrato que parte instalações.
-	stremioManifestVersion = "1.1.2"
+	stremioManifestVersion = "1.1.3"
 )
 
 func stremioMetaOrStreamTypeOK(t string) bool {
@@ -217,6 +218,11 @@ func (h *handlers) getMeta(c *gin.Context) {
 			cancel()
 		}
 		if didLazyEnrich {
+			enAfter := h.deps.Catalog.AniListEnrichment(ser.ID)
+			newDesc := services.TranslateSynopsisToPT(h.deps.SynopsisTrans, h.deps.Log, enAfter.Description)
+			if newDesc != enAfter.Description && strings.TrimSpace(newDesc) != "" {
+				h.deps.Catalog.ReplaceAniListSynopsis(ser.ID, newDesc)
+			}
 			pctx, pcancel := context.WithTimeout(context.Background(), 60*time.Second)
 			if err := h.deps.Catalog.PersistActiveCatalog(pctx); err != nil && h.deps.Log != nil {
 				h.deps.Log.Warn("persist catalog after lazy enrichment", slog.Any("err", err))

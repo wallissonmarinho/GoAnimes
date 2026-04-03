@@ -21,7 +21,9 @@ type Deps struct {
 	Catalog ports.CatalogAdmin // RSS admin, sync-status from DB, live Stremio catalog (memory), persistence after lazy enrich
 	AniList *anilist.Client    // optional: lazy-fetch when cache is empty
 	Jikan   *jikan.Client      // optional: MAL fallback when AniList left gaps
-	Log     *slog.Logger
+	// SynopsisTrans optional; translate.FromEnv when GOANIMES_GOOGLE_GTX_TRANSLATE or GOANIMES_GOOGLE_CLIENTS5_TRANSLATE.
+	SynopsisTrans ports.SynopsisTranslator
+	Log           *slog.Logger
 }
 
 // handlers binds Gin routes to ports. See handlers_public.go, handlers_admin.go, handlers_stremio.go, handlers_rss.go, handlers_sync.go, middleware.go.

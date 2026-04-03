@@ -60,6 +60,7 @@ type RSSSyncRuntimeOptions struct {
 	AniListMinDelay time.Duration // extra sleep after each AniList success (client already paces requests); default 0
 	Jikan           *jikan.Client
 	JikanMinDelay   time.Duration // sleep after each Jikan enrichment; 0 → default 900ms (client also paces each HTTP call)
+	SynopsisTrans   ports.SynopsisTranslator // optional: synopsis translation (gilang googletranslate when enabled)
 }
 
 // RSSSyncService fetches RSS sources, filters pt-BR (Erai [br]), updates memory + DB snapshot.
@@ -69,10 +70,11 @@ type RSSSyncService struct {
 	getter       *httpclient.Getter
 	anilist      *anilist.Client
 	anilistDelay time.Duration
-	jikan        *jikan.Client
-	jikanDelay   time.Duration
-	log          *slog.Logger
-	mu           sync.Mutex
+	jikan         *jikan.Client
+	jikanDelay    time.Duration
+	synopsisTrans ports.SynopsisTranslator
+	log           *slog.Logger
+	mu            sync.Mutex
 }
 
 func NewRSSSyncService(repo ports.CatalogRepository, mem *state.CatalogStore, o RSSSyncRuntimeOptions, log *slog.Logger) *RSSSyncService {
@@ -97,14 +99,15 @@ func NewRSSSyncService(repo ports.CatalogRepository, mem *state.CatalogStore, o 
 		jdly = 900 * time.Millisecond
 	}
 	return &RSSSyncService{
-		repo:         repo,
-		mem:          mem,
-		getter:       httpclient.NewGetter(o.HTTPTimeout, o.UserAgent, o.MaxBodyBytes),
-		anilist:      o.AniList,
-		anilistDelay: dly,
-		jikan:        o.Jikan,
-		jikanDelay:   jdly,
-		log:          log,
+		repo:          repo,
+		mem:           mem,
+		getter:        httpclient.NewGetter(o.HTTPTimeout, o.UserAgent, o.MaxBodyBytes),
+		anilist:       o.AniList,
+		anilistDelay:  dly,
+		jikan:         o.Jikan,
+		jikanDelay:    jdly,
+		synopsisTrans: o.SynopsisTrans,
+		log:           log,
 	}
 }
 
@@ -171,7 +174,9 @@ func (s *RSSSyncService) enrichAniListSeries(ctx context.Context, series []domai
 			appendSyncNote(syncNotes, fmt.Sprintf("anilist %q: %v", qlog, err))
 			continue
 		}
-		cache[ser.ID] = anilist.ToDomainEnrichment(det)
+		en := anilist.ToDomainEnrichment(det)
+		en.Description = TranslateSynopsisToPT(s.synopsisTrans, s.log, en.Description)
+		cache[ser.ID] = en
 		newN++
 		if s.anilistDelay > 0 {
 			time.Sleep(s.anilistDelay)
@@ -209,7 +214,9 @@ func (s *RSSSyncService) enrichJikanGaps(ctx context.Context, series []domain.Ca
 			appendSyncNote(syncNotes, fmt.Sprintf("jikan %q: %v", ser.Name, err))
 			continue
 		}
-		cache[ser.ID] = domain.MergeAniListEnrichment(cur, add)
+		merged := domain.MergeAniListEnrichment(cur, add)
+		merged.Description = TranslateSynopsisToPT(s.synopsisTrans, s.log, merged.Description)
+		cache[ser.ID] = merged
 		n++
 		if s.jikanDelay > 0 {
 			time.Sleep(s.jikanDelay)

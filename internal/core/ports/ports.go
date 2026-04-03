@@ -32,6 +32,8 @@ type CatalogAdmin interface {
 	ItemByID(id string) (domain.CatalogItem, bool)
 	AniListEnrichment(seriesID string) domain.AniListSeriesEnrichment
 	MergeAniListEnrichment(seriesID string, add domain.AniListSeriesEnrichment)
+	// ReplaceAniListSynopsis overwrites cached synopsis and the catalog row (e.g. optional machine translation).
+	ReplaceAniListSynopsis(seriesID, description string)
 }
 
 // SyncRunner runs RSS fetch + parse + filter.
