@@ -172,4 +172,5 @@ jobs:
             fi
             cd "${ORACLE_DIR}"
             docker compose -f docker-compose.goanimes.yml pull goanimes
-            docker compose -f docker-compose.goanimes.yml up -d goanimes
+            # Recria o contentor para aplicar .env.goanimes.deploy (Compose nem sempre recria só com env alterado).
+            docker compose -f docker-compose.goanimes.yml up -d --force-recreate goanimes
