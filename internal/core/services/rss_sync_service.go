@@ -59,7 +59,7 @@ type RSSSyncRuntimeOptions struct {
 	AniList         *anilist.Client
 	AniListMinDelay time.Duration // sleep between AniList calls (rate limit); 0 → default 750ms
 	Jikan           *jikan.Client
-	JikanMinDelay   time.Duration // sleep after each Jikan series (2 HTTP calls); 0 → default 400ms
+	JikanMinDelay   time.Duration // sleep after each Jikan enrichment; 0 → default 900ms (client also paces each HTTP call)
 }
 
 // RSSSyncService fetches RSS sources, filters pt-BR (Erai [br]), updates memory + DB snapshot.
@@ -94,7 +94,7 @@ func NewRSSSyncService(repo ports.CatalogRepository, mem *state.CatalogStore, o 
 	}
 	jdly := o.JikanMinDelay
 	if jdly <= 0 {
-		jdly = 400 * time.Millisecond
+		jdly = 900 * time.Millisecond
 	}
 	return &RSSSyncService{
 		repo:         repo,

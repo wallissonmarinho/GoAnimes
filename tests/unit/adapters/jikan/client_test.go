@@ -53,7 +53,7 @@ func TestClient_SearchAnimeEnrichment(t *testing.T) {
 	defer srv.Close()
 
 	g := httpclient.NewGetter(5*time.Second, "GoAnimes/test", 1<<20)
-	c := jikan.NewClient(g, jikan.WithBaseURL(srv.URL+"/v4"))
+	c := jikan.NewClient(g, jikan.WithBaseURL(srv.URL+"/v4"), jikan.WithMinRequestInterval(0))
 
 	en, err := c.SearchAnimeEnrichment(context.Background(), "Test Query")
 	require.NoError(t, err)

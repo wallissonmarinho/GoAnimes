@@ -9,6 +9,15 @@ import (
 	"time"
 )
 
+// HTTPStatusError is returned when the server responds with a non-2xx status.
+type HTTPStatusError struct {
+	StatusCode int
+}
+
+func (e *HTTPStatusError) Error() string {
+	return fmt.Sprintf("http %d", e.StatusCode)
+}
+
 // Getter downloads HTTP bodies with a size limit.
 type Getter struct {
 	Client     *http.Client
@@ -42,7 +51,7 @@ func (g *Getter) GetBytes(url string) ([]byte, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("http %d", resp.StatusCode)
+		return nil, &HTTPStatusError{StatusCode: resp.StatusCode}
 	}
 	r := io.LimitReader(resp.Body, g.MaxBodyBytes+1)
 	b, err := io.ReadAll(r)
@@ -73,7 +82,7 @@ func (g *Getter) PostBytes(url string, contentType string, body []byte) ([]byte,
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("http %d", resp.StatusCode)
+		return nil, &HTTPStatusError{StatusCode: resp.StatusCode}
 	}
 	r := io.LimitReader(resp.Body, g.MaxBodyBytes+1)
 	b, err := io.ReadAll(r)

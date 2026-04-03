@@ -57,7 +57,7 @@ func NewRSSSyncService(repo *storage.Catalog, mem *state.CatalogStore, o service
 		jk = jikan.NewClient(g)
 		o.Jikan = jk
 		if o.JikanMinDelay <= 0 {
-			if d, err := time.ParseDuration(getenv("GOANIMES_JIKAN_MIN_DELAY", "400ms")); err == nil {
+			if d, err := time.ParseDuration(getenv("GOANIMES_JIKAN_MIN_DELAY", "900ms")); err == nil {
 				o.JikanMinDelay = d
 			}
 		}

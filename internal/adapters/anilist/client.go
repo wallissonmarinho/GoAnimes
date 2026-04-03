@@ -160,7 +160,7 @@ func (c *Client) SearchAnimeMedia(ctx context.Context, title string) (MediaDetai
 	if c == nil || c.getter == nil {
 		return zero, errors.New("anilist: nil client")
 	}
-	q := strings.TrimSpace(title)
+	q := domain.NormalizeExternalAnimeSearchQuery(title)
 	if q == "" {
 		return zero, errors.New("anilist: empty title")
 	}

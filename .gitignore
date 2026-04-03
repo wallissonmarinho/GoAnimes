@@ -32,6 +32,13 @@ coverage.out
 .idea/
 *.iml
 
+# Contexto para agente / Cursor — não versionar nenhum .md disto
+CONTEXT.md
+CONTEXT*.md
+docs/versioning.md
+docs/context*.md
+.cursor/
+
 # SO e temporários
 .DS_Store
 Thumbs.db

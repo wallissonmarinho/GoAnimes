@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/anilist"
@@ -18,10 +20,17 @@ import (
 
 const defaultBase = "https://api.jikan.moe/v4"
 
+// defaultMinRequestInterval spaces every Jikan HTTP call (~1.3 r/s) to reduce 429 during sync
+// (each enrichment does search + detail + episode pages).
+const defaultMinRequestInterval = 750 * time.Millisecond
+
 // Client queries Jikan (MyAnimeList) HTTP API v4.
 type Client struct {
-	getter *httpclient.Getter
-	base   string
+	getter      *httpclient.Getter
+	base        string
+	minInterval time.Duration
+	mu          sync.Mutex
+	lastEnd     time.Time
 }
 
 // Option configures Client.
@@ -36,16 +45,90 @@ func WithBaseURL(base string) Option {
 	}
 }
 
+// WithMinRequestInterval sets the minimum delay between outbound Jikan requests (0 = no pacing; tests).
+func WithMinRequestInterval(d time.Duration) Option {
+	return func(c *Client) {
+		c.minInterval = d
+	}
+}
+
 // NewClient returns a Jikan client. getter must be non-nil.
 func NewClient(g *httpclient.Getter, opts ...Option) *Client {
 	if g == nil {
 		return nil
 	}
-	c := &Client{getter: g, base: defaultBase}
+	c := &Client{getter: g, base: defaultBase, minInterval: defaultMinRequestInterval}
 	for _, o := range opts {
 		o(c)
 	}
 	return c
+}
+
+func (c *Client) pace(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if c.minInterval <= 0 {
+		return nil
+	}
+	c.mu.Lock()
+	wait := time.Duration(0)
+	if !c.lastEnd.IsZero() {
+		next := c.lastEnd.Add(c.minInterval)
+		if d := time.Until(next); d > 0 {
+			wait = d
+		}
+	}
+	c.mu.Unlock()
+	if wait > 0 {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(wait):
+		}
+	}
+	return nil
+}
+
+func (c *Client) noteReqDone() {
+	if c.minInterval <= 0 {
+		return
+	}
+	c.mu.Lock()
+	c.lastEnd = time.Now()
+	c.mu.Unlock()
+}
+
+// getBytesJikan paces requests, retries a few times on HTTP 429.
+func (c *Client) getBytesJikan(ctx context.Context, urlStr string) ([]byte, error) {
+	var lastErr error
+	for attempt := 0; attempt < 6; attempt++ {
+		if attempt > 0 {
+			var he *httpclient.HTTPStatusError
+			if !errors.As(lastErr, &he) || he.StatusCode != http.StatusTooManyRequests {
+				return nil, lastErr
+			}
+			back := time.Duration(500+attempt*350) * time.Millisecond
+			if back > 5*time.Second {
+				back = 5 * time.Second
+			}
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(back):
+			}
+		}
+		if err := c.pace(ctx); err != nil {
+			return nil, err
+		}
+		b, err := c.getter.GetBytes(urlStr)
+		c.noteReqDone()
+		if err == nil {
+			return b, nil
+		}
+		lastErr = err
+	}
+	return nil, lastErr
 }
 
 type animeSearchResp struct {
@@ -103,7 +186,7 @@ func (c *Client) fetchEpisodeTitles(ctx context.Context, malID int) (map[int]str
 			return out, err
 		}
 		u := fmt.Sprintf("%s/anime/%d/episodes?page=%d", c.base, malID, page)
-		body, err := c.getter.GetBytes(u)
+		body, err := c.getBytesJikan(ctx, u)
 		if err != nil {
 			if page == 1 {
 				return nil, err
@@ -137,7 +220,6 @@ func (c *Client) fetchEpisodeTitles(ctx context.Context, malID int) (map[int]str
 		if !resp.Pagination.HasNextPage {
 			break
 		}
-		time.Sleep(400 * time.Millisecond)
 	}
 	if len(out) == 0 {
 		return nil, nil
@@ -151,7 +233,7 @@ func (c *Client) SearchAnimeEnrichment(ctx context.Context, title string) (domai
 	if c == nil || c.getter == nil {
 		return zero, errors.New("jikan: nil client")
 	}
-	q := strings.TrimSpace(title)
+	q := domain.NormalizeExternalAnimeSearchQuery(title)
 	if q == "" {
 		return zero, errors.New("jikan: empty title")
 	}
@@ -163,7 +245,7 @@ func (c *Client) SearchAnimeEnrichment(ctx context.Context, title string) (domai
 		"limit": {"1"},
 		"sfw":   {"true"},
 	}.Encode()
-	body, err := c.getter.GetBytes(searchURL)
+	body, err := c.getBytesJikan(ctx, searchURL)
 	if err != nil {
 		return zero, err
 	}
@@ -178,7 +260,7 @@ func (c *Client) SearchAnimeEnrichment(ctx context.Context, title string) (domai
 		return zero, err
 	}
 	detailURL := c.base + "/anime/" + strconv.Itoa(sresp.Data[0].MalID)
-	body2, err := c.getter.GetBytes(detailURL)
+	body2, err := c.getBytesJikan(ctx, detailURL)
 	if err != nil {
 		return zero, err
 	}
