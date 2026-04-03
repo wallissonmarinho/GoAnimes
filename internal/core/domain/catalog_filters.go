@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"sort"
 	"strings"
 	"time"
 )
@@ -66,18 +67,68 @@ func FilterSeriesWithRecentReleases(snap *CatalogSnapshot, days int) []CatalogSe
 	return FilterSeriesWithReleaseSince(snap, cutoff)
 }
 
-// FilterSeriesByGenre keeps series whose Genres contain a case-insensitive match to want.
+// UniqueGenreLabelsFromCatalogSeries returns distinct genre labels from all series, sorted (pt-BR when mapeado).
+// Each label is passed through TranslateAnimeGenresToPTBR so inglês do catálogo/BD e pt-BR deduplicam (ex. Action + Ação → Ação).
+func UniqueGenreLabelsFromCatalogSeries(series []CatalogSeries) []string {
+	seen := make(map[string]struct{})
+	for _, s := range series {
+		for _, g := range s.Genres {
+			g = strings.TrimSpace(g)
+			if g == "" {
+				continue
+			}
+			pt := TranslateAnimeGenresToPTBR([]string{g})
+			if len(pt) == 0 {
+				continue
+			}
+			seen[pt[0]] = struct{}{}
+		}
+	}
+	out := make([]string, 0, len(seen))
+	for g := range seen {
+		out = append(out, g)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// genreMatchPTBR reports whether a catalog genre label matches the filter (English/pt-BR, case-insensitive).
+func genreMatchPTBR(catalogGenre, want string) bool {
+	want = strings.TrimSpace(want)
+	g := strings.TrimSpace(catalogGenre)
+	if want == "" || g == "" {
+		return false
+	}
+	wNorm := TranslateAnimeGenresToPTBR([]string{want})
+	gNorm := TranslateAnimeGenresToPTBR([]string{g})
+	var wLab, gLab string
+	if len(wNorm) > 0 {
+		wLab = wNorm[0]
+	} else {
+		wLab = want
+	}
+	if len(gNorm) > 0 {
+		gLab = gNorm[0]
+	} else {
+		gLab = g
+	}
+	if strings.EqualFold(wLab, gLab) {
+		return true
+	}
+	return strings.EqualFold(want, g)
+}
+
+// FilterSeriesByGenre keeps series whose Genres match want (labels normalized with TranslateAnimeGenresToPTBR).
 func FilterSeriesByGenre(series []CatalogSeries, want string) []CatalogSeries {
 	want = strings.TrimSpace(want)
 	if want == "" {
 		return series
 	}
-	nw := strings.ToLower(want)
 	out := make([]CatalogSeries, 0, len(series))
 outer:
 	for _, s := range series {
 		for _, g := range s.Genres {
-			if strings.ToLower(strings.TrimSpace(g)) == nw {
+			if genreMatchPTBR(g, want) {
 				out = append(out, s)
 				continue outer
 			}

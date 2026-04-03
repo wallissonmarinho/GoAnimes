@@ -24,7 +24,7 @@ const (
 	stremioTypeMovie     = "movie"
 	stremioTypeSeries    = "series"
 	// stremioManifestVersion: PATCH = fixes, tuning, deps, docs; MINOR = nova funcionalidade visível (API, sync, catálogo Stremio); MAJOR = contrato que parte instalações.
-	stremioManifestVersion = "1.1.3"
+	stremioManifestVersion = "1.2.1"
 )
 
 func stremioMetaOrStreamTypeOK(t string) bool {
@@ -122,12 +122,14 @@ func seriesToStremioMetas(series []domain.CatalogSeries) []gin.H {
 }
 
 func (h *handlers) getManifest(c *gin.Context) {
+	snap := h.deps.Catalog.Snapshot()
+	genreOpts := domain.UniqueGenreLabelsFromCatalogSeries(snap.Series)
 	genreExtra := []gin.H{{
 		"name":       "genre",
 		"isRequired": false,
-		"options":    domain.StremioGenreFilterOptions(),
+		"options":    genreOpts,
 	}}
-	genres := domain.StremioGenreFilterOptions()
+	genres := genreOpts
 	c.JSON(http.StatusOK, gin.H{
 		"id":          "org.goanimes",
 		"version":     stremioManifestVersion,

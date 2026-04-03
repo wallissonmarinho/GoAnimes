@@ -33,6 +33,26 @@ func TestFilterSeriesByGenre(t *testing.T) {
 	out := domain.FilterSeriesByGenre(series, "fantasia")
 	require.Len(t, out, 1)
 	require.Equal(t, "a", out[0].ID)
+
+	en := []domain.CatalogSeries{{ID: "c", Name: "C", Genres: []string{"Action", "Comedy"}}}
+	require.Len(t, domain.FilterSeriesByGenre(en, "Ação"), 1)
+	require.Len(t, domain.FilterSeriesByGenre(en, "Comédia"), 1)
+}
+
+func TestUniqueGenreLabelsFromCatalogSeries(t *testing.T) {
+	require.Empty(t, domain.UniqueGenreLabelsFromCatalogSeries(nil))
+	require.Empty(t, domain.UniqueGenreLabelsFromCatalogSeries([]domain.CatalogSeries{{ID: "x", Genres: nil}}))
+	got := domain.UniqueGenreLabelsFromCatalogSeries([]domain.CatalogSeries{
+		{ID: "a", Genres: []string{"Comédia", " Ação "}},
+		{ID: "b", Genres: []string{"Ação", "Fantasia"}},
+	})
+	require.Equal(t, []string{"Ação", "Comédia", "Fantasia"}, got)
+
+	mergeEN := domain.UniqueGenreLabelsFromCatalogSeries([]domain.CatalogSeries{
+		{ID: "x", Genres: []string{"Action", "Comedy"}},
+		{ID: "y", Genres: []string{"Ação"}},
+	})
+	require.Equal(t, []string{"Ação", "Comédia"}, mergeEN)
 }
 
 func TestFilterSeriesWithRecentReleases_onlyOld(t *testing.T) {

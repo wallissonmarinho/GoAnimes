@@ -155,7 +155,8 @@ func LocalizeAniListDescriptionPTBR(s string) string {
 	})
 }
 
-// StremioGenreFilterOptions returns sorted pt-BR genre labels for manifest catalog extras (dropdown, Kitsu-style).
+// StremioGenreFilterOptions returns the full sorted pt-BR palette (AniList→pt mapping). The Stremio manifest
+// uses UniqueGenreLabelsFromCatalogSeries instead so the genre filter only lists genres present in the catalog.
 func StremioGenreFilterOptions() []string {
 	seen := make(map[string]struct{}, len(translateGenreENtoPT))
 	for _, pt := range translateGenreENtoPT {
