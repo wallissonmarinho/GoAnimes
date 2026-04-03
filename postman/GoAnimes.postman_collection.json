@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "a1b2c3d4-goanimes-api",
     "name": "GoAnimes",
-    "description": "GoAnimes — admin API + URLs úteis do addon Stremio.\n\n**Variáveis:** `baseUrl`, `adminApiKey`, `rssSourceId`, `sampleRssUrl`\n\nSe **não** usares `GOANIMES_ADMIN_API_KEY`, no Postman abre a pasta **Admin**, edita **Authorization** → Type **No Auth** (ou apaga o Bearer).\n\nO pedido **Create RSS source** grava o `id` devolvido em `rssSourceId` para usar no **Delete**.",
+    "description": "GoAnimes — admin API + URLs do addon Stremio.\n\n**Variáveis de coleção:** `baseUrl`, `adminApiKey`, `rssSourceId`, `sampleRssUrl`, `seriesId`, `videoId`\n\n- **Meta / Stream (path):** coloca em `seriesId` e `videoId` o id **já com encoding URL** (ex. `goanimes%3Aseries%3A…`, `goanimes%3Avid%3A…`), ou edita o path manualmente no Postman.\n- **Inspect series:** usa `seriesId` **sem** encoding no query param; o Postman codifica no `?id=`.\n\nSe **não** usares `GOANIMES_ADMIN_API_KEY`, na pasta **Admin** → **Authorization** → **No Auth**.\n\n**Create RSS source** grava `rssSourceId` para o **Delete**.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -12,7 +12,9 @@
     {
       "key": "sampleRssUrl",
       "value": "https://www.erai-raws.info/feed/?type=torrent&token=SEU_TOKEN_AQUI"
-    }
+    },
+    { "key": "seriesId", "value": "" },
+    { "key": "videoId", "value": "" }
   ],
   "item": [
     {
@@ -40,6 +42,42 @@
             "method": "GET",
             "header": [],
             "url": "{{baseUrl}}/catalog/anime/goanimes.json"
+          }
+        },
+        {
+          "name": "Meta (anime / series id)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/meta/anime/{{seriesId}}.json",
+            "description": "Define `seriesId` com id path-encoded (`:` → `%3A`), ou substitui no URL."
+          }
+        },
+        {
+          "name": "Meta (series / series id)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/meta/series/{{seriesId}}.json",
+            "description": "Mesmo conteúdo que anime em muitos clientes; útil para testar o tipo `series`."
+          }
+        },
+        {
+          "name": "Stream (anime / video id)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/stream/anime/{{videoId}}.json",
+            "description": "`videoId` = id `goanimes:vid:…` (encoded no path)."
+          }
+        },
+        {
+          "name": "Stream (series / video id)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/stream/series/{{videoId}}.json",
+            "description": "Alternativa com tipo `series` no path."
           }
         }
       ]
@@ -126,6 +164,29 @@
                 "method": "GET",
                 "header": [],
                 "url": "{{baseUrl}}/api/v1/sync-status"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Inspect",
+          "item": [
+            {
+              "name": "Inspect catalog",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/v1/inspect/catalog",
+                "description": "Resumo de todas as séries + enrichment (validação / QA)."
+              }
+            },
+            {
+              "name": "Inspect series",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/v1/inspect/series?id={{seriesId}}",
+                "description": "Query `id` = série Stremio (ex. goanimes:series:…). Podes colar com `:`; o cliente codifica no query string."
               }
             }
           ]

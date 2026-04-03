@@ -4,9 +4,12 @@ import "time"
 
 // CatalogSeries is one anime show in Discover (Stremio catalog + meta use type "anime").
 type CatalogSeries struct {
-	ID     string `json:"id"`
-	Name   string `json:"name"`
-	Poster string `json:"poster,omitempty"`
+	ID          string   `json:"id"`
+	Name        string   `json:"name"`
+	Poster      string   `json:"poster,omitempty"`
+	Description string   `json:"description,omitempty"`
+	Genres      []string `json:"genres,omitempty"`
+	ReleaseInfo string   `json:"releaseInfo,omitempty"`
 }
 
 // CatalogItem is one release (episode). Streams use its ID; catalog lists the parent series.

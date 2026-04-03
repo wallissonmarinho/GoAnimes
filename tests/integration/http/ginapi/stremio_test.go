@@ -36,8 +36,20 @@ func TestStremioRoutes_catalogMetaStream(t *testing.T) {
 		},
 	}
 	domain.EnsureSnapshotGrouped(&snap)
-	store.Set(snap)
 	serID := snap.Series[0].ID
+	snap.AniListBySeries = map[string]domain.AniListSeriesEnrichment{
+		serID: {
+			PosterURL:      "https://cdn.example/poster.jpg",
+			Description:    "A test synopsis for catalog.",
+			Genres:         []string{"Comedy"},
+			StartYear:      2020,
+			TitlePreferred: "Test Show",
+			TitleNative:    "試験ショー",
+			EpisodeTitleByNum: map[int]string{},
+		},
+	}
+	domain.ApplyAniListEnrichmentToSeries(&snap)
+	store.Set(snap)
 	vid := domain.EpisodeVideoStremioID(serID, 1, 1, false)
 
 	e := gin.New()
@@ -56,6 +68,10 @@ func TestStremioRoutes_catalogMetaStream(t *testing.T) {
 	require.Contains(t, w.Body.String(), `"type":"anime"`)
 	require.Contains(t, w.Body.String(), serID)
 	require.Contains(t, w.Body.String(), "Test Show")
+	require.NotContains(t, w.Body.String(), "試験ショー")
+	require.Contains(t, w.Body.String(), "A test synopsis for catalog.")
+	require.Contains(t, w.Body.String(), "2020-")
+	require.Contains(t, w.Body.String(), "Comedy")
 
 	w = httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodGet, "/meta/series/"+serID+".json", nil)
@@ -68,6 +84,7 @@ func TestStremioRoutes_catalogMetaStream(t *testing.T) {
 	require.Contains(t, w.Body.String(), `"title":"E1"`)
 	require.Contains(t, w.Body.String(), `"released"`)
 	require.Regexp(t, `"released":"\d{4}-\d{2}-\d{2}T`, w.Body.String())
+	require.Contains(t, w.Body.String(), "試験ショー")
 
 	w = httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodGet, "/stream/series/"+vid+".json", nil)

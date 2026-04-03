@@ -65,7 +65,7 @@ func stremioUnescapePathParam(s string) string {
 func (h *handlers) getManifest(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"id":          "org.goanimes",
-		"version":     "1.0.10",
+		"version":     "1.0.11",
 		"name":        "GoAnimes",
 		"description": "RSS anime torrents with pt-BR (Erai [br]) filter",
 		"types":       []string{stremioTypeAnime, stremioTypeMovie, stremioTypeSeries},
@@ -91,14 +91,24 @@ func (h *handlers) getCatalog(c *gin.Context) {
 	snap := h.deps.Store.Snapshot()
 	metas := make([]gin.H, 0, len(snap.Series))
 	for _, s := range snap.Series {
+		genres := []string{"Anime"}
+		if len(s.Genres) > 0 {
+			genres = append([]string(nil), s.Genres...)
+		}
 		m := gin.H{
 			"id":     s.ID,
 			"type":   stremioTypeAnime,
 			"name":   s.Name,
-			"genres": []string{"Anime"},
+			"genres": genres,
 		}
 		if s.Poster != "" {
 			m["poster"] = s.Poster
+		}
+		if d := strings.TrimSpace(s.Description); d != "" {
+			m["description"] = d
+		}
+		if ri := strings.TrimSpace(s.ReleaseInfo); ri != "" {
+			m["releaseInfo"] = ri
 		}
 		metas = append(metas, m)
 	}
@@ -123,18 +133,22 @@ func (h *handlers) getMeta(c *gin.Context) {
 		groups := domain.GroupItemsByEpisode(snap.Items, id)
 		keys := domain.OrderedEpisodeKeys(groups)
 		en := h.deps.Store.AniListEnrichment(ser.ID)
-		if strings.TrimSpace(ser.Name) != "" {
+		search := domain.AniListSearchQueryFromItems(snap.Items, ser.ID)
+		if strings.TrimSpace(search) == "" {
+			search = ser.Name
+		}
+		if strings.TrimSpace(search) != "" {
 			ctx, cancel := context.WithTimeout(c.Request.Context(), 14*time.Second)
-			if strings.TrimSpace(en.Description) == "" && h.deps.AniList != nil {
-				det, err := h.deps.AniList.SearchAnimeMedia(ctx, ser.Name)
+			if h.deps.AniList != nil && domain.AniListNeedsRefetch(en) {
+				det, err := h.deps.AniList.SearchAnimeMedia(ctx, search)
 				if err == nil {
 					add := anilist.ToDomainEnrichment(det)
 					h.deps.Store.MergeAniListEnrichment(ser.ID, add)
 					en = domain.MergeAniListEnrichment(en, add)
 				}
 			}
-			if domain.EnrichmentCouldUseJikan(en) && h.deps.Jikan != nil {
-				add, err := h.deps.Jikan.SearchAnimeEnrichment(ctx, ser.Name)
+			if h.deps.Jikan != nil && domain.EnrichmentCouldUseJikan(en) {
+				add, err := h.deps.Jikan.SearchAnimeEnrichment(ctx, search)
 				if err == nil {
 					h.deps.Store.MergeAniListEnrichment(ser.ID, add)
 					en = domain.MergeAniListEnrichment(en, add)
@@ -142,6 +156,10 @@ func (h *handlers) getMeta(c *gin.Context) {
 			}
 			cancel()
 		}
+		if s2, ok := h.deps.Store.SeriesByID(id); ok {
+			ser = s2
+		}
+		en = h.deps.Store.AniListEnrichment(ser.ID)
 		videos := make([]gin.H, 0, len(keys))
 		for _, k := range keys {
 			group := groups[k]
@@ -304,7 +322,12 @@ func mergeAniListSeriesMeta(meta gin.H, en domain.AniListSeriesEnrichment) {
 	if strings.TrimSpace(en.TrailerYouTubeID) != "" {
 		meta["trailers"] = []gin.H{{"source": en.TrailerYouTubeID, "type": "Trailer"}}
 	}
-	if strings.TrimSpace(en.TitlePreferred) != "" {
+	if strings.TrimSpace(en.TitleNative) != "" {
+		meta["name"] = en.TitleNative
+	} else if strings.TrimSpace(en.TitlePreferred) != "" {
 		meta["name"] = en.TitlePreferred
+	}
+	if u := strings.TrimSpace(en.PosterURL); u != "" {
+		meta["poster"] = u
 	}
 }

@@ -45,7 +45,8 @@ func NewClient(g *httpclient.Getter, opts ...Option) *Client {
 type MediaDetails struct {
 	PosterURL         string
 	BackgroundURL     string
-	Title             string
+	Title             string // Latin-friendly (romaji / English); for Stremio catalog
+	NativeTitle       string // Japanese native from AniList (meta detail)
 	Description       string
 	Genres            []string
 	StartYear         int
@@ -69,6 +70,8 @@ func ToDomainEnrichment(d MediaDetails) domain.AniListSeriesEnrichment {
 		EpisodeLengthMin:  d.EpisodeLengthMin,
 		TrailerYouTubeID:  d.TrailerYouTubeID,
 		TitlePreferred:    d.Title,
+		TitleNative:       d.NativeTitle,
+		AniListSearchVer:  domain.AniListSearcherVersion,
 		EpisodeTitleByNum: ep,
 	}
 }
@@ -123,8 +126,9 @@ type gqlTrailer struct {
 
 type gqlTitle struct {
 	UserPreferred string `json:"userPreferred"`
-	Romaji        string `json:"romaji"`
 	English       string `json:"english"`
+	Native        string `json:"native"`
+	Romaji        string `json:"romaji"`
 }
 
 type gqlCoverImage struct {
@@ -132,10 +136,10 @@ type gqlCoverImage struct {
 	Large      string `json:"large"`
 }
 
-const searchMediaQuery = `query ($search: String) {
-  Page(page: 1, perPage: 1) {
+const searchMediaQuery = `query ($search: String, $perPage: Int) {
+  Page(page: 1, perPage: $perPage) {
     media(search: $search, type: ANIME, sort: SEARCH_MATCH, isAdult: false) {
-      title { userPreferred romaji english }
+      title { userPreferred english native romaji }
       coverImage { extraLarge large }
       bannerImage { large }
       description(asHtml: false)
@@ -165,7 +169,8 @@ func (c *Client) SearchAnimeMedia(ctx context.Context, title string) (MediaDetai
 	body, err := json.Marshal(gqlRequest{
 		Query: searchMediaQuery,
 		Variables: map[string]any{
-			"search": q,
+			"search":   q,
+			"perPage":  15,
 		},
 	})
 	if err != nil {
@@ -185,7 +190,7 @@ func (c *Client) SearchAnimeMedia(ctx context.Context, title string) (MediaDetai
 	if resp.Data == nil || resp.Data.Page == nil || len(resp.Data.Page.Media) == 0 {
 		return zero, errors.New("anilist: no results")
 	}
-	m := resp.Data.Page.Media[0]
+	m := pickBestSearchMedia(q, resp.Data.Page.Media)
 	out := MediaDetails{}
 	out.PosterURL = strings.TrimSpace(m.CoverImage.ExtraLarge)
 	if out.PosterURL == "" {
@@ -194,7 +199,8 @@ func (c *Client) SearchAnimeMedia(ctx context.Context, title string) (MediaDetai
 	if m.BannerImage != nil {
 		out.BackgroundURL = strings.TrimSpace(m.BannerImage.Large)
 	}
-	out.Title = pickTitle(m.Title)
+	out.Title = pickTitleLatin(m.Title)
+	out.NativeTitle = strings.TrimSpace(m.Title.Native)
 	if m.Description != nil {
 		out.Description = NormalizeDescription(*m.Description)
 	}
@@ -223,17 +229,73 @@ func (c *Client) SearchAnimeMedia(ctx context.Context, title string) (MediaDetai
 		}
 		out.EpisodeTitleByNum = domain.EpisodeTitlesFromStreamingList(raw)
 	}
-	if out.PosterURL == "" && out.BackgroundURL == "" && out.Description == "" && out.Title == "" && out.EpisodeLengthMin == 0 && len(out.Genres) == 0 && out.StartYear == 0 && out.TrailerYouTubeID == "" && len(out.EpisodeTitleByNum) == 0 {
+	if out.PosterURL == "" && out.BackgroundURL == "" && out.Description == "" && out.Title == "" && out.NativeTitle == "" && out.EpisodeLengthMin == 0 && len(out.Genres) == 0 && out.StartYear == 0 && out.TrailerYouTubeID == "" && len(out.EpisodeTitleByNum) == 0 {
 		return zero, errors.New("anilist: empty media payload")
 	}
 	return out, nil
 }
 
-func pickTitle(t gqlTitle) string {
-	for _, s := range []string{t.UserPreferred, t.Romaji, t.English} {
-		if strings.TrimSpace(s) != "" {
-			return strings.TrimSpace(s)
+func mediaTitleHaystack(t gqlTitle) string {
+	return strings.ToLower(strings.TrimSpace(t.Romaji + " " + t.English + " " + t.Native + " " + t.UserPreferred))
+}
+
+func scoreMediaTitleMatch(t gqlTitle, tokens []string, rawQuery string) int {
+	hay := mediaTitleHaystack(t)
+	score := 0
+	for _, tok := range tokens {
+		if tok != "" && strings.Contains(hay, tok) {
+			score++
 		}
+	}
+	rq := strings.ToLower(strings.TrimSpace(rawQuery))
+	if rq != "" && strings.Contains(hay, rq) {
+		if len(tokens) > 0 {
+			score += len(tokens) + 2
+		} else {
+			score++
+		}
+	}
+	return score
+}
+
+// pickBestSearchMedia chooses the AniList row that best matches the RSS search string (first hit is often wrong).
+func pickBestSearchMedia(search string, list []gqlMedia) gqlMedia {
+	if len(list) == 0 {
+		return gqlMedia{}
+	}
+	if len(list) == 1 {
+		return list[0]
+	}
+	tokens := domain.AnimeSearchScoringTokens(search)
+	bestI, bestScore := 0, -1
+	for i := range list {
+		s := scoreMediaTitleMatch(list[i].Title, tokens, search)
+		if s > bestScore {
+			bestI, bestScore = i, s
+		}
+	}
+	if bestScore <= 0 {
+		return list[0]
+	}
+	return list[bestI]
+}
+
+// pickTitleLatin prefers romaji/English for Stremio catalog; avoids Japanese userPreferred when romaji exists.
+func pickTitleLatin(t gqlTitle) string {
+	if s := strings.TrimSpace(t.Romaji); s != "" {
+		return s
+	}
+	if s := strings.TrimSpace(t.English); s != "" {
+		return s
+	}
+	if s := strings.TrimSpace(t.UserPreferred); s != "" && !domain.ContainsJapaneseScript(s) {
+		return s
+	}
+	if s := strings.TrimSpace(t.UserPreferred); s != "" {
+		return s
+	}
+	if s := strings.TrimSpace(t.Native); s != "" {
+		return s
 	}
 	return ""
 }

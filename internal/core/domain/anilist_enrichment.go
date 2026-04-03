@@ -11,12 +11,17 @@ type AniListSeriesEnrichment struct {
 	StartYear         int            `json:"start_year,omitempty"`
 	EpisodeLengthMin  int            `json:"ep_min,omitempty"`
 	TrailerYouTubeID  string         `json:"trailer_yt,omitempty"`
-	TitlePreferred    string         `json:"title_pref,omitempty"`
+	TitlePreferred    string         `json:"title_pref,omitempty"` // romaji / English / ASCII userPreferred (Stremio catalog listing)
+	TitleNative       string         `json:"title_native,omitempty"` // Japanese (optional; meta detail)
+	AniListSearchVer  int            `json:"al_search_ver,omitempty"`  // bump forces refetch after search logic changes
 	EpisodeTitleByNum map[int]string `json:"ep_titles"`
 }
 
 // AniListNeedsRefetch is true when we should call AniList again (missing data or legacy poster-only row).
 func AniListNeedsRefetch(en AniListSeriesEnrichment) bool {
+	if en.AniListSearchVer < AniListSearcherVersion {
+		return true
+	}
 	if strings.TrimSpace(en.PosterURL) == "" {
 		return true
 	}
@@ -77,6 +82,12 @@ func MergeAniListEnrichment(stored, add AniListSeriesEnrichment) AniListSeriesEn
 	}
 	if strings.TrimSpace(out.TitlePreferred) == "" {
 		out.TitlePreferred = strings.TrimSpace(add.TitlePreferred)
+	}
+	if strings.TrimSpace(out.TitleNative) == "" {
+		out.TitleNative = strings.TrimSpace(add.TitleNative)
+	}
+	if add.AniListSearchVer > out.AniListSearchVer {
+		out.AniListSearchVer = add.AniListSearchVer
 	}
 	if add.EpisodeTitleByNum != nil {
 		if out.EpisodeTitleByNum == nil {

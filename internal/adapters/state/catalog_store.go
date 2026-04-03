@@ -1,7 +1,6 @@
 package state
 
 import (
-	"strings"
 	"sync"
 
 	"github.com/wallissonmarinho/GoAnimes/internal/core/domain"
@@ -50,17 +49,15 @@ func (c *CatalogStore) SeriesByID(seriesID string) (domain.CatalogSeries, bool) 
 	}
 	for _, it := range c.snap.Items {
 		if it.SeriesID == seriesID {
-			poster := domain.SeriesPosterURL(it.SeriesName)
-			if en, ok := c.snap.AniListBySeries[seriesID]; ok {
-				if u := strings.TrimSpace(en.PosterURL); u != "" {
-					poster = u
-				}
-			}
-			return domain.CatalogSeries{
+			out := domain.CatalogSeries{
 				ID:     seriesID,
 				Name:   it.SeriesName,
-				Poster: poster,
-			}, true
+				Poster: domain.SeriesPosterURL(it.SeriesName),
+			}
+			if en, ok := c.snap.AniListBySeries[seriesID]; ok {
+				domain.ApplyEnrichmentToCatalogSeries(&out, en)
+			}
+			return out, true
 		}
 	}
 	return domain.CatalogSeries{}, false
@@ -81,7 +78,14 @@ func (c *CatalogStore) MergeAniListEnrichment(seriesID string, add domain.AniLis
 		c.snap.AniListBySeries = make(map[string]domain.AniListSeriesEnrichment)
 	}
 	cur := c.snap.AniListBySeries[seriesID]
-	c.snap.AniListBySeries[seriesID] = domain.MergeAniListEnrichment(cur, add)
+	merged := domain.MergeAniListEnrichment(cur, add)
+	c.snap.AniListBySeries[seriesID] = merged
+	for i := range c.snap.Series {
+		if c.snap.Series[i].ID == seriesID {
+			domain.ApplyEnrichmentToCatalogSeries(&c.snap.Series[i], merged)
+			break
+		}
+	}
 }
 
 // ItemsBySeriesID returns episodes for a series, sorted for display.
