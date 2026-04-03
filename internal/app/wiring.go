@@ -46,7 +46,7 @@ func NewRSSSyncService(repo *storage.Catalog, mem *state.CatalogStore, o service
 		al = anilist.NewClient(g)
 		o.AniList = al
 		if o.AniListMinDelay <= 0 {
-			if d, err := time.ParseDuration(getenv("GOANIMES_ANILIST_MIN_DELAY", "750ms")); err == nil {
+			if d, err := time.ParseDuration(getenv("GOANIMES_ANILIST_MIN_DELAY", "0")); err == nil {
 				o.AniListMinDelay = d
 			}
 		}

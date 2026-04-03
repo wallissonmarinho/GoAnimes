@@ -23,7 +23,7 @@ const (
 	stremioTypeMovie     = "movie"
 	stremioTypeSeries    = "series"
 	// stremioManifestVersion: PATCH = fixes, tuning, deps, docs; MINOR = nova funcionalidade visível (API, sync, catálogo Stremio); MAJOR = contrato que parte instalações.
-	stremioManifestVersion = "1.1.1"
+	stremioManifestVersion = "1.1.2"
 )
 
 func stremioMetaOrStreamTypeOK(t string) bool {
@@ -136,7 +136,7 @@ func (h *handlers) getManifest(c *gin.Context) {
 		"genres":      genres,
 		"catalogs": []gin.H{
 			{"type": stremioTypeAnime, "id": catalogStremioID, "name": "GoAnimes", "extra": genreExtra},
-			{"type": stremioTypeAnime, "id": catalogStremioWeekID, "name": "GoAnimes · Esta semana", "extra": genreExtra},
+			{"type": stremioTypeAnime, "id": catalogStremioWeekID, "name": "GoAnimes · Últimos 7 dias", "extra": genreExtra},
 		},
 		"resources": []any{
 			"catalog",

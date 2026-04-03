@@ -27,6 +27,17 @@ func TestParseEraiReleaseTitle(t *testing.T) {
 	require.Equal(t, 5, ep)
 	require.False(t, sp)
 
+	sn, ep, sp, ok = domain.ParseEraiReleaseTitle("[Magnet] Champignon no Majo - 12 (HEVC) [1080p CR WEBRip HEVC AAC][us][br]")
+	require.True(t, ok)
+	require.Equal(t, "Champignon no Majo", sn)
+	require.Equal(t, 12, ep)
+	require.False(t, sp)
+
+	sn2, ep2, _, ok2 := domain.ParseEraiReleaseTitle("[Torrent] Champignon no Majo - 12 (HEVC) [1080p CR WEBRip HEVC AAC][us][br]")
+	require.True(t, ok2)
+	require.Equal(t, sn, sn2, "magnet and torrent rows must share the same series name")
+	require.Equal(t, ep, ep2)
+
 	_, _, _, ok = domain.ParseEraiReleaseTitle("no pattern here")
 	require.False(t, ok)
 }

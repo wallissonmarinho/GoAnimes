@@ -57,7 +57,7 @@ type RSSSyncRuntimeOptions struct {
 	MaxBodyBytes    int64
 	UserAgent       string
 	AniList         *anilist.Client
-	AniListMinDelay time.Duration // sleep between AniList calls (rate limit); 0 → default 750ms
+	AniListMinDelay time.Duration // extra sleep after each AniList success (client already paces requests); default 0
 	Jikan           *jikan.Client
 	JikanMinDelay   time.Duration // sleep after each Jikan enrichment; 0 → default 900ms (client also paces each HTTP call)
 }
@@ -89,8 +89,8 @@ func NewRSSSyncService(repo ports.CatalogRepository, mem *state.CatalogStore, o 
 		o.UserAgent = "GoAnimes/1.0"
 	}
 	dly := o.AniListMinDelay
-	if dly <= 0 {
-		dly = 750 * time.Millisecond
+	if dly < 0 {
+		dly = 0
 	}
 	jdly := o.JikanMinDelay
 	if jdly <= 0 {
@@ -166,8 +166,9 @@ func (s *RSSSyncService) enrichAniListSeries(ctx context.Context, series []domai
 		det, err := s.anilist.SearchAnimeMedia(ctx, ser.Name)
 		if err != nil {
 			fails++
-			s.log.Warn("anilist lookup failed", slog.String("series", ser.Name), slog.Any("err", err))
-			appendSyncNote(syncNotes, fmt.Sprintf("anilist %q: %v", ser.Name, err))
+			qlog := domain.NormalizeExternalAnimeSearchQuery(ser.Name)
+			s.log.Warn("anilist lookup failed", slog.String("series", ser.Name), slog.String("search_query", qlog), slog.Any("err", err))
+			appendSyncNote(syncNotes, fmt.Sprintf("anilist %q: %v", qlog, err))
 			continue
 		}
 		cache[ser.ID] = anilist.ToDomainEnrichment(det)

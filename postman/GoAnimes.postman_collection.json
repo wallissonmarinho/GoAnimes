@@ -45,7 +45,7 @@
           }
         },
         {
-          "name": "Catalog · Esta semana (7d)",
+          "name": "Catalog · Últimos 7 dias",
           "request": {
             "method": "GET",
             "header": [],

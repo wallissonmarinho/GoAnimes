@@ -245,7 +245,9 @@ func normalizeSeriesKey(s string) string {
 	return regexp.MustCompile(`\s+`).ReplaceAllString(s, " ")
 }
 
-var eraiReleaseTitleRe = regexp.MustCompile(`(?i)^(?:\[torrent\]\s*)?(.+?)\s*-\s*(?:(\d{1,4})(?:v\d+)?|(Special))\b`)
+// Erai per-anime feeds repeat each release as [Torrent] and [Magnet]; both prefixes must strip
+// or the same show splits into two Stremio series and episodes look "missing" on one of them.
+var eraiReleaseTitleRe = regexp.MustCompile(`(?i)^(?:\[(?:torrent|magnet)\]\s*)?(.+?)\s*-\s*(?:(\d{1,4})(?:v\d+)?|(Special))\b`)
 
 var eraiSeasonSuffixRes = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)\s+(?:(\d{1,2})(?:st|nd|rd|th)\s+Season)\s*$`),

@@ -4,7 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/httpclient"
 	"github.com/wallissonmarinho/GoAnimes/internal/core/domain"
@@ -12,10 +15,16 @@ import (
 
 const defaultEndpoint = "https://graphql.anilist.co"
 
+// defaultAnilistMinInterval spaces GraphQL posts (~50/min) to avoid HTTP 429 on public API.
+const defaultAnilistMinInterval = 1000 * time.Millisecond
+
 // Client queries AniList GraphQL (no API key required for public reads).
 type Client struct {
-	getter   *httpclient.Getter
-	endpoint string
+	getter      *httpclient.Getter
+	endpoint    string
+	minInterval time.Duration
+	mu          sync.Mutex
+	lastEnd     time.Time
 }
 
 // Option configures Client.
@@ -30,15 +39,88 @@ func WithEndpoint(url string) Option {
 	}
 }
 
+// WithMinRequestInterval sets the minimum delay between outbound AniList requests (0 = no pacing; tests).
+func WithMinRequestInterval(d time.Duration) Option {
+	return func(c *Client) {
+		c.minInterval = d
+	}
+}
+
 func NewClient(g *httpclient.Getter, opts ...Option) *Client {
 	if g == nil {
 		return nil
 	}
-	c := &Client{getter: g, endpoint: defaultEndpoint}
+	c := &Client{getter: g, endpoint: defaultEndpoint, minInterval: defaultAnilistMinInterval}
 	for _, o := range opts {
 		o(c)
 	}
 	return c
+}
+
+func (c *Client) pace(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if c.minInterval <= 0 {
+		return nil
+	}
+	c.mu.Lock()
+	wait := time.Duration(0)
+	if !c.lastEnd.IsZero() {
+		next := c.lastEnd.Add(c.minInterval)
+		if d := time.Until(next); d > 0 {
+			wait = d
+		}
+	}
+	c.mu.Unlock()
+	if wait > 0 {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(wait):
+		}
+	}
+	return nil
+}
+
+func (c *Client) noteReqDone() {
+	if c.minInterval <= 0 {
+		return
+	}
+	c.mu.Lock()
+	c.lastEnd = time.Now()
+	c.mu.Unlock()
+}
+
+func (c *Client) postGQL(ctx context.Context, body []byte) ([]byte, error) {
+	var lastErr error
+	for attempt := 0; attempt < 6; attempt++ {
+		if attempt > 0 {
+			var he *httpclient.HTTPStatusError
+			if !errors.As(lastErr, &he) || he.StatusCode != http.StatusTooManyRequests {
+				return nil, lastErr
+			}
+			back := time.Duration(500+attempt*400) * time.Millisecond
+			if back > 6*time.Second {
+				back = 6 * time.Second
+			}
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(back):
+			}
+		}
+		if err := c.pace(ctx); err != nil {
+			return nil, err
+		}
+		b, err := c.getter.PostBytes(c.endpoint, "application/json", body)
+		c.noteReqDone()
+		if err == nil {
+			return b, nil
+		}
+		lastErr = err
+	}
+	return nil, lastErr
 }
 
 // MediaDetails is the best search match for a free-text title.
@@ -167,73 +249,87 @@ func (c *Client) SearchAnimeMedia(ctx context.Context, title string) (MediaDetai
 	if err := ctx.Err(); err != nil {
 		return zero, err
 	}
-	body, err := json.Marshal(gqlRequest{
-		Query: searchMediaQuery,
-		Variables: map[string]any{
-			"search":   q,
-			"perPage":  15,
-		},
-	})
-	if err != nil {
-		return zero, err
+	candidates := domain.AniListSearchQueryCandidates(q)
+	if len(candidates) == 0 {
+		return zero, errors.New("anilist: empty title")
 	}
-	b, err := c.getter.PostBytes(c.endpoint, "application/json", body)
-	if err != nil {
-		return zero, err
-	}
-	var resp gqlResponse
-	if err := json.Unmarshal(b, &resp); err != nil {
-		return zero, err
-	}
-	if len(resp.Errors) > 0 && resp.Errors[0].Message != "" {
-		return zero, errors.New(resp.Errors[0].Message)
-	}
-	if resp.Data == nil || resp.Data.Page == nil || len(resp.Data.Page.Media) == 0 {
-		return zero, errors.New("anilist: no results")
-	}
-	m := pickBestSearchMedia(q, resp.Data.Page.Media)
-	out := MediaDetails{}
-	out.PosterURL = strings.TrimSpace(m.CoverImage.ExtraLarge)
-	if out.PosterURL == "" {
-		out.PosterURL = strings.TrimSpace(m.CoverImage.Large)
-	}
-	if m.BannerImage != nil {
-		out.BackgroundURL = strings.TrimSpace(*m.BannerImage)
-	}
-	out.Title = pickTitleLatin(m.Title)
-	out.NativeTitle = strings.TrimSpace(m.Title.Native)
-	if m.Description != nil {
-		out.Description = NormalizeDescription(*m.Description)
-	}
-	if len(m.Genres) > 0 {
-		out.Genres = append(out.Genres, m.Genres...)
-	}
-	if m.SeasonYear != nil && *m.SeasonYear > 0 {
-		out.StartYear = *m.SeasonYear
-	} else if m.StartDate != nil && m.StartDate.Year != nil && *m.StartDate.Year > 0 {
-		out.StartYear = *m.StartDate.Year
-	}
-	if m.Duration != nil && *m.Duration > 0 {
-		out.EpisodeLengthMin = *m.Duration
-	}
-	if m.Trailer != nil {
-		site := strings.ToLower(strings.TrimSpace(m.Trailer.Site))
-		id := strings.TrimSpace(m.Trailer.ID)
-		if id != "" && (site == "youtube" || site == "youtu_be") {
-			out.TrailerYouTubeID = id
+	var lastErr error
+	for _, search := range candidates {
+		body, err := json.Marshal(gqlRequest{
+			Query: searchMediaQuery,
+			Variables: map[string]any{
+				"search":  search,
+				"perPage": 15,
+			},
+		})
+		if err != nil {
+			return zero, err
 		}
-	}
-	if len(m.StreamingEpisodes) > 0 {
-		raw := make([]string, 0, len(m.StreamingEpisodes))
-		for _, se := range m.StreamingEpisodes {
-			raw = append(raw, se.Title)
+		b, err := c.postGQL(ctx, body)
+		if err != nil {
+			return zero, err
 		}
-		out.EpisodeTitleByNum = domain.EpisodeTitlesFromStreamingList(raw)
+		var resp gqlResponse
+		if err := json.Unmarshal(b, &resp); err != nil {
+			return zero, err
+		}
+		if len(resp.Errors) > 0 && resp.Errors[0].Message != "" {
+			lastErr = errors.New(resp.Errors[0].Message)
+			continue
+		}
+		if resp.Data == nil || resp.Data.Page == nil || len(resp.Data.Page.Media) == 0 {
+			lastErr = errors.New("anilist: no results")
+			continue
+		}
+		m := pickBestSearchMedia(search, resp.Data.Page.Media)
+		out := MediaDetails{}
+		out.PosterURL = strings.TrimSpace(m.CoverImage.ExtraLarge)
+		if out.PosterURL == "" {
+			out.PosterURL = strings.TrimSpace(m.CoverImage.Large)
+		}
+		if m.BannerImage != nil {
+			out.BackgroundURL = strings.TrimSpace(*m.BannerImage)
+		}
+		out.Title = pickTitleLatin(m.Title)
+		out.NativeTitle = strings.TrimSpace(m.Title.Native)
+		if m.Description != nil {
+			out.Description = NormalizeDescription(*m.Description)
+		}
+		if len(m.Genres) > 0 {
+			out.Genres = append(out.Genres, m.Genres...)
+		}
+		if m.SeasonYear != nil && *m.SeasonYear > 0 {
+			out.StartYear = *m.SeasonYear
+		} else if m.StartDate != nil && m.StartDate.Year != nil && *m.StartDate.Year > 0 {
+			out.StartYear = *m.StartDate.Year
+		}
+		if m.Duration != nil && *m.Duration > 0 {
+			out.EpisodeLengthMin = *m.Duration
+		}
+		if m.Trailer != nil {
+			site := strings.ToLower(strings.TrimSpace(m.Trailer.Site))
+			id := strings.TrimSpace(m.Trailer.ID)
+			if id != "" && (site == "youtube" || site == "youtu_be") {
+				out.TrailerYouTubeID = id
+			}
+		}
+		if len(m.StreamingEpisodes) > 0 {
+			raw := make([]string, 0, len(m.StreamingEpisodes))
+			for _, se := range m.StreamingEpisodes {
+				raw = append(raw, se.Title)
+			}
+			out.EpisodeTitleByNum = domain.EpisodeTitlesFromStreamingList(raw)
+		}
+		if out.PosterURL == "" && out.BackgroundURL == "" && out.Description == "" && out.Title == "" && out.NativeTitle == "" && out.EpisodeLengthMin == 0 && len(out.Genres) == 0 && out.StartYear == 0 && out.TrailerYouTubeID == "" && len(out.EpisodeTitleByNum) == 0 {
+			lastErr = errors.New("anilist: empty media payload")
+			continue
+		}
+		return out, nil
 	}
-	if out.PosterURL == "" && out.BackgroundURL == "" && out.Description == "" && out.Title == "" && out.NativeTitle == "" && out.EpisodeLengthMin == 0 && len(out.Genres) == 0 && out.StartYear == 0 && out.TrailerYouTubeID == "" && len(out.EpisodeTitleByNum) == 0 {
-		return zero, errors.New("anilist: empty media payload")
+	if lastErr != nil {
+		return zero, lastErr
 	}
-	return out, nil
+	return zero, errors.New("anilist: no results")
 }
 
 func mediaTitleHaystack(t gqlTitle) string {

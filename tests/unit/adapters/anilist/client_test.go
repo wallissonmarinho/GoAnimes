@@ -42,7 +42,7 @@ func TestClient_SearchAnimeMedia(t *testing.T) {
 	defer srv.Close()
 
 	g := httpclient.NewGetter(5*time.Second, "GoAnimes/test", 1<<20)
-	c := anilist.NewClient(g, anilist.WithEndpoint(srv.URL))
+	c := anilist.NewClient(g, anilist.WithEndpoint(srv.URL), anilist.WithMinRequestInterval(0))
 
 	res, err := c.SearchAnimeMedia(context.Background(), "Test Anime")
 	require.NoError(t, err)
@@ -105,7 +105,7 @@ func TestClient_SearchAnimeMedia_picksBestMatchAmongResults(t *testing.T) {
 	defer srv.Close()
 
 	g := httpclient.NewGetter(5*time.Second, "GoAnimes/test", 1<<20)
-	c := anilist.NewClient(g, anilist.WithEndpoint(srv.URL))
+	c := anilist.NewClient(g, anilist.WithEndpoint(srv.URL), anilist.WithMinRequestInterval(0))
 
 	res, err := c.SearchAnimeMedia(context.Background(), "Dorohedoro Season 2")
 	require.NoError(t, err)
