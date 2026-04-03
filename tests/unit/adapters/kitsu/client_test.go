@@ -24,8 +24,11 @@ func TestClient_SearchAnimeEnrichment(t *testing.T) {
 				"titles": {"en": "English Title", "ja_jp": "ネイティブ"},
 				"startDate": "2025-04-01",
 				"episodeLength": 24,
-				"posterImage": {"original": "https://cdn.example/p.jpg"},
-				"coverImage": {"large": "https://cdn.example/c.jpg"}
+				"posterImage": {
+					"original": "https://cdn.example/p.jpg",
+					"meta": {"dimensions": {"tiny": {"width": 1, "height": 2}}}
+				},
+				"coverImage": {"large": "https://cdn.example/c.jpg", "meta": {}}
 			},
 			"relationships": {
 				"categories": {

@@ -166,14 +166,23 @@ type animeSearchResp struct {
 	Included []jsonapiResource `json:"included"`
 }
 
+// kitsuImageURLs matches Kitsu posterImage/coverImage URL fields. Nested keys (e.g. meta.dimensions) are ignored by encoding/json.
+type kitsuImageURLs struct {
+	Tiny     string `json:"tiny"`
+	Small    string `json:"small"`
+	Medium   string `json:"medium"`
+	Large    string `json:"large"`
+	Original string `json:"original"`
+}
+
 type animeAttrs struct {
-	Synopsis        string            `json:"synopsis"`
-	Titles          map[string]string `json:"titles"`
-	CanonicalTitle  string            `json:"canonicalTitle"`
-	StartDate       string            `json:"startDate"`
-	EpisodeLength   *int              `json:"episodeLength"`
-	PosterImage     map[string]string `json:"posterImage"`
-	CoverImage      map[string]string `json:"coverImage"`
+	Synopsis       string            `json:"synopsis"`
+	Titles         map[string]string `json:"titles"`
+	CanonicalTitle string            `json:"canonicalTitle"`
+	StartDate      string            `json:"startDate"`
+	EpisodeLength  *int              `json:"episodeLength"`
+	PosterImage    kitsuImageURLs    `json:"posterImage"`
+	CoverImage     kitsuImageURLs    `json:"coverImage"`
 }
 
 type categoryAttrs struct {
@@ -277,8 +286,8 @@ func kitsuAnimeToEnrichment(a animeAttrs, categoryTitles []string) domain.AniLis
 	}
 	desc := domain.LocalizeAniListDescriptionPTBR(anilist.NormalizeDescription(syn))
 	title := pickKitsuTitle(a)
-	poster := firstImageURL(a.PosterImage, "original", "large", "medium")
-	bg := firstImageURL(a.CoverImage, "original", "large", "medium")
+	poster := firstSizedImageURL(a.PosterImage, "original", "large", "medium", "small", "tiny")
+	bg := firstSizedImageURL(a.CoverImage, "original", "large", "medium", "small", "tiny")
 	year := yearFromStartDate(a.StartDate)
 	epMin := 0
 	if a.EpisodeLength != nil && *a.EpisodeLength > 0 {
@@ -308,13 +317,23 @@ func pickKitsuTitle(a animeAttrs) string {
 	return strings.TrimSpace(a.CanonicalTitle)
 }
 
-func firstImageURL(m map[string]string, keys ...string) string {
-	if m == nil {
-		return ""
-	}
+func firstSizedImageURL(img kitsuImageURLs, keys ...string) string {
 	for _, k := range keys {
-		if u := strings.TrimSpace(m[k]); u != "" {
-			return u
+		var u string
+		switch k {
+		case "original":
+			u = img.Original
+		case "large":
+			u = img.Large
+		case "medium":
+			u = img.Medium
+		case "small":
+			u = img.Small
+		case "tiny":
+			u = img.Tiny
+		}
+		if s := strings.TrimSpace(u); s != "" {
+			return s
 		}
 	}
 	return ""

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -125,7 +126,34 @@ func retryWaitAfterThrottle(failedAttempt int, baseBackoff time.Duration, h http
 	return w
 }
 
-// GetBytesGETRetry performs a GET and retries on 429 / 503 with exponential backoff or Retry-After.
+// isRetriableTransportErr is true for client timeouts and similar transient transport failures (not 4xx/5xx bodies).
+func isRetriableTransportErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.Canceled) {
+		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var ne net.Error
+	if errors.As(err, &ne) && ne.Timeout() {
+		return true
+	}
+	// http.Client Timeout / TLS handshake timeouts often surface as url.Error wrapping deadline.
+	var s string
+	for e := err; e != nil; e = errors.Unwrap(e) {
+		s = strings.ToLower(e.Error())
+		if strings.Contains(s, "timeout") || strings.Contains(s, "deadline exceeded") {
+			return true
+		}
+	}
+	return false
+}
+
+// GetBytesGETRetry performs a GET and retries on 429 / 503 with exponential backoff or Retry-After,
+// and on client timeouts / connection timeouts (same attempt budget).
 // maxAttempts must be >= 1. baseBackoff is the first backoff when Retry-After is absent (default 2s if <= 0).
 func (g *Getter) GetBytesGETRetry(ctx context.Context, url string, maxAttempts int, baseBackoff time.Duration) ([]byte, error) {
 	if maxAttempts < 1 {
@@ -140,18 +168,27 @@ func (g *Getter) GetBytesGETRetry(ctx context.Context, url string, maxAttempts i
 		if err == nil {
 			return body, nil
 		}
-		var st *HTTPStatusError
-		if !errors.As(err, &st) {
-			return nil, err
-		}
 		lastErr = err
 		if attempt >= maxAttempts {
 			break
 		}
-		if status != http.StatusTooManyRequests && status != http.StatusServiceUnavailable {
+		var st *HTTPStatusError
+		if errors.As(err, &st) {
+			if status != http.StatusTooManyRequests && status != http.StatusServiceUnavailable {
+				break
+			}
+			wait := retryWaitAfterThrottle(attempt, baseBackoff, hdr)
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(wait):
+			}
+			continue
+		}
+		if !isRetriableTransportErr(err) {
 			break
 		}
-		wait := retryWaitAfterThrottle(attempt, baseBackoff, hdr)
+		wait := retryWaitAfterThrottle(attempt, baseBackoff, nil)
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()

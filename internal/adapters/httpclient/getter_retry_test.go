@@ -32,6 +32,26 @@ func TestGetBytesGETRetry_429_thenOK(t *testing.T) {
 	require.EqualValues(t, 3, n.Load())
 }
 
+func TestGetBytesGETRetry_timeoutThenOK(t *testing.T) {
+	var n atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		c := n.Add(1)
+		if c == 1 {
+			time.Sleep(300 * time.Millisecond)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	}))
+	t.Cleanup(srv.Close)
+
+	g := NewGetter(80*time.Millisecond, "test/1", 1<<20)
+	b, err := g.GetBytesGETRetry(context.Background(), srv.URL, 4, 30*time.Millisecond)
+	require.NoError(t, err)
+	require.Equal(t, "ok", string(b))
+	require.GreaterOrEqual(t, n.Load(), int32(2))
+}
+
 func TestGetBytesGETRetry_404_noRetry(t *testing.T) {
 	var n atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
