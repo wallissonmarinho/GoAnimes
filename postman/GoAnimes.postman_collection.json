@@ -45,6 +45,24 @@
           }
         },
         {
+          "name": "Catalog · Esta semana (7d)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/catalog/anime/goanimes-week.json",
+            "description": "Só séries com pelo menos um episódio com data Released nos últimos 7 dias (UTC)."
+          }
+        },
+        {
+          "name": "Catalog · goanimes + genre extra",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/catalog/anime/goanimes/genre=Fantasia.json",
+            "description": "Igual ao Stremio com filtro de género (labels em pt-BR do manifest)."
+          }
+        },
+        {
           "name": "Meta (anime / series id)",
           "request": {
             "method": "GET",

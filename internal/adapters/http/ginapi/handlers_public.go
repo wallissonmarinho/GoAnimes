@@ -14,7 +14,8 @@ func (h *handlers) registerPublic(engine *gin.Engine) {
 	pub := engine.Group("")
 	{
 		pub.GET("/manifest.json", h.getManifest)
-		pub.GET("/catalog/:type/:catalog_id", h.getCatalog)
+		// Stremio: /catalog/anime/goanimes.json or .../goanimes/genre=Fantasia.json
+		pub.GET("/catalog/:type/*catalogPath", h.getCatalog)
 		pub.GET("/meta/:type/:meta_id", h.getMeta)
 		pub.GET("/stream/:type/:stream_id", h.getStream)
 	}

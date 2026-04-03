@@ -425,6 +425,55 @@ func EnsureSnapshotGrouped(snap *CatalogSnapshot) {
 	snap.Series = BuildSeriesList(snap.Items)
 }
 
+// MergeCatalogItemsByID keeps the previous catalog and layers the latest RSS fetch on top.
+// Same Stremio item ID (stable from RSS guid/link) is replaced so magnets/info_hash can refresh;
+// entries that dropped off the feed window stay until you clear the DB or remove the app data.
+func MergeCatalogItemsByID(prev, incoming []CatalogItem) []CatalogItem {
+	by := make(map[string]CatalogItem, len(prev)+len(incoming))
+	for _, it := range prev {
+		if id := strings.TrimSpace(it.ID); id != "" {
+			by[id] = it
+		}
+	}
+	for _, it := range incoming {
+		if id := strings.TrimSpace(it.ID); id != "" {
+			by[id] = it
+		}
+	}
+	out := make([]CatalogItem, 0, len(by))
+	for _, it := range by {
+		out = append(out, it)
+	}
+	return out
+}
+
+// SortCatalogItemsInPlace orders items after AssignSeriesFields for stable persistence and diffs.
+func SortCatalogItemsInPlace(items []CatalogItem) {
+	if len(items) < 2 {
+		return
+	}
+	sort.SliceStable(items, func(i, j int) bool {
+		a, b := items[i], items[j]
+		sa, sb := strings.ToLower(a.SeriesID), strings.ToLower(b.SeriesID)
+		if sa != sb {
+			return sa < sb
+		}
+		if a.Season != b.Season {
+			return a.Season < b.Season
+		}
+		if a.IsSpecial != b.IsSpecial {
+			return !a.IsSpecial
+		}
+		if a.Episode != b.Episode {
+			return a.Episode < b.Episode
+		}
+		if a.Released != b.Released {
+			return a.Released > b.Released
+		}
+		return a.ID < b.ID
+	})
+}
+
 // SortEpisodes returns a copy of items belonging to seriesID, sorted for Stremio videos.
 func SortEpisodes(items []CatalogItem, seriesID string) []CatalogItem {
 	var out []CatalogItem

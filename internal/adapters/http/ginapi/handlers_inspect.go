@@ -60,11 +60,13 @@ func (h *handlers) getInspectCatalog(c *gin.Context) {
 		"item_count":  snap.ItemCount,
 		"series_count": len(snap.Series),
 		"stremio_public_urls": gin.H{
-			"manifest": "/manifest.json",
-			"catalog":  "/" + strings.Join([]string{"catalog", stremioTypeAnime, catalogStremioID + ".json"}, "/"),
-			"meta":     "/" + strings.Join([]string{"meta", stremioTypeAnime, "{series_id}.json"}, "/"),
-			"stream":   "/" + strings.Join([]string{"stream", stremioTypeAnime, "{video_id}.json"}, "/"),
-			"note":     "Replace {series_id} with path-encoded id, e.g. " + url.PathEscape("goanimes:series:abc") + ".json",
+			"manifest":      "/manifest.json",
+			"catalog":       "/" + strings.Join([]string{"catalog", stremioTypeAnime, catalogStremioID + ".json"}, "/"),
+			"catalog_week":  "/" + strings.Join([]string{"catalog", stremioTypeAnime, catalogStremioWeekID + ".json"}, "/"),
+			"catalog_genre": "/" + strings.Join([]string{"catalog", stremioTypeAnime, catalogStremioID, "genre=" + url.PathEscape("Fantasia") + ".json"}, "/"),
+			"meta":          "/" + strings.Join([]string{"meta", stremioTypeAnime, "{series_id}.json"}, "/"),
+			"stream":        "/" + strings.Join([]string{"stream", stremioTypeAnime, "{video_id}.json"}, "/"),
+			"note":          "Replace {series_id} with path-encoded id, e.g. " + url.PathEscape("goanimes:series:abc") + ".json",
 		},
 		"series": seriesOut,
 	})

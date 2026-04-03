@@ -3,7 +3,9 @@ package ginapi_test
 import (
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -103,6 +105,62 @@ func TestStremioRoutes_catalogMetaStream(t *testing.T) {
 	e.ServeHTTP(w, req)
 	require.Equal(t, http.StatusOK, w.Code)
 	require.Contains(t, w.Body.String(), "org.goanimes")
+	require.Contains(t, w.Body.String(), "goanimes-week")
+	require.Contains(t, w.Body.String(), `"name":"genre"`)
+}
+
+func TestStremioCatalog_weekAndGenreFilters(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	store := &state.CatalogStore{}
+	today := time.Now().UTC().Format("2006-01-02")
+	old := time.Now().UTC().AddDate(0, 0, -14).Format("2006-01-02")
+	snap := domain.CatalogSnapshot{
+		OK: true,
+		Items: []domain.CatalogItem{
+			{ID: "goanimes:recent", Name: "[Torrent] New Hot - 01 [720p][br]", Released: today},
+			{ID: "goanimes:oldonly", Name: "[Torrent] Old Only - 01 [720p][br]", Released: old},
+		},
+	}
+	domain.EnsureSnapshotGrouped(&snap)
+	var newID, oldID string
+	for i := range snap.Series {
+		switch snap.Series[i].Name {
+		case "New Hot":
+			newID = snap.Series[i].ID
+			snap.Series[i].Genres = []string{"Comédia"}
+		case "Old Only":
+			oldID = snap.Series[i].ID
+			snap.Series[i].Genres = []string{"Ação"}
+		}
+	}
+	require.NotEmpty(t, newID)
+	require.NotEmpty(t, oldID)
+	store.Set(snap)
+
+	e := gin.New()
+	e.Use(ginapi.CorsMiddleware())
+	e.Use(gin.Recovery())
+	ginapi.Register(e, ginapi.Config{}, ginapi.Deps{Catalog: services.NewCatalogAdminService(nil, store)})
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/catalog/anime/goanimes-week.json", nil)
+	e.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Contains(t, w.Body.String(), newID)
+	require.NotContains(t, w.Body.String(), oldID)
+
+	genrePath := "/catalog/anime/goanimes/genre=" + url.PathEscape("Comédia") + ".json"
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, genrePath, nil)
+	e.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Contains(t, w.Body.String(), newID)
+	require.NotContains(t, w.Body.String(), oldID)
+
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/catalog/anime/unknown.json", nil)
+	e.ServeHTTP(w, req)
+	require.Equal(t, http.StatusNotFound, w.Code)
 }
 
 func TestCORSPreflight(t *testing.T) {

@@ -238,7 +238,7 @@ func (s *RSSSyncService) Run(ctx context.Context) domain.SyncResult {
 		return domain.SyncResult{Message: snap.Message}
 	}
 
-	byID := make(map[string]domain.CatalogItem)
+	var rssBatch []domain.CatalogItem
 	var errs []string
 	for _, src := range sources {
 		body, gerr := s.getter.GetBytes(src.URL)
@@ -251,14 +251,13 @@ func (s *RSSSyncService) Run(ctx context.Context) domain.SyncResult {
 			errs = append(errs, fmt.Sprintf("%s: parse: %v", src.Label, perr))
 			continue
 		}
-		for _, it := range items {
-			byID[it.ID] = it
-		}
+		rssBatch = append(rssBatch, items...)
 	}
-	merged := make([]domain.CatalogItem, 0, len(byID))
-	for _, it := range byID {
-		merged = append(merged, it)
-	}
+	merged := domain.MergeCatalogItemsByID(prevSnap.Items, rssBatch)
+	s.log.Info("catalog merge",
+		slog.Int("from_feed_this_run", len(rssBatch)),
+		slog.Int("total_episodes", len(merged)),
+	)
 
 	for i := range merged {
 		it := &merged[i]
@@ -286,6 +285,7 @@ func (s *RSSSyncService) Run(ctx context.Context) domain.SyncResult {
 		Items:      merged,
 	}
 	domain.EnsureSnapshotGrouped(&snap)
+	domain.SortCatalogItemsInPlace(snap.Items)
 	var enrichNotes []string
 	s.enrichAniListSeries(ctx, snap.Series, anilistCache, &enrichNotes)
 	s.enrichJikanGaps(ctx, snap.Series, anilistCache, &enrichNotes)

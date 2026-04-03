@@ -17,10 +17,11 @@ import (
 )
 
 const (
-	catalogStremioID = "goanimes"
-	stremioTypeAnime  = "anime"
-	stremioTypeMovie  = "movie"
-	stremioTypeSeries = "series"
+	catalogStremioID     = "goanimes"
+	catalogStremioWeekID = "goanimes-week"
+	stremioTypeAnime     = "anime"
+	stremioTypeMovie     = "movie"
+	stremioTypeSeries    = "series"
 )
 
 func stremioMetaOrStreamTypeOK(t string) bool {
@@ -63,35 +64,36 @@ func stremioUnescapePathParam(s string) string {
 	return s
 }
 
-func (h *handlers) getManifest(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{
-		"id":          "org.goanimes",
-		"version":     "1.0.13",
-		"name":        "GoAnimes",
-		"description": "RSS anime torrents with pt-BR (Erai [br]) filter",
-		"types":       []string{stremioTypeAnime, stremioTypeMovie, stremioTypeSeries},
-		"catalogs": []gin.H{
-			{"type": stremioTypeAnime, "id": catalogStremioID, "name": "GoAnimes"},
-		},
-		"resources": []any{
-			"catalog",
-			gin.H{"name": "meta", "types": []string{stremioTypeAnime, stremioTypeMovie, stremioTypeSeries}, "idPrefixes": []string{rss.StremioIDPrefix}},
-			gin.H{"name": "stream", "types": []string{stremioTypeAnime, stremioTypeMovie, stremioTypeSeries}, "idPrefixes": []string{rss.StremioIDPrefix}},
-		},
-		"idPrefixes": []string{rss.StremioIDPrefix},
-	})
+func parseStremioCatalogPathParam(catalogPath string) (catalogID string, extras map[string]string, ok bool) {
+	p := strings.TrimPrefix(strings.TrimSpace(catalogPath), "/")
+	if p == "" {
+		return "", nil, false
+	}
+	p = strings.TrimSuffix(p, ".json")
+	parts := strings.Split(p, "/")
+	if len(parts) == 0 || parts[0] == "" {
+		return "", nil, false
+	}
+	catalogID = parts[0]
+	extras = make(map[string]string)
+	for _, seg := range parts[1:] {
+		k, v, has := strings.Cut(seg, "=")
+		if !has {
+			continue
+		}
+		key, errK := url.PathUnescape(strings.TrimSpace(k))
+		val, errV := url.PathUnescape(strings.TrimSpace(v))
+		if errK != nil || errV != nil || key == "" {
+			continue
+		}
+		extras[key] = val
+	}
+	return catalogID, extras, true
 }
 
-func (h *handlers) getCatalog(c *gin.Context) {
-	typ := c.Param("type")
-	cid := strings.TrimSuffix(c.Param("catalog_id"), ".json")
-	if typ != stremioTypeAnime || cid != catalogStremioID {
-		c.JSON(http.StatusNotFound, gin.H{})
-		return
-	}
-	snap := h.deps.Catalog.Snapshot()
-	metas := make([]gin.H, 0, len(snap.Series))
-	for _, s := range snap.Series {
+func seriesToStremioMetas(series []domain.CatalogSeries) []gin.H {
+	metas := make([]gin.H, 0, len(series))
+	for _, s := range series {
 		genres := []string{"Anime"}
 		if len(s.Genres) > 0 {
 			genres = append([]string(nil), s.Genres...)
@@ -113,7 +115,59 @@ func (h *handlers) getCatalog(c *gin.Context) {
 		}
 		metas = append(metas, m)
 	}
-	c.JSON(http.StatusOK, gin.H{"metas": metas})
+	return metas
+}
+
+func (h *handlers) getManifest(c *gin.Context) {
+	genreExtra := []gin.H{{
+		"name":       "genre",
+		"isRequired": false,
+		"options":    domain.StremioGenreFilterOptions(),
+	}}
+	genres := domain.StremioGenreFilterOptions()
+	c.JSON(http.StatusOK, gin.H{
+		"id":          "org.goanimes",
+		"version":     "1.0.15",
+		"name":        "GoAnimes",
+		"description": "RSS anime torrents with pt-BR (Erai [br]) filter",
+		"types":       []string{stremioTypeAnime, stremioTypeMovie, stremioTypeSeries},
+		"genres":      genres,
+		"catalogs": []gin.H{
+			{"type": stremioTypeAnime, "id": catalogStremioID, "name": "GoAnimes", "extra": genreExtra},
+			{"type": stremioTypeAnime, "id": catalogStremioWeekID, "name": "GoAnimes · Esta semana", "extra": genreExtra},
+		},
+		"resources": []any{
+			"catalog",
+			gin.H{"name": "meta", "types": []string{stremioTypeAnime, stremioTypeMovie, stremioTypeSeries}, "idPrefixes": []string{rss.StremioIDPrefix}},
+			gin.H{"name": "stream", "types": []string{stremioTypeAnime, stremioTypeMovie, stremioTypeSeries}, "idPrefixes": []string{rss.StremioIDPrefix}},
+		},
+		"idPrefixes": []string{rss.StremioIDPrefix},
+	})
+}
+
+func (h *handlers) getCatalog(c *gin.Context) {
+	typ := c.Param("type")
+	if typ != stremioTypeAnime {
+		c.JSON(http.StatusNotFound, gin.H{})
+		return
+	}
+	cid, extras, ok := parseStremioCatalogPathParam(c.Param("catalogPath"))
+	if !ok || (cid != catalogStremioID && cid != catalogStremioWeekID) {
+		c.JSON(http.StatusNotFound, gin.H{})
+		return
+	}
+	snap := h.deps.Catalog.Snapshot()
+	series := snap.Series
+	if cid == catalogStremioWeekID {
+		series = domain.FilterSeriesWithRecentReleases(&snap, 7)
+		if series == nil {
+			series = []domain.CatalogSeries{}
+		}
+	}
+	if g := strings.TrimSpace(extras["genre"]); g != "" {
+		series = domain.FilterSeriesByGenre(series, g)
+	}
+	c.JSON(http.StatusOK, gin.H{"metas": seriesToStremioMetas(series)})
 }
 
 func (h *handlers) getMeta(c *gin.Context) {

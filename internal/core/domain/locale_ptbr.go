@@ -2,6 +2,7 @@ package domain
 
 import (
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -108,4 +109,21 @@ func LocalizeAniListDescriptionPTBR(s string) string {
 		src := strings.TrimSpace(sub[1])
 		return "(Fonte: " + src + ")"
 	})
+}
+
+// StremioGenreFilterOptions returns sorted pt-BR genre labels for manifest catalog extras (dropdown, Kitsu-style).
+func StremioGenreFilterOptions() []string {
+	seen := make(map[string]struct{}, len(translateGenreENtoPT))
+	for _, pt := range translateGenreENtoPT {
+		if strings.TrimSpace(pt) == "" {
+			continue
+		}
+		seen[pt] = struct{}{}
+	}
+	out := make([]string, 0, len(seen))
+	for g := range seen {
+		out = append(out, g)
+	}
+	sort.Strings(out)
+	return out
 }
