@@ -7,25 +7,30 @@ import (
 
 // AniListSeriesEnrichment is cached Stremio-facing metadata from AniList (per series id).
 type AniListSeriesEnrichment struct {
-	PosterURL         string         `json:"poster,omitempty"`
-	BackgroundURL     string         `json:"background,omitempty"`
+	PosterURL     string `json:"poster,omitempty"`
+	BackgroundURL string `json:"background,omitempty"`
 	// AniListBannerURL is the wide banner from AniList (if any), used with Kitsu/TMDB to pick a Stremio hero image.
 	AniListBannerURL string `json:"al_banner,omitempty"`
 	// StremioHeroBackgroundURL is the chosen wide backdrop for Stremio meta.background (1280×720-oriented pick incl. TMDB).
-	StremioHeroBackgroundURL string `json:"hero_bg,omitempty"`
-	Description       string   `json:"description,omitempty"`
-	Genres            []string       `json:"genres,omitempty"`
-	StartYear         int            `json:"start_year,omitempty"`
-	EpisodeLengthMin  int            `json:"ep_min,omitempty"`
-	TrailerYouTubeID  string         `json:"trailer_yt,omitempty"`
-	TitlePreferred    string         `json:"title_pref,omitempty"`    // romaji / English / ASCII userPreferred (Stremio catalog listing)
-	TitleNative       string         `json:"title_native,omitempty"`  // Japanese (optional; meta detail)
-	MalID             int            `json:"mal_id,omitempty"`        // MyAnimeList id (AniList idMal / Jikan)
-	ImdbID            string         `json:"imdb,omitempty"`          // tt… when Jikan/MAL lists IMDb (TMDB find)
-	KitsuAnimeID      string         `json:"kitsu_id,omitempty"`      // Kitsu JSON:API anime id (episodes list)
-	AniListSearchVer  int            `json:"al_search_ver,omitempty"` // bump forces refetch after search logic changes
-	EpisodeTitleByNum map[int]string `json:"ep_titles"`
-	// EpisodeThumbnailByNum is Stremio video thumbnail per episode number (AniList streaming / Kitsu); merge fills missing keys only.
+	StremioHeroBackgroundURL string   `json:"hero_bg,omitempty"`
+	Description              string   `json:"description,omitempty"`
+	Genres                   []string `json:"genres,omitempty"`
+	StartYear                int      `json:"start_year,omitempty"`
+	EpisodeLengthMin         int      `json:"ep_min,omitempty"`
+	TrailerYouTubeID         string   `json:"trailer_yt,omitempty"`
+	TitlePreferred           string   `json:"title_pref,omitempty"`   // romaji / English / ASCII userPreferred (Stremio catalog listing)
+	TitleNative              string   `json:"title_native,omitempty"` // Japanese (optional; meta detail)
+	MalID                    int      `json:"mal_id,omitempty"`       // MyAnimeList id (AniList idMal / Jikan)
+	ImdbID                   string   `json:"imdb,omitempty"`         // tt… when Jikan/MAL lists IMDb (TMDB find)
+	KitsuAnimeID             string   `json:"kitsu_id,omitempty"`     // Kitsu JSON:API anime id (episodes list)
+	// AniDBAid is AniDB anime id (from AniList externalLinks); used with registered HTTP API client for episode titles.
+	AniDBAid int `json:"anidb_aid,omitempty"`
+	// AniDBLastFetchedUnix avoids repeat request=anime calls within TTL (AniDB policy: heavy caching).
+	AniDBLastFetchedUnix int64          `json:"anidb_fetch_unix,omitempty"`
+	AniListSearchVer     int            `json:"al_search_ver,omitempty"` // bump forces refetch after search logic changes
+	EpisodeTitleByNum    map[int]string `json:"ep_titles"`
+	// EpisodeThumbnailByNum is Stremio video thumbnail per episode number (AniList streaming / Kitsu); merge fills missing
+	// keys and replaces empty placeholders so later sources (Jikan / Kitsu / AniDB) can patch per-episode gaps.
 	EpisodeThumbnailByNum map[int]string `json:"ep_thumbs,omitempty"`
 	// NextAiring* from AniList nextAiringEpisode (Stremio Calendar). NextAiringFromAniList=true means the last
 	// AniList fetch set these values (including zeros when nothing is scheduled); Jikan/Kitsu merges must not overwrite.
@@ -70,11 +75,29 @@ func EnrichmentCouldUseJikan(en AniListSeriesEnrichment) bool {
 	if en.StartYear == 0 {
 		return true
 	}
-	// AniList streamingEpisodes often empty; MAL episode list has titles per episode number.
-	if len(en.EpisodeTitleByNum) == 0 {
+	// Treat map-with-only-empty values like "no titles" so Jikan can still run.
+	if !episodeTitleMapHasAnyNonEmpty(en.EpisodeTitleByNum) {
 		return true
 	}
 	return false
+}
+
+// episodeTitleMapHasAnyNonEmpty is true if m has at least one non-blank title.
+func episodeTitleMapHasAnyNonEmpty(m map[int]string) bool {
+	if m == nil {
+		return false
+	}
+	for _, v := range m {
+		if strings.TrimSpace(v) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// EnrichmentHasAnyEpisodeTitle is true when at least one episode number has a non-blank title (after trim).
+func EnrichmentHasAnyEpisodeTitle(en AniListSeriesEnrichment) bool {
+	return episodeTitleMapHasAnyNonEmpty(en.EpisodeTitleByNum)
 }
 
 // MergeAniListEnrichment fills empty fields in stored with values from add (e.g. DB row + lazy AniList fetch).
@@ -107,6 +130,12 @@ func MergeAniListEnrichment(stored, add AniListSeriesEnrichment) AniListSeriesEn
 	if strings.TrimSpace(out.KitsuAnimeID) == "" {
 		out.KitsuAnimeID = strings.TrimSpace(add.KitsuAnimeID)
 	}
+	if out.AniDBAid == 0 && add.AniDBAid > 0 {
+		out.AniDBAid = add.AniDBAid
+	}
+	if add.AniDBLastFetchedUnix > out.AniDBLastFetchedUnix {
+		out.AniDBLastFetchedUnix = add.AniDBLastFetchedUnix
+	}
 	if out.StartYear == 0 && add.StartYear > 0 {
 		out.StartYear = add.StartYear
 	}
@@ -130,7 +159,12 @@ func MergeAniListEnrichment(stored, add AniListSeriesEnrichment) AniListSeriesEn
 			out.EpisodeTitleByNum = make(map[int]string)
 		}
 		for k, v := range add.EpisodeTitleByNum {
-			if _, ok := out.EpisodeTitleByNum[k]; !ok {
+			v = strings.TrimSpace(v)
+			if v == "" {
+				continue
+			}
+			cur, ok := out.EpisodeTitleByNum[k]
+			if !ok || strings.TrimSpace(cur) == "" {
 				out.EpisodeTitleByNum[k] = v
 			}
 		}
@@ -140,7 +174,12 @@ func MergeAniListEnrichment(stored, add AniListSeriesEnrichment) AniListSeriesEn
 			out.EpisodeThumbnailByNum = make(map[int]string)
 		}
 		for k, v := range add.EpisodeThumbnailByNum {
-			if _, ok := out.EpisodeThumbnailByNum[k]; !ok {
+			v = strings.TrimSpace(v)
+			if v == "" {
+				continue
+			}
+			cur, ok := out.EpisodeThumbnailByNum[k]
+			if !ok || strings.TrimSpace(cur) == "" {
 				out.EpisodeThumbnailByNum[k] = v
 			}
 		}

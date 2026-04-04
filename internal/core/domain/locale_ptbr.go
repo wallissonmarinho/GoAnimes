@@ -10,55 +10,55 @@ import (
 // translateGenreENtoPT maps AniList/MAL English genre labels to Brazilian Portuguese.
 // Unknown labels are returned unchanged (e.g. already "Romance").
 var translateGenreENtoPT = map[string]string{
-	"Action":            "Ação",
-	"Adventure":         "Aventura",
-	"Comedy":            "Comédia",
-	"Drama":             "Drama",
-	"Ecchi":             "Ecchi",
-	"Fantasy":           "Fantasia",
-	"Horror":            "Terror",
-	"Mahou Shoujo":      "Mahou shoujo",
-	"Mecha":             "Mecha",
-	"Music":             "Música",
-	"Mystery":           "Mistério",
-	"Psychological":     "Psicológico",
-	"Romance":           "Romance",
-	"Sci-Fi":            "Ficção científica",
-	"Slice of Life":     "Slice of life",
-	"Sports":            "Esportes",
-	"Supernatural":      "Sobrenatural",
-	"Thriller":          "Suspense",
-	"Superhero":         "Super-herói",
-	"Martial Arts":      "Artes marciais",
-	"School":            "Escolar",
-	"Shounen":           "Shounen",
-	"Shoujo":            "Shoujo",
-	"Seinen":            "Seinen",
-	"Josei":             "Josei",
-	"Kids":              "Infantil",
-	"Boys Love":         "Boys love",
-	"Girls Love":        "Girls love",
-	"Gourmet":           "Gastronomia",
-	"Harem":             "Harém",
-	"Isekai":            "Isekai",
-	"Military":          "Militar",
-	"Parody":            "Paródia",
-	"Police":            "Policial",
-	"Samurai":           "Samurai",
-	"Space":             "Espaço",
-	"Vampire":           "Vampiros",
-	"Work Life":         "Vida profissional",
-	"Strategy Game":     "Jogo de estratégia",
-	"Suspense":          "Suspense",
-	"Historical":        "Histórico",
-	"Demons":            "Demônios",
-	"Game":              "Jogos",
-	"Reverse Harem":     "Harém reverso",
-	"Award Winning":     "Premiado",
-	"Survival":          "Sobrevivência",
-	"Time Travel":       "Viagem no tempo",
-	"Video Game":        "Videogame",
-	"Visual Arts":       "Artes visuais",
+	"Action":        "Ação",
+	"Adventure":     "Aventura",
+	"Comedy":        "Comédia",
+	"Drama":         "Drama",
+	"Ecchi":         "Ecchi",
+	"Fantasy":       "Fantasia",
+	"Horror":        "Terror",
+	"Mahou Shoujo":  "Mahou shoujo",
+	"Mecha":         "Mecha",
+	"Music":         "Música",
+	"Mystery":       "Mistério",
+	"Psychological": "Psicológico",
+	"Romance":       "Romance",
+	"Sci-Fi":        "Ficção científica",
+	"Slice of Life": "Slice of life",
+	"Sports":        "Esportes",
+	"Supernatural":  "Sobrenatural",
+	"Thriller":      "Suspense",
+	"Superhero":     "Super-herói",
+	"Martial Arts":  "Artes marciais",
+	"School":        "Escolar",
+	"Shounen":       "Shounen",
+	"Shoujo":        "Shoujo",
+	"Seinen":        "Seinen",
+	"Josei":         "Josei",
+	"Kids":          "Infantil",
+	"Boys Love":     "Boys love",
+	"Girls Love":    "Girls love",
+	"Gourmet":       "Gastronomia",
+	"Harem":         "Harém",
+	"Isekai":        "Isekai",
+	"Military":      "Militar",
+	"Parody":        "Paródia",
+	"Police":        "Policial",
+	"Samurai":       "Samurai",
+	"Space":         "Espaço",
+	"Vampire":       "Vampiros",
+	"Work Life":     "Vida profissional",
+	"Strategy Game": "Jogo de estratégia",
+	"Suspense":      "Suspense",
+	"Historical":    "Histórico",
+	"Demons":        "Demônios",
+	"Game":          "Jogos",
+	"Reverse Harem": "Harém reverso",
+	"Award Winning": "Premiado",
+	"Survival":      "Sobrevivência",
+	"Time Travel":   "Viagem no tempo",
+	"Video Game":    "Videogame",
+	"Visual Arts":   "Artes visuais",
 }
 
 var translateGenreLowerToPT = func() map[string]string {
@@ -191,6 +191,19 @@ func synopsisBodyMostlyLatinLetters(body string) bool {
 		}
 	}
 	return letters >= 12 && latin*4 >= letters*3
+}
+
+// EpisodeTitleWorthTranslating is true when a per-episode title should be sent to machine translation (auto→pt).
+// Skips blanks, very short tokens, and strings that already look like Portuguese.
+func EpisodeTitleWorthTranslating(title string) bool {
+	title = strings.TrimSpace(title)
+	if len(title) < 2 {
+		return false
+	}
+	if synopsisLikelyPortugueseRE.MatchString(title) {
+		return false
+	}
+	return true
 }
 
 // SynopsisBodyLooksEnglish is a cheap heuristic to avoid re-translating text that is already pt-BR.

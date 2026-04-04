@@ -4,19 +4,22 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"maps"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/wallissonmarinho/GoAnimes/internal/adapters/anidb"
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/anilist"
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/btmeta"
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/httpclient"
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/jikan"
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/kitsu"
-	rssadapter 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/rss"
+	rssadapter "github.com/wallissonmarinho/GoAnimes/internal/adapters/rss"
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/state"
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/tmdb"
 	"github.com/wallissonmarinho/GoAnimes/internal/core/domain"
@@ -107,28 +110,32 @@ type RSSSyncRuntimeOptions struct {
 	Kitsu           *kitsu.Client
 	KitsuMinDelay   time.Duration // sleep after each Kitsu enrichment; 0 → default 400ms (client also paces)
 	TMDB            *tmdb.Client
-	TMDBMinDelay    time.Duration // sleep after each TMDB call; 0 → default 250ms
+	TMDBMinDelay    time.Duration            // sleep after each TMDB call; 0 → default 250ms
+	AniDB           *anidb.Client            // optional: registered HTTP API client; episode titles from request=anime
+	AniDBMinDelay   time.Duration            // extra sleep after each AniDB success; 0 = client pace only (~2.1s)
 	SynopsisTrans   ports.SynopsisTranslator // optional: nil in tests; production passes gilang translator
 }
 
 // RSSSyncService fetches RSS sources, filters pt-BR (Erai [br]), updates memory + DB snapshot.
 type RSSSyncService struct {
-	repo         ports.CatalogRepository
-	mem          *state.CatalogStore
-	getter       *httpclient.Getter
-	anilist      *anilist.Client
-	anilistDelay time.Duration
-	jikan         *jikan.Client
-	jikanDelay    time.Duration
-	kitsu         *kitsu.Client
-	kitsuDelay    time.Duration
-	tmdb          *tmdb.Client
-	tmdbDelay     time.Duration
-	synopsisTrans ports.SynopsisTranslator
-	log                 *slog.Logger
-	mu                  sync.Mutex
-	syncRunning         atomic.Bool
-	syncRunStartedUnix  atomic.Int64 // Unix nano UTC while Run holds the lock; 0 when idle
+	repo               ports.CatalogRepository
+	mem                *state.CatalogStore
+	getter             *httpclient.Getter
+	anilist            *anilist.Client
+	anilistDelay       time.Duration
+	jikan              *jikan.Client
+	jikanDelay         time.Duration
+	kitsu              *kitsu.Client
+	kitsuDelay         time.Duration
+	tmdb               *tmdb.Client
+	tmdbDelay          time.Duration
+	anidb              *anidb.Client
+	anidbDelay         time.Duration
+	synopsisTrans      ports.SynopsisTranslator
+	log                *slog.Logger
+	mu                 sync.Mutex
+	syncRunning        atomic.Bool
+	syncRunStartedUnix atomic.Int64 // Unix nano UTC while Run holds the lock; 0 when idle
 }
 
 func NewRSSSyncService(repo ports.CatalogRepository, mem *state.CatalogStore, o RSSSyncRuntimeOptions, log *slog.Logger) *RSSSyncService {
@@ -160,6 +167,10 @@ func NewRSSSyncService(repo ports.CatalogRepository, mem *state.CatalogStore, o 
 	if tmdly <= 0 {
 		tmdly = 250 * time.Millisecond
 	}
+	adDly := o.AniDBMinDelay
+	if adDly < 0 {
+		adDly = 0
+	}
 	return &RSSSyncService{
 		repo:          repo,
 		mem:           mem,
@@ -172,6 +183,8 @@ func NewRSSSyncService(repo ports.CatalogRepository, mem *state.CatalogStore, o 
 		kitsuDelay:    kdly,
 		tmdb:          o.TMDB,
 		tmdbDelay:     tmdly,
+		anidb:         o.AniDB,
+		anidbDelay:    adDly,
 		synopsisTrans: o.SynopsisTrans,
 		log:           log,
 	}
@@ -352,7 +365,7 @@ func (s *RSSSyncService) enrichJikanGaps(ctx context.Context, series []domain.Ca
 			continue
 		}
 		merged := domain.MergeAniListEnrichment(cur, add)
-					merged.Description = TranslateSynopsisToPT(s.synopsisTrans, s.log, merged.Description)
+		merged.Description = TranslateSynopsisToPT(s.synopsisTrans, s.log, merged.Description)
 		cache[ser.ID] = merged
 		n++
 		if s.jikanDelay > 0 {
@@ -394,7 +407,7 @@ func (s *RSSSyncService) enrichKitsuGaps(ctx context.Context, series []domain.Ca
 			continue
 		}
 		merged := domain.MergeAniListEnrichment(cur, add)
-					merged.Description = TranslateSynopsisToPT(s.synopsisTrans, s.log, merged.Description)
+		merged.Description = TranslateSynopsisToPT(s.synopsisTrans, s.log, merged.Description)
 		cache[ser.ID] = merged
 		n++
 		if s.kitsuDelay > 0 {
@@ -496,12 +509,121 @@ func (s *RSSSyncService) enrichJikanMalEpisodeTitles(ctx context.Context, series
 	}
 }
 
+// enrichAniDBEpisodeTitles uses AniDB HTTP request=anime when AniDBAid is set (AniList externalLinks).
+// One request per series per 24h (AniDB requires heavy caching). Merge only fills missing episode title keys.
+func (s *RSSSyncService) enrichAniDBEpisodeTitles(ctx context.Context, series []domain.CatalogSeries, cache map[string]domain.AniListSeriesEnrichment, syncNotes *[]string) {
+	if len(series) == 0 || s.anidb == nil {
+		return
+	}
+	now := time.Now().Unix()
+	const ttlSec int64 = 86400
+	n := 0
+	for _, ser := range series {
+		select {
+		case <-ctx.Done():
+			s.log.Warn("anidb episodes: stopped early (context done)", slog.Int("merged", n))
+			appendSyncNote(syncNotes, "anidb episodes: stopped early (context cancelled)")
+			return
+		default:
+		}
+		cur := cache[ser.ID]
+		if cur.AniDBAid <= 0 {
+			continue
+		}
+		if cur.AniDBLastFetchedUnix > 0 && now-cur.AniDBLastFetchedUnix < ttlSec {
+			continue
+		}
+		titles, err := s.anidb.FetchEpisodeTitlesByAID(ctx, cur.AniDBAid)
+		if err != nil {
+			s.log.Debug("anidb episodes failed", slog.Int("aid", cur.AniDBAid), slog.String("series", ser.Name), slog.Any("err", err))
+			appendSyncNote(syncNotes, fmt.Sprintf("anidb aid %d: %v", cur.AniDBAid, err))
+			continue
+		}
+		add := domain.AniListSeriesEnrichment{AniDBLastFetchedUnix: now}
+		if len(titles) > 0 {
+			add.EpisodeTitleByNum = titles
+		}
+		cache[ser.ID] = domain.MergeAniListEnrichment(cur, add)
+		n++
+		if s.anidbDelay > 0 {
+			time.Sleep(s.anidbDelay)
+		}
+	}
+	if n > 0 {
+		s.log.Info("anidb: merged episode titles", slog.Int("series", n))
+	}
+}
+
+// translateEpisodeTitlesToPT runs after all episode-title sources merged; replaces titles in-place per series
+// (Merge would not overwrite non-empty English). Paces calls to reduce Google Translate throttling.
+func (s *RSSSyncService) translateEpisodeTitlesToPT(ctx context.Context, series []domain.CatalogSeries, cache map[string]domain.AniListSeriesEnrichment, syncNotes *[]string) {
+	if len(series) == 0 || s.synopsisTrans == nil {
+		return
+	}
+	const pace = 75 * time.Millisecond
+	seriesChanged, titlesTranslated := 0, 0
+	for _, ser := range series {
+		select {
+		case <-ctx.Done():
+			s.log.Warn("episode title translate: stopped early (context done)", slog.Int("titles", titlesTranslated))
+			appendSyncNote(syncNotes, "episode title translate: stopped early (context cancelled)")
+			return
+		default:
+		}
+		cur := cache[ser.ID]
+		if len(cur.EpisodeTitleByNum) == 0 {
+			continue
+		}
+		next := maps.Clone(cur.EpisodeTitleByNum)
+		keys := make([]int, 0, len(next))
+		for k := range next {
+			keys = append(keys, k)
+		}
+		sort.Ints(keys)
+		changed := false
+		for _, k := range keys {
+			select {
+			case <-ctx.Done():
+				s.log.Warn("episode title translate: stopped early (context done)", slog.Int("titles", titlesTranslated))
+				appendSyncNote(syncNotes, "episode title translate: stopped early (context cancelled)")
+				return
+			default:
+			}
+			before := next[k]
+			if !domain.EpisodeTitleWorthTranslating(before) {
+				continue
+			}
+			after := TranslateEpisodeTitleToPT(s.synopsisTrans, s.log, before)
+			next[k] = after
+			if after != before {
+				changed = true
+				titlesTranslated++
+			}
+			if pace > 0 {
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(pace):
+				}
+			}
+		}
+		if changed {
+			cur.EpisodeTitleByNum = next
+			cache[ser.ID] = cur
+			seriesChanged++
+		}
+	}
+	if titlesTranslated > 0 {
+		s.log.Info("episode titles translated to pt-BR", slog.Int("titles", titlesTranslated), slog.Int("series", seriesChanged))
+	}
+}
+
 func (s *RSSSyncService) resolveStremioHeroBackgrounds(ctx context.Context, series []domain.CatalogSeries, cache map[string]domain.AniListSeriesEnrichment, syncNotes *[]string) {
 	if len(series) == 0 {
 		return
 	}
 	if s.tmdb == nil {
-			s.log.Info("tmdb: skipped (no API key or GOANIMES_TMDB_DISABLED; hero uses AniList/Kitsu only)")
+		s.log.Info("tmdb: skipped (no API key or GOANIMES_TMDB_DISABLED; hero uses AniList/Kitsu only)")
 	}
 	n := 0
 	for i, ser := range series {
@@ -725,6 +847,8 @@ doneTorrentBackfill:
 	s.enrichKitsuGaps(ctx, snap.Series, anilistCache, &enrichNotes)
 	s.enrichKitsuEpisodeMaps(ctx, snap.Series, anilistCache, &enrichNotes)
 	s.enrichJikanMalEpisodeTitles(ctx, snap.Series, anilistCache, &enrichNotes)
+	s.enrichAniDBEpisodeTitles(ctx, snap.Series, anilistCache, &enrichNotes)
+	s.translateEpisodeTitlesToPT(ctx, snap.Series, anilistCache, &enrichNotes)
 	s.resolveStremioHeroBackgrounds(ctx, snap.Series, anilistCache, &enrichNotes)
 	pruneAniListCache(anilistCache, snap.Series)
 	snap.AniListBySeries = anilistCache

@@ -37,3 +37,29 @@ func TranslateSynopsisToPT(tr ports.SynopsisTranslator, log *slog.Logger, descri
 	out = domain.FixPortugueseSynopsisTranslationGlitches(strings.TrimSpace(out))
 	return domain.JoinSynopsisBodyAndAttribution(out, attr)
 }
+
+// TranslateEpisodeTitleToPT translates one episode title to pt-BR (Google auto-detect source) when it does not
+// already look Portuguese. Used after all metadata sources merged episode titles.
+func TranslateEpisodeTitleToPT(tr ports.SynopsisTranslator, log *slog.Logger, title string) string {
+	title = strings.TrimSpace(title)
+	if title == "" || tr == nil {
+		return title
+	}
+	if !domain.EpisodeTitleWorthTranslating(title) {
+		return title
+	}
+	body := domain.PrepareEnglishSynopsisBodyForPTTranslate(title)
+	out, err := tr.Translate(body, "auto", "pt")
+	if err != nil {
+		if log != nil {
+			log.Debug("episode title translate skipped", slog.String("title", title), slog.Any("err", err))
+		}
+		return title
+	}
+	out = strings.TrimSpace(out)
+	if out == "" {
+		return title
+	}
+	out = domain.FixPortugueseSynopsisTranslationGlitches(out)
+	return out
+}

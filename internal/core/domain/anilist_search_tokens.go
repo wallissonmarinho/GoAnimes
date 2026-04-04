@@ -6,7 +6,7 @@ import (
 )
 
 // AniListSearcherVersion increments when AniList search / disambiguation logic changes; older cached rows refetch once.
-const AniListSearcherVersion = 6
+const AniListSearcherVersion = 7
 
 // Tokens ignored when scoring AniList search results (too generic or noisy in RSS titles).
 var animeSearchIgnoredTokens = map[string]struct{}{

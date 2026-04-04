@@ -15,6 +15,13 @@ func TestTranslateAnimeGenresToPTBR(t *testing.T) {
 	require.Nil(t, domain.TranslateAnimeGenresToPTBR(nil))
 }
 
+func TestEpisodeTitleWorthTranslating(t *testing.T) {
+	require.False(t, domain.EpisodeTitleWorthTranslating(""))
+	require.False(t, domain.EpisodeTitleWorthTranslating("x"))
+	require.True(t, domain.EpisodeTitleWorthTranslating("Invasion"))
+	require.False(t, domain.EpisodeTitleWorthTranslating("O primeiro episódio da temporada"))
+}
+
 func TestLocalizeAniListDescriptionPTBR(t *testing.T) {
 	in := "Hello world. (Source: Crunchyroll)"
 	require.Equal(t, "Hello world. (Fonte: Crunchyroll)", domain.LocalizeAniListDescriptionPTBR(in))

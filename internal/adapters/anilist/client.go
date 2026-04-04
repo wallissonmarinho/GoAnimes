@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/wallissonmarinho/GoAnimes/internal/adapters/anidb"
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/httpclient"
 	"github.com/wallissonmarinho/GoAnimes/internal/core/domain"
 )
@@ -140,6 +141,7 @@ type MediaDetails struct {
 	NextAiringUnix    int64
 	NextAiringEpisode int
 	MalID             int // AniList idMal → MAL / Jikan
+	AniDBAid          int // AniList externalLinks → AniDB HTTP API
 }
 
 // ToDomainEnrichment maps API details into the persisted enrichment shape.
@@ -166,6 +168,7 @@ func ToDomainEnrichment(d MediaDetails) domain.AniListSeriesEnrichment {
 		TitlePreferred:    d.Title,
 		TitleNative:       d.NativeTitle,
 		MalID:                 d.MalID,
+		AniDBAid:              d.AniDBAid,
 		AniListSearchVer:      domain.AniListSearcherVersion,
 		EpisodeTitleByNum:     ep,
 		EpisodeThumbnailByNum: th,
@@ -211,6 +214,13 @@ type gqlMedia struct {
 	Trailer            *gqlTrailer            `json:"trailer"`
 	StreamingEpisodes  []gqlStreamingEpisode  `json:"streamingEpisodes"`
 	NextAiringEpisode  *gqlNextAiring         `json:"nextAiringEpisode"`
+	ExternalLinks      []gqlExternalLink      `json:"externalLinks"`
+}
+
+type gqlExternalLink struct {
+	URL    *string `json:"url"`
+	Site   string  `json:"site"`
+	SiteID *int    `json:"siteId"`
 }
 
 type gqlNextAiring struct {
@@ -259,6 +269,7 @@ const searchMediaQuery = `query ($search: String, $perPage: Int) {
       trailer { id site }
       streamingEpisodes { title thumbnail }
       nextAiringEpisode { airingAt episode }
+      externalLinks { url site siteId }
     }
   }
 }`
@@ -359,7 +370,8 @@ func (c *Client) SearchAnimeMedia(ctx context.Context, title string) (MediaDetai
 			out.NextAiringUnix = int64(*m.NextAiringEpisode.AiringAt)
 			out.NextAiringEpisode = *m.NextAiringEpisode.Episode
 		}
-		if out.PosterURL == "" && out.BackgroundURL == "" && out.Description == "" && out.Title == "" && out.NativeTitle == "" && out.EpisodeLengthMin == 0 && len(out.Genres) == 0 && out.StartYear == 0 && out.TrailerYouTubeID == "" && len(out.EpisodeTitleByNum) == 0 && len(out.EpisodeThumbnailByNum) == 0 && out.NextAiringUnix == 0 {
+		out.AniDBAid = anidbAidFromExternalLinks(m.ExternalLinks)
+		if out.PosterURL == "" && out.BackgroundURL == "" && out.Description == "" && out.Title == "" && out.NativeTitle == "" && out.EpisodeLengthMin == 0 && len(out.Genres) == 0 && out.StartYear == 0 && out.TrailerYouTubeID == "" && len(out.EpisodeTitleByNum) == 0 && len(out.EpisodeThumbnailByNum) == 0 && out.NextAiringUnix == 0 && out.AniDBAid == 0 {
 			lastErr = errors.New("anilist: empty media payload")
 			continue
 		}
@@ -417,6 +429,23 @@ func pickBestSearchMedia(search string, list []gqlMedia) gqlMedia {
 }
 
 // pickTitleLatin prefers romaji/English for Stremio catalog; avoids Japanese userPreferred when romaji exists.
+func anidbAidFromExternalLinks(links []gqlExternalLink) int {
+	for _, l := range links {
+		site := strings.ToLower(strings.TrimSpace(l.Site))
+		if site == "anidb" || strings.Contains(site, "anidb") {
+			if l.SiteID != nil && *l.SiteID > 0 {
+				return *l.SiteID
+			}
+			if l.URL != nil {
+				if id := anidb.ParseAnidbAidFromURL(*l.URL); id > 0 {
+					return id
+				}
+			}
+		}
+	}
+	return 0
+}
+
 func pickTitleLatin(t gqlTitle) string {
 	if s := strings.TrimSpace(t.Romaji); s != "" {
 		return s

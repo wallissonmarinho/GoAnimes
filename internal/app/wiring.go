@@ -3,9 +3,11 @@ package app
 import (
 	"context"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/wallissonmarinho/GoAnimes/internal/adapters/anidb"
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/anilist"
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/httpclient"
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/jikan"
@@ -102,6 +104,22 @@ func NewRSSSyncService(repo *storage.Catalog, mem *state.CatalogStore, o service
 			}
 		}
 	}
+	if !anidbDisabled() {
+		cname := strings.TrimSpace(os.Getenv("GOANIMES_ANIDB_CLIENT"))
+		if verStr := strings.TrimSpace(os.Getenv("GOANIMES_ANIDB_CLIENTVER")); cname != "" && verStr != "" {
+			if ver, err := strconv.Atoi(verStr); err == nil && ver >= 1 {
+				g := httpclient.NewGetter(o.HTTPTimeout, o.UserAgent, 8<<20)
+				if adb := anidb.NewClient(g, cname, ver); adb != nil {
+					o.AniDB = adb
+					if o.AniDBMinDelay <= 0 {
+						if d, err := time.ParseDuration(getenv("GOANIMES_ANIDB_MIN_DELAY", "0")); err == nil {
+							o.AniDBMinDelay = d
+						}
+					}
+				}
+			}
+		}
+	}
 	return services.NewRSSSyncService(repo, mem, o, nil), al, jk, ks, tmdbCl
 }
 
@@ -122,6 +140,11 @@ func kitsuDisabled() bool {
 
 func tmdbDisabled() bool {
 	v := strings.ToLower(strings.TrimSpace(os.Getenv("GOANIMES_TMDB_DISABLED")))
+	return v == "1" || v == "true" || v == "yes"
+}
+
+func anidbDisabled() bool {
+	v := strings.ToLower(strings.TrimSpace(os.Getenv("GOANIMES_ANIDB_DISABLED")))
 	return v == "1" || v == "true" || v == "yes"
 }
 

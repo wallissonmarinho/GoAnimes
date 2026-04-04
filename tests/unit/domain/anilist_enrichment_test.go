@@ -27,6 +27,13 @@ func TestMergeAniListEnrichment_fillsEmpty(t *testing.T) {
 func TestEnrichmentCouldUseJikan(t *testing.T) {
 	require.True(t, domain.EnrichmentCouldUseJikan(domain.AniListSeriesEnrichment{}))
 	require.True(t, domain.EnrichmentCouldUseJikan(domain.AniListSeriesEnrichment{
+		Description:       "x",
+		PosterURL:       "p",
+		Genres:          []string{"A"},
+		StartYear:       2020,
+		EpisodeTitleByNum: map[int]string{1: "", 2: "  "},
+	}), "only empty episode title placeholders should still allow Jikan")
+	require.True(t, domain.EnrichmentCouldUseJikan(domain.AniListSeriesEnrichment{
 		Description: "x",
 		PosterURL:   "p",
 		Genres:      []string{"A"},
@@ -68,6 +75,19 @@ func TestMergeAniListEnrichment_jikanDoesNotWipeNextAiring(t *testing.T) {
 	require.Equal(t, "from jikan", out.Description)
 }
 
+func TestMergeAniListEnrichment_episodeTitleFillsEmptyPlaceholder(t *testing.T) {
+	stored := domain.AniListSeriesEnrichment{
+		EpisodeTitleByNum: map[int]string{1: "Keep", 2: "", 3: "   "},
+	}
+	add := domain.AniListSeriesEnrichment{
+		EpisodeTitleByNum: map[int]string{2: "From Kitsu", 3: "Three"},
+	}
+	out := domain.MergeAniListEnrichment(stored, add)
+	require.Equal(t, "Keep", out.EpisodeTitleByNum[1])
+	require.Equal(t, "From Kitsu", out.EpisodeTitleByNum[2])
+	require.Equal(t, "Three", out.EpisodeTitleByNum[3])
+}
+
 func TestMergeAniListEnrichment_episodeThumbnailsFillGaps(t *testing.T) {
 	stored := domain.AniListSeriesEnrichment{
 		EpisodeTitleByNum:     map[int]string{1: "A"},
@@ -82,6 +102,14 @@ func TestMergeAniListEnrichment_episodeThumbnailsFillGaps(t *testing.T) {
 	require.Equal(t, "C", out.EpisodeTitleByNum[2])
 	require.Equal(t, "https://u/1", out.EpisodeThumbnailByNum[1])
 	require.Equal(t, "https://u/2", out.EpisodeThumbnailByNum[2])
+}
+
+func TestMergeAniListEnrichment_anidbAidAndFetchUnix(t *testing.T) {
+	stored := domain.AniListSeriesEnrichment{AniDBAid: 0, AniDBLastFetchedUnix: 100}
+	add := domain.AniListSeriesEnrichment{AniDBAid: 19614, AniDBLastFetchedUnix: 200}
+	out := domain.MergeAniListEnrichment(stored, add)
+	require.Equal(t, 19614, out.AniDBAid)
+	require.Equal(t, int64(200), out.AniDBLastFetchedUnix)
 }
 
 func TestMergeAniListEnrichment_anilistUpdatesNextAiring(t *testing.T) {

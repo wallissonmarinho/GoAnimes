@@ -48,6 +48,8 @@ func (h *handlers) getInspectCatalog(c *gin.Context) {
 				"stremio_hero_bg":      en.StremioHeroBackgroundURL,
 				"imdb_id":                  en.ImdbID,
 				"kitsu_id":                 en.KitsuAnimeID,
+				"anidb_aid":                en.AniDBAid,
+				"anidb_last_fetch_unix":    en.AniDBLastFetchedUnix,
 				"description_len":          len(strings.TrimSpace(en.Description)),
 				"genres":                   en.Genres,
 				"start_year":               en.StartYear,

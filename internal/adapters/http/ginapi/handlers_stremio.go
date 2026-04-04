@@ -25,7 +25,7 @@ const (
 	stremioTypeMovie     = "movie"
 	stremioTypeSeries    = "series"
 	// stremioManifestVersion: PATCH = fixes, tuning, deps, docs; MINOR = nova funcionalidade visível (API, sync, catálogo Stremio); MAJOR = contrato que parte instalações.
-	stremioManifestVersion = "1.5.5"
+	stremioManifestVersion = "1.5.6"
 )
 
 func stremioMetaOrStreamTypeOK(t string) bool {
@@ -319,7 +319,7 @@ func (h *handlers) getMeta(c *gin.Context) {
 					didLazyEnrich = true
 				}
 			}
-			if h.deps.Kitsu != nil && kitsuID != "" && (len(en.EpisodeTitleByNum) == 0 || len(en.EpisodeThumbnailByNum) == 0) {
+			if h.deps.Kitsu != nil && kitsuID != "" && (!domain.EnrichmentHasAnyEpisodeTitle(en) || len(en.EpisodeThumbnailByNum) == 0) {
 				t, th, kerr := h.deps.Kitsu.FetchEpisodeMaps(ctx, kitsuID)
 				if kerr == nil && (len(t) > 0 || len(th) > 0) {
 					addKE := domain.AniListSeriesEnrichment{KitsuAnimeID: kitsuID, EpisodeTitleByNum: t, EpisodeThumbnailByNum: th}
