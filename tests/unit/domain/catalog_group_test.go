@@ -111,3 +111,22 @@ func TestBuildSeriesList_ordersByNewestRSSDate(t *testing.T) {
 	require.Equal(t, "Mid Anime", list[1].Name)
 	require.Equal(t, "Old Anime", list[2].Name)
 }
+
+func TestBuildSeriesList_sameCalendarDay_ordersByWallClock(t *testing.T) {
+	items := []domain.CatalogItem{
+		{SeriesID: "s-late", SeriesName: "Late Show", Released: "2026-04-04T16:01:13Z"},
+		{SeriesID: "s-early", SeriesName: "Early Show", Released: "2026-04-04T15:57:50Z"},
+	}
+	list := domain.BuildSeriesList(items)
+	require.Len(t, list, 2)
+	require.Equal(t, "Late Show", list[0].Name)
+	require.Equal(t, "Early Show", list[1].Name)
+}
+
+func TestLatestReleased_sameCalendarDay_prefersLaterInstant(t *testing.T) {
+	items := []domain.CatalogItem{
+		{Released: "2026-04-04T15:57:50Z"},
+		{Released: "2026-04-04T16:01:13Z"},
+	}
+	require.Equal(t, "2026-04-04T16:01:13Z", domain.LatestReleased(items))
+}

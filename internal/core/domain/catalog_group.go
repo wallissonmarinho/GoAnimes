@@ -88,15 +88,54 @@ func OrderedEpisodeKeys(m map[EpSortKey][]CatalogItem) []EpSortKey {
 	return keys
 }
 
-// LatestReleased picks the newest RSS date string in the group (yyyy-mm-dd lex sort works).
-func LatestReleased(items []CatalogItem) string {
-	var best string
-	for _, it := range items {
-		if strings.TrimSpace(it.Released) > best {
-			best = it.Released
+// compareReleasedDesc returns +1 if a is newer than b, -1 if b is newer, 0 if equal or unknown (then falls back to string compare).
+func compareReleasedDesc(aRaw, bRaw string) int {
+	ta, okA := ParseItemReleasedDate(aRaw)
+	tb, okB := ParseItemReleasedDate(bRaw)
+	if okA && okB {
+		switch {
+		case ta.After(tb):
+			return 1
+		case tb.After(ta):
+			return -1
+		default:
+			return 0
 		}
 	}
-	return best
+	if okA && !okB {
+		return 1
+	}
+	if !okA && okB {
+		return -1
+	}
+	aRaw = strings.TrimSpace(aRaw)
+	bRaw = strings.TrimSpace(bRaw)
+	if aRaw == bRaw {
+		return 0
+	}
+	if aRaw > bRaw {
+		return 1
+	}
+	return -1
+}
+
+// LatestReleased picks the newest Released in the group (parses RFC3339, yyyy-mm-dd, RFC1123, etc.).
+func LatestReleased(items []CatalogItem) string {
+	var bestT time.Time
+	var bestStr string
+	var have bool
+	for _, it := range items {
+		ts, ok := ParseItemReleasedDate(it.Released)
+		if !ok {
+			continue
+		}
+		if !have || ts.After(bestT) {
+			bestT = ts
+			bestStr = strings.TrimSpace(it.Released)
+			have = true
+		}
+	}
+	return bestStr
 }
 
 var streamingEpTitleRe = regexp.MustCompile(`(?i)^Episode\s+(\d+)\s*(?:-|–|—)\s*(.+)$`)
@@ -632,8 +671,8 @@ func SortCatalogItemsInPlace(items []CatalogItem) {
 		if a.Episode != b.Episode {
 			return a.Episode < b.Episode
 		}
-		if a.Released != b.Released {
-			return a.Released > b.Released
+		if cmp := compareReleasedDesc(a.Released, b.Released); cmp != 0 {
+			return cmp > 0
 		}
 		return a.ID < b.ID
 	})
@@ -658,8 +697,10 @@ func SortEpisodes(items []CatalogItem, seriesID string) []CatalogItem {
 		if a.Episode != b.Episode {
 			return a.Episode < b.Episode
 		}
-		return a.Released > b.Released
+		if cmp := compareReleasedDesc(a.Released, b.Released); cmp != 0 {
+			return cmp > 0
+		}
+		return a.ID < b.ID
 	})
 	return out
 }
-

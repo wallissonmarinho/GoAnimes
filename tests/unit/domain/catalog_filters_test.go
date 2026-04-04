@@ -9,6 +9,13 @@ import (
 	"github.com/wallissonmarinho/GoAnimes/internal/core/domain"
 )
 
+func TestParseItemReleasedDate_rfc3339PreservesWallClock(t *testing.T) {
+	ts, ok := domain.ParseItemReleasedDate("2026-04-04T16:01:13Z")
+	require.True(t, ok)
+	require.Equal(t, 16, ts.UTC().Hour())
+	require.Equal(t, 1, ts.UTC().Minute())
+}
+
 func TestFilterSeriesWithRecentReleases(t *testing.T) {
 	sid := domain.SeriesStremioID("Week Show")
 	today := time.Now().UTC().Format("2006-01-02")

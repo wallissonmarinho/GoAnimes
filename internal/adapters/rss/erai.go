@@ -8,6 +8,7 @@ import (
 	"io"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/mmcdole/gofeed"
 
@@ -97,7 +98,7 @@ func ParseFeedWithEraiSlugs(body []byte) ([]domain.CatalogItem, []string, error)
 		}
 		released := ""
 		if item.PublishedParsed != nil {
-			released = item.PublishedParsed.Format("2006-01-02")
+			released = item.PublishedParsed.UTC().Format(time.RFC3339)
 		}
 		out = append(out, domain.CatalogItem{
 			ID:           StremioIDPrefix + ":" + id,

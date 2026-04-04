@@ -12,8 +12,9 @@ func ParseItemReleasedDate(raw string) (time.Time, bool) {
 	if raw == "" {
 		return time.Time{}, false
 	}
-	if len(raw) >= 10 && raw[4] == '-' && raw[7] == '-' {
-		if t, err := time.ParseInLocation("2006-01-02", raw[:10], time.UTC); err == nil {
+	// Date-only when exactly yyyy-mm-dd; longer strings may be RFC3339 (do not truncate — would drop time-of-day).
+	if len(raw) == 10 && raw[4] == '-' && raw[7] == '-' {
+		if t, err := time.ParseInLocation("2006-01-02", raw, time.UTC); err == nil {
 			return t, true
 		}
 	}
