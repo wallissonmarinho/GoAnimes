@@ -38,12 +38,16 @@ type syncStatusRunningJSON struct {
 	PreviousSync syncStatusPreviousJSON `json:"previous_sync"`
 }
 
-func timePtrUTC(t time.Time) *time.Time {
+func (h *handlers) syncStatusTimePtr(t time.Time) *time.Time {
 	if t.IsZero() {
 		return nil
 	}
-	utc := t.UTC()
-	return &utc
+	loc := time.UTC
+	if h.deps.SyncStatusLocation != nil {
+		loc = h.deps.SyncStatusLocation
+	}
+	out := t.In(loc)
+	return &out
 }
 
 func syncErrorsFromSnapshot(snap domain.CatalogSnapshot) []string {
@@ -87,16 +91,16 @@ func (h *handlers) getSyncStatus(c *gin.Context) {
 		var started *time.Time
 		if h.deps.Sync != nil {
 			if t := h.deps.Sync.SyncRunStartedAt(); !t.IsZero() {
-				started = timePtrUTC(t)
+				started = h.syncStatusTimePtr(t)
 			}
 		}
 		prev := syncStatusPreviousJSON{
-			OK:        snap.OK,
-			Message:   snap.Message,
-			ItemCount: snap.ItemCount,
-			Errors:    errs,
-			StartedAt: timePtrUTC(snap.StartedAt),
-			FinishedAt: timePtrUTC(snap.FinishedAt),
+			OK:         snap.OK,
+			Message:    snap.Message,
+			ItemCount:  snap.ItemCount,
+			Errors:     errs,
+			StartedAt:  h.syncStatusTimePtr(snap.StartedAt),
+			FinishedAt: h.syncStatusTimePtr(snap.FinishedAt),
 		}
 		c.JSON(http.StatusOK, syncStatusRunningJSON{
 			SyncRunning:  true,
@@ -112,8 +116,8 @@ func (h *handlers) getSyncStatus(c *gin.Context) {
 		Message:     snap.Message,
 		ItemCount:   snap.ItemCount,
 		Errors:      errs,
-		StartedAt:   timePtrUTC(snap.StartedAt),
-		FinishedAt:  timePtrUTC(snap.FinishedAt),
+		StartedAt:   h.syncStatusTimePtr(snap.StartedAt),
+		FinishedAt:  h.syncStatusTimePtr(snap.FinishedAt),
 	}
 	c.JSON(http.StatusOK, out)
 }

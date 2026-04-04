@@ -2,6 +2,7 @@ package ginapi
 
 import (
 	"log/slog"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -28,6 +29,8 @@ type Deps struct {
 	// SynopsisTrans optional (nil in tests); production wires gilang Google translate.
 	SynopsisTrans ports.SynopsisTranslator
 	Log           *slog.Logger
+	// SyncStatusLocation when non-nil converts started_at/finished_at in GET /sync-status to this IANA zone (stored UTC in DB).
+	SyncStatusLocation *time.Location
 }
 
 // handlers binds Gin routes to ports. See handlers_public.go, handlers_admin.go, handlers_stremio.go, handlers_rss.go, handlers_sync.go, middleware.go.

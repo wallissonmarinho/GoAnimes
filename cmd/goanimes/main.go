@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -78,14 +79,15 @@ func main() {
 	serviceName := getenv("OTEL_SERVICE_NAME", "goanimes")
 	observability.RegisterGin(engine, serviceName)
 	ginapi.Register(engine, ginapi.Config{AdminAPIKey: app.AdminAPIKey()}, ginapi.Deps{
-		Sync:          syncSvc,
-		Catalog:       catalogAdmin,
-		AniList:       anilistClient,
-		Jikan:         jikanClient,
-		Kitsu:         kitsuClient,
-		TMDB:          tmdbClient,
-		SynopsisTrans: synopsisTr,
-		Log:           lg,
+		Sync:               syncSvc,
+		Catalog:            catalogAdmin,
+		AniList:            anilistClient,
+		Jikan:              jikanClient,
+		Kitsu:              kitsuClient,
+		TMDB:               tmdbClient,
+		SynopsisTrans:      synopsisTr,
+		Log:                lg,
+		SyncStatusLocation: loadSyncStatusLocation(),
 	})
 
 	addr := listenAddr()
@@ -163,6 +165,21 @@ func int64Env(k string, def int64) int64 {
 		return def
 	}
 	return n
+}
+
+// loadSyncStatusLocation returns IANA zone for GET /api/v1/sync-status timestamps (empty env → nil → UTC in JSON).
+func loadSyncStatusLocation() *time.Location {
+	tz := strings.TrimSpace(os.Getenv("GOANIMES_SYNC_STATUS_TZ"))
+	if tz == "" {
+		return nil
+	}
+	loc, err := time.LoadLocation(tz)
+	if err != nil {
+		slog.Warn("GOANIMES_SYNC_STATUS_TZ invalid, sync-status times stay UTC",
+			slog.String("value", tz), slog.Any("err", err))
+		return nil
+	}
+	return loc
 }
 
 func durationEnv(k string, def time.Duration) time.Duration {
