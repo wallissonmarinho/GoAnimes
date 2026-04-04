@@ -54,7 +54,8 @@ Autenticação: `Authorization: Bearer <chave>` ou `X-Admin-API-Key: <chave>`.
 | `PORT` / `GOANIMES_ADDR` | Porta (ex. `:8080`) |
 | `GOANIMES_DATA_DIR` | Diretório dos dados (default `./data`) |
 | `GOANIMES_ADMIN_API_KEY` / `ADMIN_API_KEY` | Chave admin |
-| `GOANIMES_SYNC_INTERVAL` | Intervalo de sync (default `30m`) |
+| `GOANIMES_SYNC_INTERVAL` | Intervalo de **sync completo** (default `30m`) — metadados, Erai por anime, etc. |
+| `GOANIMES_RSS_POLL_INTERVAL` | Sondagem dos feeds RSS **principais** (default `1m`; `0` desliga). Compara o feed atual com o **último corpo usado no build** guardado no snapshot (`sha256` + `ETag`/`Last-Modified`); se diferente (ou fonte nova/removida), dispara sync completo. Sem baseline ainda (primeira subida), adota o feed atual sem rebuild até o próximo sync gravar metadados. Não cobre mudança só em feeds Erai por-anime se o feed global não mudar. |
 | `GOANIMES_HTTP_TIMEOUT` | Timeout HTTP ao buscar RSS (default `45s`) |
 | `GOANIMES_ERAI_MAX_PER_ANIME_FEEDS` | Máx. GETs a feeds por anime num sync Erai (default `200`; `0` = sem limite) |
 | `GOANIMES_ERAI_PER_ANIME_DELAY` | Pausa entre cada GET `anime-list/{slug}/feed` (default `400ms`; ex. `800ms`, `1s`) — reduz HTTP 429 |

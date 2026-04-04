@@ -24,8 +24,8 @@ func (e *HTTPStatusError) Error() string {
 
 // Getter downloads HTTP bodies with a size limit.
 type Getter struct {
-	Client     *http.Client
-	UserAgent  string
+	Client       *http.Client
+	UserAgent    string
 	MaxBodyBytes int64
 }
 
@@ -34,8 +34,8 @@ func NewGetter(timeout time.Duration, userAgent string, maxBodyBytes int64) *Get
 		maxBodyBytes = 50 << 20
 	}
 	return &Getter{
-		Client: &http.Client{Timeout: timeout},
-		UserAgent: strings.TrimSpace(userAgent),
+		Client:       &http.Client{Timeout: timeout},
+		UserAgent:    strings.TrimSpace(userAgent),
 		MaxBodyBytes: maxBodyBytes,
 	}
 }
@@ -46,13 +46,19 @@ func (g *Getter) GetBytes(url string) ([]byte, error) {
 	return b, err
 }
 
-func (g *Getter) doGET(ctx context.Context, url string) (body []byte, status int, hdr http.Header, err error) {
+func (g *Getter) doGET(ctx context.Context, url, ifNoneMatch, ifModifiedSince string) (body []byte, status int, hdr http.Header, err error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, 0, nil, err
 	}
 	if g.UserAgent != "" {
 		req.Header.Set("User-Agent", g.UserAgent)
+	}
+	if strings.TrimSpace(ifNoneMatch) != "" {
+		req.Header.Set("If-None-Match", strings.TrimSpace(ifNoneMatch))
+	}
+	if strings.TrimSpace(ifModifiedSince) != "" {
+		req.Header.Set("If-Modified-Since", strings.TrimSpace(ifModifiedSince))
 	}
 	resp, err := g.Client.Do(req)
 	if err != nil {
@@ -61,6 +67,10 @@ func (g *Getter) doGET(ctx context.Context, url string) (body []byte, status int
 	defer resp.Body.Close()
 	status = resp.StatusCode
 	hdr = resp.Header.Clone()
+	if resp.StatusCode == http.StatusNotModified {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		return nil, status, hdr, nil
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		_, _ = io.Copy(io.Discard, resp.Body)
 		return nil, status, hdr, &HTTPStatusError{StatusCode: status}
@@ -164,7 +174,7 @@ func (g *Getter) GetBytesGETRetry(ctx context.Context, url string, maxAttempts i
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		body, status, hdr, err := g.doGET(ctx, url)
+		body, status, hdr, err := g.doGET(ctx, url, "", "")
 		if err == nil {
 			return body, nil
 		}
@@ -196,6 +206,54 @@ func (g *Getter) GetBytesGETRetry(ctx context.Context, url string, maxAttempts i
 		}
 	}
 	return nil, lastErr
+}
+
+// GetBytesGETRetryWithHeaders is like GetBytesGETRetry but sends If-None-Match / If-Modified-Since when non-empty.
+// On HTTP 304 Not Modified returns body=nil, statusCode=304, err=nil.
+func (g *Getter) GetBytesGETRetryWithHeaders(ctx context.Context, url string, maxAttempts int, baseBackoff time.Duration, ifNoneMatch, ifModifiedSince string) (body []byte, statusCode int, hdr http.Header, err error) {
+	if maxAttempts < 1 {
+		maxAttempts = 1
+	}
+	var lastErr error
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return nil, 0, nil, err
+		}
+		body, status, h, err := g.doGET(ctx, url, ifNoneMatch, ifModifiedSince)
+		if err == nil {
+			if status == http.StatusNotModified {
+				return nil, status, h, nil
+			}
+			return body, status, h, nil
+		}
+		lastErr = err
+		if attempt >= maxAttempts {
+			break
+		}
+		var st *HTTPStatusError
+		if errors.As(err, &st) {
+			if status != http.StatusTooManyRequests && status != http.StatusServiceUnavailable {
+				break
+			}
+			wait := retryWaitAfterThrottle(attempt, baseBackoff, h)
+			select {
+			case <-ctx.Done():
+				return nil, 0, nil, ctx.Err()
+			case <-time.After(wait):
+			}
+			continue
+		}
+		if !isRetriableTransportErr(err) {
+			break
+		}
+		wait := retryWaitAfterThrottle(attempt, baseBackoff, nil)
+		select {
+		case <-ctx.Done():
+			return nil, 0, nil, ctx.Err()
+		case <-time.After(wait):
+		}
+	}
+	return nil, 0, nil, lastErr
 }
 
 // PostBytes sends a POST with a body and returns the response body (capped).

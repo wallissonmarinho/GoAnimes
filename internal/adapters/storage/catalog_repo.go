@@ -123,23 +123,28 @@ func (r *catalogRepo) DeleteRSSSource(ctx context.Context, id string) error {
 }
 
 type catalogPayload struct {
-	Items            []domain.CatalogItem                        `json:"items"`
-	LastSyncErrors   []string                                    `json:"last_sync_errors,omitempty"`
-	AniListPosters   map[string]string                           `json:"anilist_posters,omitempty"` // legacy: poster URL only
-	AniListSeries    map[string]domain.AniListSeriesEnrichment   `json:"anilist_series,omitempty"`
+	Items            []domain.CatalogItem                          `json:"items"`
+	LastSyncErrors   []string                                      `json:"last_sync_errors,omitempty"`
+	AniListPosters   map[string]string                             `json:"anilist_posters,omitempty"` // legacy: poster URL only
+	AniListSeries    map[string]domain.AniListSeriesEnrichment     `json:"anilist_series,omitempty"`
+	RSSMainFeedBuild map[string]domain.RssMainFeedBuildFingerprint `json:"rss_main_feed_build,omitempty"`
 }
 
 func marshalCatalogPayload(snap domain.CatalogSnapshot) ([]byte, error) {
 	p := catalogPayload{
-		Items:          snap.Items,
-		LastSyncErrors: snap.LastSyncErrors,
-		AniListSeries:  snap.AniListBySeries,
+		Items:            snap.Items,
+		LastSyncErrors:   snap.LastSyncErrors,
+		AniListSeries:    snap.AniListBySeries,
+		RSSMainFeedBuild: snap.RSSMainFeedBuildByURL,
 	}
 	if len(p.LastSyncErrors) == 0 {
 		p.LastSyncErrors = nil
 	}
 	if len(p.AniListSeries) == 0 {
 		p.AniListSeries = nil
+	}
+	if len(p.RSSMainFeedBuild) == 0 {
+		p.RSSMainFeedBuild = nil
 	}
 	return json.Marshal(p)
 }
@@ -155,6 +160,7 @@ func unmarshalCatalogPayload(raw []byte) (domain.CatalogSnapshot, error) {
 			return domain.CatalogSnapshot{}, err
 		}
 		snap.AniListBySeries = make(map[string]domain.AniListSeriesEnrichment)
+		snap.RSSMainFeedBuildByURL = make(map[string]domain.RssMainFeedBuildFingerprint)
 		return snap, nil
 	}
 	var p catalogPayload
@@ -164,8 +170,12 @@ func unmarshalCatalogPayload(raw []byte) (domain.CatalogSnapshot, error) {
 	snap.Items = p.Items
 	snap.LastSyncErrors = append([]string(nil), p.LastSyncErrors...)
 	snap.AniListBySeries = p.AniListSeries
+	snap.RSSMainFeedBuildByURL = p.RSSMainFeedBuild
 	if snap.AniListBySeries == nil {
 		snap.AniListBySeries = make(map[string]domain.AniListSeriesEnrichment)
+	}
+	if snap.RSSMainFeedBuildByURL == nil {
+		snap.RSSMainFeedBuildByURL = make(map[string]domain.RssMainFeedBuildFingerprint)
 	}
 	// Legacy snapshot: only anilist_posters map.
 	for k, url := range p.AniListPosters {

@@ -96,9 +96,10 @@ func main() {
 	}
 
 	syncInterval := durationEnv("GOANIMES_SYNC_INTERVAL", 30*time.Minute)
+	rssPollEvery := durationEnv("GOANIMES_RSS_POLL_INTERVAL", time.Minute)
 	schedCtx, schedCancel := context.WithCancel(context.Background())
 	defer schedCancel()
-	loop := &scheduler.SyncLoop{Sync: syncSvc, Interval: syncInterval, Log: lg}
+	loop := &scheduler.SyncLoop{Sync: syncSvc, Interval: syncInterval, PollInterval: rssPollEvery, Log: lg}
 	go loop.Run(schedCtx)
 
 	go func() {

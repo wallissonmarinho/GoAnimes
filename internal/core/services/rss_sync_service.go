@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"net/http"
 	"os"
 	"sort"
 	"strconv"
@@ -136,6 +137,11 @@ type RSSSyncService struct {
 	mu                 sync.Mutex
 	syncRunning        atomic.Bool
 	syncRunStartedUnix atomic.Int64 // Unix nano UTC while Run holds the lock; 0 when idle
+	rssProbeMu         sync.Mutex
+	rssProbeByURL      map[string]rssProbeState // trimmed feed URL → last GET (conditional headers for poll)
+	rssLastBuildMu     sync.RWMutex
+	rssLastBuildByURL  map[string]domain.RssMainFeedBuildFingerprint // last persisted main-feed bodies (RSS poll baseline)
+	rssLastBuildOnce   sync.Once
 }
 
 func NewRSSSyncService(repo ports.CatalogRepository, mem *state.CatalogStore, o RSSSyncRuntimeOptions, log *slog.Logger) *RSSSyncService {
@@ -700,13 +706,14 @@ func (s *RSSSyncService) Run(ctx context.Context) domain.SyncResult {
 
 	if len(sources) == 0 {
 		snap := domain.CatalogSnapshot{
-			OK:              true,
-			Message:         "no rss sources configured",
-			ItemCount:       0,
-			StartedAt:       started,
-			FinishedAt:      time.Now().UTC(),
-			Items:           nil,
-			AniListBySeries: anilistCache,
+			OK:                    true,
+			Message:               "no rss sources configured",
+			ItemCount:             0,
+			StartedAt:             started,
+			FinishedAt:            time.Now().UTC(),
+			Items:                 nil,
+			AniListBySeries:       anilistCache,
+			RSSMainFeedBuildByURL: map[string]domain.RssMainFeedBuildFingerprint{},
 		}
 		domain.EnsureSnapshotGrouped(&snap)
 		var emptyNotes []string
@@ -714,7 +721,9 @@ func (s *RSSSyncService) Run(ctx context.Context) domain.SyncResult {
 		snap.AniListBySeries = anilistCache
 		domain.ApplyAniListEnrichmentToSeries(&snap)
 		snap.LastSyncErrors = nil
-		_ = s.mem.SetAndPersist(ctx, s.repo, snap)
+		if err := s.mem.SetAndPersist(ctx, s.repo, snap); err == nil {
+			s.refreshRSSLastBuildFromMem()
+		}
 		return domain.SyncResult{Message: snap.Message}
 	}
 
@@ -726,11 +735,16 @@ func (s *RSSSyncService) Run(ctx context.Context) domain.SyncResult {
 	var eraiJobs []eraiSlugJob
 	slugQueued := make(map[string]struct{})
 	for _, src := range sources {
-		body, gerr := s.getter.GetBytes(src.URL)
+		body, status, hdr, gerr := s.getter.GetBytesGETRetryWithHeaders(ctx, src.URL, 3, 2*time.Second, "", "")
 		if gerr != nil {
 			errs = append(errs, fmt.Sprintf("%s: %v", src.Label, gerr))
 			continue
 		}
+		if status != http.StatusOK || len(body) == 0 {
+			errs = append(errs, fmt.Sprintf("%s: http status %d", src.Label, status))
+			continue
+		}
+		s.ingestRSSMainFeedProbe(src.URL, body, hdr)
 		items, slugs, perr := rssadapter.ParseFeedWithEraiSlugs(body)
 		if perr != nil {
 			errs = append(errs, fmt.Sprintf("%s: parse: %v", src.Label, perr))
@@ -833,11 +847,12 @@ eraiPerAnimeDone:
 doneTorrentBackfill:
 
 	snap := domain.CatalogSnapshot{
-		OK:         true,
-		ItemCount:  len(merged),
-		StartedAt:  started,
-		FinishedAt: time.Now().UTC(),
-		Items:      merged,
+		OK:                    true,
+		ItemCount:             len(merged),
+		StartedAt:             started,
+		FinishedAt:            time.Now().UTC(),
+		Items:                 merged,
+		RSSMainFeedBuildByURL: s.rssMainFeedBuildForPersist(sources, prevSnap),
 	}
 	domain.EnsureSnapshotGrouped(&snap)
 	domain.SortCatalogItemsInPlace(snap.Items)
@@ -860,6 +875,8 @@ doneTorrentBackfill:
 		s.log.Error("save snapshot", slog.Any("err", saveErr))
 		snap.LastSyncErrors = capPersistedSyncLines(append(snap.LastSyncErrors, errs[len(errs)-1]))
 		s.mem.Set(snap)
+	} else {
+		s.refreshRSSLastBuildFromMem()
 	}
 	return domain.SyncResult{Message: snap.Message, Errors: errs}
 }
