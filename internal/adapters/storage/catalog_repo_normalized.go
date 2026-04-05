@@ -23,6 +23,11 @@ func (r *catalogRepo) replaceNormalizedCatalog(ctx context.Context, snap domain.
 	if _, err := r.ex.ExecContext(ctx, `DELETE FROM catalog_series`); err != nil {
 		return err
 	}
+	// SQLite often runs with foreign_keys=OFF, so ON DELETE CASCADE on series_enrichment does not run.
+	// Without this DELETE, insertAllSeriesEnrichments hits UNIQUE(series_id) on the next save.
+	if _, err := r.ex.ExecContext(ctx, `DELETE FROM series_enrichment`); err != nil {
+		return err
+	}
 	for _, s := range snap.Series {
 		gb, err := json.Marshal(s.Genres)
 		if err != nil {
