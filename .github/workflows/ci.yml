@@ -16,15 +16,28 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       # v6+ runs on Node 24 (avoids Node 20 runner deprecation warnings).
       - uses: actions/checkout@v6
+
+      - name: Check layout (no RSS sync dupes in services/)
+        run: bash scripts/check-layout.sh
 
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           # Prevents intermittent "tar ... exit code 2" on cache restore (toolchain/module cache conflicts).
           cache: false
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.11
 
       - name: Test
         run: go test ./... -count=1

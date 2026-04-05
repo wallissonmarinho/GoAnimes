@@ -29,10 +29,10 @@ flowchart TB
   PORT --> RSS
 ```
 
-- **domain:** entidades e regras puras (catálogo, merge, IDs Stremio, enriquecimento AniList, etc.) — sem SQL, sem HTTP.
-- **ports:** contratos (`CatalogRepository`, `CatalogAdmin`, `SyncRunner`, `UnitOfWork`, `SynopsisTranslator`, …).
-- **services / rsssync / stremio (casos de uso):** `rsssync` (sync RSS + enriquecimento), `stremio` (resposta e lazy meta), `services` (admin catálogo, tradução de sinopse, helpers TMDB partilhados).
-- **adapters:** Gin, SQLite/Postgres, clientes RSS e APIs externas, estado em memória.
+- Domain — entidades e regras puras (catálogo, merge, IDs Stremio, enriquecimento AniList, etc.); sem SQL, sem HTTP.
+- Ports — contratos (`CatalogRepository`, `CatalogAdmin`, `SyncRunner`, `UnitOfWork`, `SynopsisTranslator`, …).
+- Casos de uso — pacotes `rsssync` (sync RSS + enriquecimento), `stremio` (resposta Stremio e lazy meta), `services` (admin de catálogo, tradução de sinopse, helpers TMDB partilhados).
+- Adapters — Gin, SQLite/Postgres, clientes RSS e APIs externas, estado em memória.
 
 ## Estrutura de pastas (atual)
 
@@ -56,7 +56,7 @@ internal/
 migrations/            # postgres/, sqlite/
 ```
 
-**Roadmap:** curadoria por série via IA (revisão de título raiz, temporadas, season/episode por release) sobre catálogo relacional + `series_enrichment`; ver plano de produto quando o contrato da API estiver fechado.
+Roadmap — curadoria por série via IA (revisão de título raiz, temporadas, season/episode por release) sobre catálogo relacional + `series_enrichment` + `series_curation`; contrato da API e endpoint em fase posterior.
 
 ## Dados persistidos
 
@@ -68,28 +68,28 @@ migrations/            # postgres/, sqlite/
 | `catalog_snapshot` | Linha única (`id=1`): `items_json` (payload JSON), flags de sync, contagens, timestamps |
 | `catalog_series` | Séries normalizadas (id estável Stremio, nome, poster, descrição, géneros, releaseInfo) |
 | `catalog_item` | Episódios/releases com `series_id` → `catalog_series` (FK, CASCADE) |
+| `series_enrichment` | Metadados AniList/Jikan/Kitsu por série (1:1 com `catalog_series`); mapas de episódio em `episode_maps_json` |
+| `series_curation` | Estado de revisão IA por série (esquema preparado; use case e HTTP por implementar) |
 
 ### Payload JSON (`items_json`)
 
 Inclui tipicamente:
 
-- `items` — lista de `CatalogItem` (também espelhada em `catalog_item` após sync).
-- `anilist_series` — mapa `seriesID → AniListSeriesEnrichment` (metadados + IDs MAL/Kitsu/IMDb/AniDB + mapas de títulos/thumbs por episódio).
+- `items` — lista de `CatalogItem` (espelhada em `catalog_item` após sync).
+- `anilist_series` — legado: omitido no marshal quando existem linhas em `series_enrichment`; leitura antiga ainda aceita JSON se a tabela estiver vazia.
 - `rss_main_feed_build` — fingerprint por URL de feed principal (`sha256` do corpo + `etag` / `last_modified`) para o poll RSS.
 - `last_sync_errors` — notas do último sync.
 
-**Direção futura (desenho):** tabela `series_enrichment` 1:1 com `catalog_series` para IDs externos e campos escalares, com JSON para mapas pesados (`ep_titles` / `ep_thumbs`); reduzir ou eliminar a duplicação de `anilist_series` dentro de `items_json` após migração e validação.
-
 ### Transações (Unit of Work)
 
-- `Catalog.SaveCatalogSnapshot` abre **uma transação**: substitui `catalog_series` + `catalog_item` e grava `items_json` de forma atómica.
+- `Catalog.SaveCatalogSnapshot` abre uma transação: substitui `catalog_series` + `catalog_item` + `series_enrichment` (via replace) e grava `items_json` de forma atómica.
 - `ports.UnitOfWork` / `Catalog.WithinCatalogTx` permite outros blocos multi-passo no mesmo `sql.Tx` (repositório transacional exposto como `CatalogRepository`).
 
 ### Hidratação ao arranque
 
 1. `LoadCatalogSnapshot` lê a linha `catalog_snapshot` e faz unmarshal do JSON.
-2. Se existirem linhas em `catalog_item`, **itens e séries** vêm das tabelas normalizadas; metadados AniList / RSS continuam a vir do JSON (até existir `series_enrichment`).
-3. Se as tabelas normalizadas estiverem vazias mas o JSON tiver itens, corre **backfill** numa transação.
+2. Se existirem linhas em `catalog_item`, itens e séries vêm das tabelas normalizadas; enriquecimento AniList vem de `series_enrichment` quando a tabela tem dados, senão do JSON (`anilist_series`) com backfill automático para SQL quando aplicável.
+3. Se as tabelas normalizadas estiverem vazias mas o JSON tiver itens, corre backfill do catálogo normalizado numa transação.
 
 ```mermaid
 sequenceDiagram
@@ -105,12 +105,12 @@ sequenceDiagram
 
 ### Sync RSS
 
-1. `SyncRunner.Run` (serviço em `services`) lista `rss_sources`, obtém feeds, merge com catálogo anterior, enriquecimento opcional (AniList, Jikan, Kitsu, TMDB, AniDB, traduções).
+1. `SyncRunner.Run` (implementação em `rsssync`) lista `rss_sources`, obtém feeds, merge com catálogo anterior, enriquecimento opcional (AniList, Jikan, Kitsu, TMDB, AniDB, traduções).
 2. Atualiza `CatalogStore` em memória e persiste via `CatalogRepository.SaveCatalogSnapshot` (transação com SQL normalizado + JSON).
 
 ### Stremio (catálogo / meta / streams)
 
-1. Handlers Gin finos em `ginapi`; lógica de lazy enrich em `services/stremio_lazy_enrich.go`; montagem de payloads em `services/stremio_response.go`.
+1. Handlers Gin finos em `ginapi`; lazy enrich em `internal/core/stremio/stremio_lazy_enrich.go`; montagem de payloads em `internal/core/stremio/stremio_response.go`.
 2. Leitura do catálogo via `CatalogAdmin` → `CatalogStore.Snapshot()` (RAM), enriquecimento lazy pode alterar memória e chamar `PersistActiveCatalog`.
 
 ### Poll RSS (`RSSMainFeedsChanged`)
@@ -119,16 +119,16 @@ sequenceDiagram
 
 ## Princípios a manter
 
-1. **Handlers sem SQL:** só HTTP + chamada a ports / serviços.
-2. **Domain sem I/O:** facilita testes e evolução.
-3. **Interfaces nas fronteiras:** substituir SQLite por Postgres (ou mocks) sem mudar casos de uso.
-4. **Escritas multi-tabela numa transação** para não deixar catálogo “a meio”.
+1. Handlers sem SQL — só HTTP e chamadas a ports / serviços.
+2. Domain sem I/O — facilita testes e evolução.
+3. Interfaces nas fronteiras — substituir SQLite por Postgres (ou mocks) sem mudar casos de uso.
+4. Escritas multi-tabela numa transação — evitar catálogo inconsistente a meio.
 
 ## Referências no repositório
 
 - Ports: [`internal/core/ports/`](../internal/core/ports/)
 - Snapshot e tipos: [`internal/core/domain/catalog_snapshot.go`](../internal/core/domain/catalog_snapshot.go), [`anilist_enrichment.go`](../internal/core/domain/anilist_enrichment.go)
-- Persistência: [`internal/adapters/storage/catalog.go`](../internal/adapters/storage/catalog.go), [`catalog_repo.go`](../internal/adapters/storage/catalog_repo.go), [`catalog_repo_normalized.go`](../internal/adapters/storage/catalog_repo_normalized.go)
+- Persistência: [`internal/adapters/storage/catalog.go`](../internal/adapters/storage/catalog.go), [`catalog_repo.go`](../internal/adapters/storage/catalog_repo.go), [`catalog_repo_normalized.go`](../internal/adapters/storage/catalog_repo_normalized.go), [`catalog_repo_enrichment.go`](../internal/adapters/storage/catalog_repo_enrichment.go)
 - Wiring: [`internal/app/wiring.go`](../internal/app/wiring.go)
 
 ---

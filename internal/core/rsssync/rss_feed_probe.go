@@ -2,8 +2,6 @@ package rsssync
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"log/slog"
 	"maps"
 	"net/http"
@@ -12,32 +10,6 @@ import (
 
 	"github.com/wallissonmarinho/GoAnimes/internal/core/domain"
 )
-
-type rssProbeState struct {
-	etag         string
-	lastModified string
-	sha256hex    string
-}
-
-func rssProbeStateFromResponse(body []byte, hdr http.Header) rssProbeState {
-	st := rssProbeState{
-		etag:         strings.TrimSpace(hdr.Get("ETag")),
-		lastModified: strings.TrimSpace(hdr.Get("Last-Modified")),
-	}
-	if len(body) > 0 {
-		sum := sha256.Sum256(body)
-		st.sha256hex = hex.EncodeToString(sum[:])
-	}
-	return st
-}
-
-func rssProbeStateFromFingerprint(f domain.RssMainFeedBuildFingerprint) rssProbeState {
-	return rssProbeState{
-		etag:         f.ETag,
-		lastModified: f.LastModified,
-		sha256hex:    f.SHA256Hex,
-	}
-}
 
 // ingestRSSMainFeedProbe records the main feed fingerprint after a successful download in Run (conditional GET for poll).
 func (s *RSSSyncService) ingestRSSMainFeedProbe(feedURL string, body []byte, hdr http.Header) {

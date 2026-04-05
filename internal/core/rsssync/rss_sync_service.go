@@ -2,8 +2,12 @@ package rsssync
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"log/slog"
+	"net/http"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -19,6 +23,33 @@ import (
 	"github.com/wallissonmarinho/GoAnimes/internal/core/domain"
 	"github.com/wallissonmarinho/GoAnimes/internal/core/ports"
 )
+
+// rssProbeState holds conditional GET headers + body hash for RSS main-feed polling.
+type rssProbeState struct {
+	etag         string
+	lastModified string
+	sha256hex    string
+}
+
+func rssProbeStateFromResponse(body []byte, hdr http.Header) rssProbeState {
+	st := rssProbeState{
+		etag:         strings.TrimSpace(hdr.Get("ETag")),
+		lastModified: strings.TrimSpace(hdr.Get("Last-Modified")),
+	}
+	if len(body) > 0 {
+		sum := sha256.Sum256(body)
+		st.sha256hex = hex.EncodeToString(sum[:])
+	}
+	return st
+}
+
+func rssProbeStateFromFingerprint(f domain.RssMainFeedBuildFingerprint) rssProbeState {
+	return rssProbeState{
+		etag:         f.ETag,
+		lastModified: f.LastModified,
+		sha256hex:    f.SHA256Hex,
+	}
+}
 
 // RSSSyncRuntimeOptions configures outbound fetch.
 type RSSSyncRuntimeOptions struct {

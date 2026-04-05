@@ -10,6 +10,26 @@ Addon **Stremio** em Go: cadastra **uma ou mais URLs de RSS** por API, sincroniz
 go build -o bin/goanimes ./cmd/goanimes
 ```
 
+## IDE (Cursor / VS Code) — “missing metadata for import” / `go.work`
+
+- O `go.mod` fixa **Go 1.25** (dependências como `gopkg.gilang.dev/translator/v2` exigem ≥ 1.25). Usa **Go 1.25+** no PATH ou mantém **`GOTOOLCHAIN=auto`** para o toolchain descarregar a versão certa.
+- Se a raiz do workspace for uma pasta **mãe** (ex.: `www`) sem `go.mod`, o **gopls** pode falhar imports: **abre a pasta `GoAnimes` como raiz** (recomendado).
+- Um **`go.work`** na pasta mãe com `go 1.25` **exige** binário `go` ≥ 1.25; com Go 1.24 vês `go.work requires go >= 1.25`. **Atualiza o Go** ou **não uses** `go.work` nesse cenário.
+
+Isto **não** vem do golangci-lint; o lint corre no `go build`/`go test` e na CI.
+
+## Lint (local)
+
+O repositório inclui [`.golangci.yml`](.golangci.yml) (golangci-lint **v2**). O **`make lint`** usa **`go run …/golangci-lint@v2.11.4`** por defeito (não depende de um `golangci-lint` no PATH compilado com Go 1.25). Opcional: binário global — [install](https://golangci-lint.run/welcome/install/) **v2.11+** e `make lint GOLANGCI_LINT=golangci-lint`. Na CI usa-se a action **v2.11**.
+
+```bash
+make lint    # check-layout + go vet + go run golangci-lint@v2.11.4 run ./...
+```
+
+O script `scripts/check-layout.sh` falha se existirem cópias de RSS sync em `internal/core/services/` (ex. `rss_sync_fetch.go`) — causa típica do erro **undefined: RSSSyncService** no IDE.
+
+A **CI** (`ci`, `oracle-deploy`, `release`) corre `go vet` e **golangci-lint** antes dos testes; falhas bloqueiam merge/deploy/tags.
+
 ## Run (local)
 
 ```bash
@@ -81,8 +101,9 @@ Em produção o layout típico é **Docker Compose** com Caddy (ex.: pasta `depl
 
 ## GitHub Actions
 
-- **`ci`** — `go test` + build em **PRs** para `main`/`master` e em **push** para outras branches. **Não** corre em push direto em `main`/`master` (evita duplicar testes com o oracle-deploy).
-- **`oracle-deploy`** — `go test` + deploy por **SSH** na VM (pull do repo + `docker compose build/up` do serviço GoAnimes) em push para `main`/`master` ou manual.
+- **`ci`** — `go vet`, **golangci-lint**, `go test`, build em **PRs** para `main`/`master` e em **push** para outras branches. **Não** corre em push direto em `main`/`master` (evita duplicar testes com o oracle-deploy).
+- **`oracle-deploy`** — `go vet`, **golangci-lint**, `go test`, imagem Docker e deploy por **SSH** na VM em push para `main`/`master` ou manual.
+- **`release`** (tags `v*`) — mesmo gate de lint + testes antes de publicar o binário.
 
 O job **deploy** usa **`environment: prd`**. **Repository secrets:** **`OCI_*`**, **`GHCR_*`**. No ambiente **`prd`**, tudo o que definires como **Secret** ou **Variable** (nomes listados no comentário do `.github/workflows/oracle-deploy.yml`) é gravado em **`deploy/oracle/.env.goanimes.deploy`** na VM a cada deploy — não precisas de SSH para essas chaves. Secret opcional **`GOANIMES_ENV_B64`**: conteúdo extra em base64 (ex. `base64 -i snippet.env | tr -d '\n'`) acrescentado ao fim do ficheiro. **`ACME_EMAIL`** (Caddy) continua no **`.env`** na VM.
 

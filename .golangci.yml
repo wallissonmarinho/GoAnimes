@@ -1,0 +1,22 @@
+# golangci-lint v2 — https://golangci-lint.run/
+# CI: golangci/golangci-lint-action@v8 com version: v2.11.
+version: "2"
+
+run:
+  timeout: 5m
+  modules-download-mode: readonly
+
+linters:
+  default: none
+  enable:
+    - bodyclose
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+
+issues:
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - bodyclose

@@ -218,9 +218,7 @@ func discoverSlugsFromGofeedItem(raw string, item *gofeed.Item) []string {
 	block := itemXMLBlock(raw, item)
 	var hay []string
 	hay = append(hay, block, item.Link, item.GUID, item.Description, item.Content)
-	for _, c := range item.Categories {
-		hay = append(hay, c)
-	}
+	hay = append(hay, item.Categories...)
 	var slugs []string
 	slugs = append(slugs, ExtractEraiAnimeListSlugs(hay...)...)
 	slugs = append(slugs, ExtractEraiAnimeListSlugsFromEpisodeLinks(hay...)...)

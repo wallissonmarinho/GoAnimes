@@ -324,9 +324,3 @@ func parseFallbackXMLWithSlugs(body []byte) ([]domain.CatalogItem, []string, err
 	}
 	return out, uniqueEraiSlugs(slugAcc), nil
 }
-
-// parseFallbackXML handles minimal RSS 2.0 when gofeed fails.
-func parseFallbackXML(body []byte) ([]domain.CatalogItem, error) {
-	items, _, err := parseFallbackXMLWithSlugs(body)
-	return items, err
-}
