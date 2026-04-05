@@ -69,6 +69,10 @@ func main() {
 	})
 	catalogAdmin := app.NewCatalogAdmin(cat, mem)
 
+	syncInterval := durationEnv("GOANIMES_SYNC_INTERVAL", 30*time.Minute)
+	syncRunTimeout := durationEnv("GOANIMES_SYNC_RUN_TIMEOUT", 30*time.Minute)
+	rssPollEvery := durationEnv("GOANIMES_RSS_POLL_INTERVAL", time.Minute)
+
 	if getenv("GIN_MODE", "") == "release" {
 		gin.SetMode(gin.ReleaseMode)
 	}
@@ -88,6 +92,7 @@ func main() {
 		SynopsisTrans:      synopsisTr,
 		Log:                lg,
 		SyncStatusLocation: loadSyncStatusLocation(),
+		SyncRunTimeout:     syncRunTimeout,
 	})
 
 	addr := listenAddr()
@@ -97,11 +102,9 @@ func main() {
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
-	syncInterval := durationEnv("GOANIMES_SYNC_INTERVAL", 30*time.Minute)
-	rssPollEvery := durationEnv("GOANIMES_RSS_POLL_INTERVAL", time.Minute)
 	schedCtx, schedCancel := context.WithCancel(context.Background())
 	defer schedCancel()
-	loop := &scheduler.SyncLoop{Sync: syncSvc, Interval: syncInterval, PollInterval: rssPollEvery, Log: lg}
+	loop := &scheduler.SyncLoop{Sync: syncSvc, Interval: syncInterval, RunTimeout: syncRunTimeout, PollInterval: rssPollEvery, Log: lg}
 	go loop.Run(schedCtx)
 
 	go func() {
@@ -119,7 +122,7 @@ func main() {
 			}
 		}()
 		time.Sleep(2 * time.Second)
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+		ctx, cancel := context.WithTimeout(context.Background(), syncRunTimeout)
 		defer cancel()
 		ctx, span := observability.StartSyncSpan(ctx, "sync.initial")
 		defer span.End()

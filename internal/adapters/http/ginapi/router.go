@@ -31,6 +31,8 @@ type Deps struct {
 	Log           *slog.Logger
 	// SyncStatusLocation when non-nil converts started_at/finished_at in GET /sync-status to this IANA zone (stored UTC in DB).
 	SyncStatusLocation *time.Location
+	// SyncRunTimeout is the context deadline for RSSSyncService.Run on POST rebuild (GOANIMES_SYNC_RUN_TIMEOUT; zero → 30m).
+	SyncRunTimeout time.Duration
 }
 
 // handlers binds Gin routes to ports. See handlers_public.go, handlers_admin.go, handlers_stremio.go, handlers_rss.go, handlers_sync.go, middleware.go.

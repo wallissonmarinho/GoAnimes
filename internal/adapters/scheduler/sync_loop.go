@@ -13,6 +13,8 @@ import (
 type SyncLoop struct {
 	Sync     ports.SyncRunner
 	Interval time.Duration // full rebuild (default 30m)
+	// RunTimeout caps each full Sync.Run context (GOANIMES_SYNC_RUN_TIMEOUT; zero → 30m in fire).
+	RunTimeout time.Duration
 	// PollInterval when >0 runs RSSMainFeedsChanged on that cadence and calls Run when a main feed changed (default off in struct; main sets 1m).
 	PollInterval time.Duration
 	Log          *slog.Logger
@@ -83,7 +85,11 @@ func (l *SyncLoop) fire(spanName, okLogPrefix string) {
 			l.Log.Error("sync job panic", slog.Any("panic", r))
 		}
 	}()
-	runCtx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	timeout := l.RunTimeout
+	if timeout <= 0 {
+		timeout = 30 * time.Minute
+	}
+	runCtx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	runCtx, span := observability.StartSyncSpan(runCtx, spanName)
 	defer span.End()

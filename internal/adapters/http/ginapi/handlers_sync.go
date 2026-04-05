@@ -64,7 +64,11 @@ func (h *handlers) postRebuild(c *gin.Context) {
 		return
 	}
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+		timeout := h.deps.SyncRunTimeout
+		if timeout <= 0 {
+			timeout = 30 * time.Minute
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
 		res := h.deps.Sync.Run(ctx)
 		if h.deps.Log != nil && len(res.Errors) > 0 {
