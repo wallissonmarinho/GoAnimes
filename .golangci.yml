@@ -14,9 +14,8 @@ linters:
     - ineffassign
     - staticcheck
     - unused
-
-issues:
-  exclude-rules:
-    - path: _test\.go
-      linters:
-        - bodyclose
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - bodyclose
