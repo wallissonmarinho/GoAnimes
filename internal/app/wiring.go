@@ -18,6 +18,7 @@ import (
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/storage"
 	"github.com/wallissonmarinho/GoAnimes/internal/core/domain"
 	"github.com/wallissonmarinho/GoAnimes/internal/core/ports"
+	"github.com/wallissonmarinho/GoAnimes/internal/core/rsssync"
 	"github.com/wallissonmarinho/GoAnimes/internal/core/services"
 )
 
@@ -55,7 +56,7 @@ func NewSynopsisTranslator(httpTimeout time.Duration, userAgent string, maxBody 
 }
 
 // NewRSSSyncService builds sync with concrete deps and returns optional API clients for HTTP handlers.
-func NewRSSSyncService(repo *storage.Catalog, mem *state.CatalogStore, o services.RSSSyncRuntimeOptions) (*services.RSSSyncService, *anilist.Client, *jikan.Client, *kitsu.Client, *tmdb.Client) {
+func NewRSSSyncService(repo *storage.Catalog, mem *state.CatalogStore, o rsssync.RSSSyncRuntimeOptions) (*rsssync.RSSSyncService, *anilist.Client, *jikan.Client, *kitsu.Client, *tmdb.Client) {
 	var al *anilist.Client
 	if !anilistDisabled() {
 		// Smaller cap for JSON POST bodies; AniList responses are tiny.
@@ -120,7 +121,7 @@ func NewRSSSyncService(repo *storage.Catalog, mem *state.CatalogStore, o service
 			}
 		}
 	}
-	return services.NewRSSSyncService(repo, mem, o, nil), al, jk, ks, tmdbCl
+	return rsssync.NewRSSSyncService(repo, mem, o, nil), al, jk, ks, tmdbCl
 }
 
 func anilistDisabled() bool {

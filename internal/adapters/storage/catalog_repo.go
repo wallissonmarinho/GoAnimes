@@ -130,12 +130,14 @@ type catalogPayload struct {
 	RSSMainFeedBuild map[string]domain.RssMainFeedBuildFingerprint `json:"rss_main_feed_build,omitempty"`
 }
 
-func marshalCatalogPayload(snap domain.CatalogSnapshot) ([]byte, error) {
+func marshalCatalogPayload(snap domain.CatalogSnapshot, omitAniListSeries bool) ([]byte, error) {
 	p := catalogPayload{
 		Items:            snap.Items,
 		LastSyncErrors:   snap.LastSyncErrors,
-		AniListSeries:    snap.AniListBySeries,
 		RSSMainFeedBuild: snap.RSSMainFeedBuildByURL,
+	}
+	if !omitAniListSeries {
+		p.AniListSeries = snap.AniListBySeries
 	}
 	if len(p.LastSyncErrors) == 0 {
 		p.LastSyncErrors = nil
@@ -192,8 +194,8 @@ func unmarshalCatalogPayload(raw []byte) (domain.CatalogSnapshot, error) {
 	return snap, nil
 }
 
-func (r *catalogRepo) SaveCatalogSnapshot(ctx context.Context, snap domain.CatalogSnapshot) error {
-	b, err := marshalCatalogPayload(snap)
+func (r *catalogRepo) persistCatalogSnapshotRow(ctx context.Context, snap domain.CatalogSnapshot, omitAniListSeries bool) error {
+	b, err := marshalCatalogPayload(snap, omitAniListSeries)
 	if err != nil {
 		return err
 	}
@@ -233,6 +235,15 @@ func (r *catalogRepo) SaveCatalogSnapshot(ctx context.Context, snap domain.Catal
 }
 
 func (r *catalogRepo) LoadCatalogSnapshot(ctx context.Context) (domain.CatalogSnapshot, error) {
+	snap, err := r.loadCatalogSnapshotRow(ctx)
+	if err != nil {
+		return snap, err
+	}
+	return r.mergeNormalizedIntoSnapshot(ctx, snap)
+}
+
+// loadCatalogSnapshotRow reads catalog_snapshot and unmarshals items_json only (no normalized tables).
+func (r *catalogRepo) loadCatalogSnapshotRow(ctx context.Context) (domain.CatalogSnapshot, error) {
 	var (
 		rawItems []byte
 		msg      string

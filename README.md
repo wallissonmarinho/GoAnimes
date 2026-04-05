@@ -57,6 +57,10 @@ Autenticação: `Authorization: Bearer <chave>` ou `X-Admin-API-Key: <chave>`.
 | `GOANIMES_SYNC_STATUS_TZ` | Fuso IANA só para `started_at` / `finished_at` em `GET /api/v1/sync-status`. **Brasília:** `America/Sao_Paulo`. Vazio = **UTC** (`Z`). O servidor continua a gravar sync em UTC na base. |
 | `GOANIMES_SYNC_INTERVAL` | Intervalo de **sync completo** (default `30m`) — metadados, Erai por anime, etc. |
 | `GOANIMES_RSS_POLL_INTERVAL` | Sondagem dos feeds RSS **principais** (default `1m`; `0` desliga). Compara o feed atual com o **último corpo usado no build** guardado no snapshot (`sha256` + `ETag`/`Last-Modified`); se diferente (ou fonte nova/removida), dispara sync completo. Sem baseline ainda (primeira subida), adota o feed atual sem rebuild até o próximo sync gravar metadados. Não cobre mudança só em feeds Erai por-anime se o feed global não mudar. |
+
+**Fingerprint RSS (várias URLs):** a fonte de verdade continua a ser o mapa `rss_main_feed_build` dentro de `items_json` (uma entrada por URL de feed principal: `sha256` do corpo + `etag` / `last_modified` quando existem). Uma única coluna tipo `last_rss_content_fingerprint` não substitui isso com várias fontes; mantém-se o modelo em JSON até haver requisito explícito de tabela dedicada por URL.
+
+**Catálogo relacional:** migração `00002` cria `catalog_series` e `catalog_item` (FK `series_id`). Cada `SaveCatalogSnapshot` atualiza **numa transação** o `items_json` (itens + AniList + fingerprints) e substitui as linhas normalizadas, para não ficar BD inconsistente se falhar a meio. Na primeira leitura após migrar, se as tabelas estiverem vazias mas o JSON tiver itens, o servidor faz backfill automático para as tabelas. Com dados nas tabelas, o carregamento usa **itens e séries** a partir do SQL (metadados AniList / RSS continuam no JSON).
 | `GOANIMES_HTTP_TIMEOUT` | Timeout HTTP ao buscar RSS (default `45s`) |
 | `GOANIMES_ERAI_MAX_PER_ANIME_FEEDS` | Máx. GETs a feeds por anime num sync Erai (default `200`; `0` = sem limite) |
 | `GOANIMES_ERAI_PER_ANIME_DELAY` | Pausa entre cada GET `anime-list/{slug}/feed` (default `400ms`; ex. `800ms`, `1s`) — reduz HTTP 429 |
@@ -83,6 +87,10 @@ Em produção o layout típico é **Docker Compose** com Caddy (ex.: pasta `depl
 O job **deploy** usa **`environment: prd`**. **Repository secrets:** **`OCI_*`**, **`GHCR_*`**. No ambiente **`prd`**, tudo o que definires como **Secret** ou **Variable** (nomes listados no comentário do `.github/workflows/oracle-deploy.yml`) é gravado em **`deploy/oracle/.env.goanimes.deploy`** na VM a cada deploy — não precisas de SSH para essas chaves. Secret opcional **`GOANIMES_ENV_B64`**: conteúdo extra em base64 (ex. `base64 -i snippet.env | tr -d '\n'`) acrescentado ao fim do ficheiro. **`ACME_EMAIL`** (Caddy) continua no **`.env`** na VM.
 
 ## Migrations
+
+Ao arrancar, `storage.Open` (usado por `app.OpenCatalog`) corre **Goose** em cima do DSN — **não** é preciso um passo separado no GitHub Actions nem no `docker compose up`: cada novo deploy que sobe o binário aplica migrações em falta na base antes de servir tráfego.
+
+Para correr migrações à mão (operacional, outro DSN):
 
 ```bash
 ./bin/goanimes migrate up

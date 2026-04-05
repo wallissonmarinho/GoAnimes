@@ -20,7 +20,7 @@ import (
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/scheduler"
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/state"
 	"github.com/wallissonmarinho/GoAnimes/internal/app"
-	"github.com/wallissonmarinho/GoAnimes/internal/core/services"
+	"github.com/wallissonmarinho/GoAnimes/internal/core/rsssync"
 )
 
 func main() {
@@ -61,7 +61,7 @@ func main() {
 	ua := getenv("GOANIMES_USER_AGENT", "GoAnimes/1.0")
 	synopsisTr := app.NewSynopsisTranslator(httpTimeout, ua, maxBody)
 	slog.Info("synopsis translation", slog.String("translator", synopsisTr.Name()))
-	syncSvc, anilistClient, jikanClient, kitsuClient, tmdbClient := app.NewRSSSyncService(cat, mem, services.RSSSyncRuntimeOptions{
+	syncSvc, anilistClient, jikanClient, kitsuClient, tmdbClient := app.NewRSSSyncService(cat, mem, rsssync.RSSSyncRuntimeOptions{
 		HTTPTimeout:   httpTimeout,
 		MaxBodyBytes:  maxBody,
 		UserAgent:     ua,

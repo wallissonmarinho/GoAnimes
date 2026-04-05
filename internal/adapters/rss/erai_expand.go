@@ -39,9 +39,7 @@ func stripEraiEncodesPathSegment(seg string) string {
 	for {
 		prev := s
 		for _, suf := range eraiEncodePathTails {
-			if strings.HasSuffix(s, suf) {
-				s = strings.TrimSuffix(s, suf)
-			}
+			s = strings.TrimSuffix(s, suf)
 		}
 		if s == prev {
 			break

@@ -82,11 +82,64 @@ func (c *Catalog) DeleteRSSSource(ctx context.Context, id string) error {
 }
 
 func (c *Catalog) SaveCatalogSnapshot(ctx context.Context, snap domain.CatalogSnapshot) error {
-	return c.base().SaveCatalogSnapshot(ctx, snap)
+	tx, err := c.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	r := &catalogRepo{ex: tx, pg: c.pg}
+	if err := r.saveCatalogSnapshotAndNormalized(ctx, snap); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// WithinCatalogTx runs fn with a CatalogRepository backed by a single SQL transaction (commit on nil error).
+func (c *Catalog) WithinCatalogTx(ctx context.Context, fn func(ctx context.Context, repo ports.CatalogRepository) error) error {
+	tx, err := c.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	r := &catalogRepo{ex: tx, pg: c.pg}
+	if err := fn(ctx, r); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (c *Catalog) LoadCatalogSnapshot(ctx context.Context) (domain.CatalogSnapshot, error) {
-	return c.base().LoadCatalogSnapshot(ctx)
+	r0 := &catalogRepo{ex: c.db, pg: c.pg}
+	snap, err := r0.loadCatalogSnapshotRow(ctx)
+	if err != nil {
+		return snap, err
+	}
+	n, err := r0.countCatalogItems(ctx)
+	if err != nil {
+		return domain.CatalogSnapshot{}, err
+	}
+	if n > 0 {
+		return r0.mergeNormalizedIntoSnapshot(ctx, snap)
+	}
+	if len(snap.Items) > 0 {
+		tx, err := c.db.BeginTx(ctx, nil)
+		if err != nil {
+			return snap, err
+		}
+		defer func() { _ = tx.Rollback() }()
+		rt := &catalogRepo{ex: tx, pg: c.pg}
+		s2 := snap
+		domain.EnsureSnapshotGrouped(&s2)
+		if err := rt.replaceNormalizedCatalog(ctx, s2); err != nil {
+			return domain.CatalogSnapshot{}, err
+		}
+		if err := tx.Commit(); err != nil {
+			return domain.CatalogSnapshot{}, err
+		}
+	}
+	return r0.mergeNormalizedIntoSnapshot(ctx, snap)
 }
 
 var _ ports.CatalogRepository = (*Catalog)(nil)
+var _ ports.CatalogRepository = (*catalogRepo)(nil)
+var _ ports.UnitOfWork = (*Catalog)(nil)
