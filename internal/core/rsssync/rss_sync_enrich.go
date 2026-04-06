@@ -206,11 +206,12 @@ func (s *RSSSyncService) enrichKitsuEpisodeMaps(ctx context.Context, series []do
 	if len(series) == 0 || s.kitsu == nil {
 		return
 	}
-	n := 0
+	// Resolve Kitsu id per series, then one FetchEpisodeMaps per distinct kid (many series share the same Kitsu row).
+	kidToSeriesIDs := make(map[string][]string)
 	for _, ser := range series {
 		select {
 		case <-ctx.Done():
-			s.log.Warn("kitsu episodes: stopped early (context done)", slog.Int("merged", n))
+			s.log.Warn("kitsu episodes: stopped early (context done)", slog.Int("phase", 0))
 			appendSyncNote(syncNotes, "kitsu episodes: stopped early (context cancelled)")
 			return
 		default:
@@ -228,27 +229,50 @@ func (s *RSSSyncService) enrichKitsuEpisodeMaps(ctx context.Context, series []do
 		if kid == "" {
 			continue
 		}
+		kidToSeriesIDs[kid] = append(kidToSeriesIDs[kid], ser.ID)
+	}
+	kids := make([]string, 0, len(kidToSeriesIDs))
+	for k := range kidToSeriesIDs {
+		kids = append(kids, k)
+	}
+	sort.Strings(kids)
+	fetches, seriesUpdated := 0, 0
+	for _, kid := range kids {
+		select {
+		case <-ctx.Done():
+			s.log.Warn("kitsu episodes: stopped early (context done)", slog.Int("fetches", fetches))
+			appendSyncNote(syncNotes, "kitsu episodes: stopped early (context cancelled)")
+			return
+		default:
+		}
 		titles, thumbs, err := s.kitsu.FetchEpisodeMaps(ctx, kid)
 		if err != nil {
-			s.log.Debug("kitsu episodes failed", slog.String("kitsu_id", kid), slog.String("series", ser.Name), slog.Any("err", err))
+			s.log.Debug("kitsu episodes failed", slog.String("kitsu_id", kid), slog.Any("err", err))
 			appendSyncNote(syncNotes, fmt.Sprintf("kitsu episodes %s: %v", kid, err))
 			continue
 		}
 		if len(titles) == 0 && len(thumbs) == 0 {
 			continue
 		}
-		cache[ser.ID] = domain.MergeAniListEnrichment(cache[ser.ID], domain.AniListSeriesEnrichment{
+		fetches++
+		ids := append([]string(nil), kidToSeriesIDs[kid]...)
+		sort.Strings(ids)
+		add := domain.AniListSeriesEnrichment{
 			KitsuAnimeID:          kid,
 			EpisodeTitleByNum:     titles,
 			EpisodeThumbnailByNum: thumbs,
-		})
-		n++
+		}
+		for _, sid := range ids {
+			cache[sid] = domain.MergeAniListEnrichment(cache[sid], add)
+			seriesUpdated++
+		}
 		if s.kitsuDelay > 0 {
 			time.Sleep(s.kitsuDelay)
 		}
 	}
-	if n > 0 {
-		s.log.Info("kitsu: merged episode titles/thumbnails", slog.Int("series", n))
+	if fetches > 0 {
+		s.log.Info("kitsu: merged episode titles/thumbnails",
+			slog.Int("kitsu_fetches", fetches), slog.Int("series_rows", seriesUpdated))
 	}
 }
 
@@ -256,36 +280,53 @@ func (s *RSSSyncService) enrichJikanMalEpisodeTitles(ctx context.Context, series
 	if len(series) == 0 || s.jikan == nil {
 		return
 	}
-	n := 0
+	// One Jikan episode-list fetch per distinct MalID (after Mal-merge many series rows share the same MAL id).
+	malToSeriesIDs := make(map[int][]string)
 	for _, ser := range series {
-		select {
-		case <-ctx.Done():
-			s.log.Warn("jikan mal episodes: stopped early (context done)", slog.Int("merged", n))
-			appendSyncNote(syncNotes, "jikan mal episodes: stopped early (context cancelled)")
-			return
-		default:
-		}
 		cur := cache[ser.ID]
 		if cur.MalID <= 0 {
 			continue
 		}
-		eps, err := s.jikan.FetchEpisodeTitlesByMalID(ctx, cur.MalID)
+		malToSeriesIDs[cur.MalID] = append(malToSeriesIDs[cur.MalID], ser.ID)
+	}
+	malIDs := make([]int, 0, len(malToSeriesIDs))
+	for mal := range malToSeriesIDs {
+		malIDs = append(malIDs, mal)
+	}
+	sort.Ints(malIDs)
+	fetches, seriesUpdated := 0, 0
+	for _, malID := range malIDs {
+		select {
+		case <-ctx.Done():
+			s.log.Warn("jikan mal episodes: stopped early (context done)", slog.Int("fetches", fetches))
+			appendSyncNote(syncNotes, "jikan mal episodes: stopped early (context cancelled)")
+			return
+		default:
+		}
+		eps, err := s.jikan.FetchEpisodeTitlesByMalID(ctx, malID)
 		if err != nil {
-			s.log.Debug("jikan mal episodes failed", slog.Int("mal_id", cur.MalID), slog.String("series", ser.Name), slog.Any("err", err))
-			appendSyncNote(syncNotes, fmt.Sprintf("jikan mal episodes %d: %v", cur.MalID, err))
+			s.log.Debug("jikan mal episodes failed", slog.Int("mal_id", malID), slog.Any("err", err))
+			appendSyncNote(syncNotes, fmt.Sprintf("jikan mal episodes %d: %v", malID, err))
 			continue
 		}
 		if len(eps) == 0 {
 			continue
 		}
-		cache[ser.ID] = domain.MergeAniListEnrichment(cur, domain.AniListSeriesEnrichment{EpisodeTitleByNum: eps})
-		n++
+		fetches++
+		add := domain.AniListSeriesEnrichment{EpisodeTitleByNum: eps}
+		ids := append([]string(nil), malToSeriesIDs[malID]...)
+		sort.Strings(ids)
+		for _, sid := range ids {
+			cache[sid] = domain.MergeAniListEnrichment(cache[sid], add)
+			seriesUpdated++
+		}
 		if s.jikanDelay > 0 {
 			time.Sleep(s.jikanDelay)
 		}
 	}
-	if n > 0 {
-		s.log.Info("jikan: merged MAL episode titles by mal_id", slog.Int("series", n))
+	if fetches > 0 {
+		s.log.Info("jikan: merged MAL episode titles by mal_id",
+			slog.Int("mal_fetches", fetches), slog.Int("series_rows", seriesUpdated))
 	}
 }
 
@@ -295,40 +336,62 @@ func (s *RSSSyncService) enrichAniDBEpisodeTitles(ctx context.Context, series []
 	}
 	now := time.Now().Unix()
 	const ttlSec int64 = 86400
-	n := 0
+	aidToSeriesIDs := make(map[int][]string)
 	for _, ser := range series {
-		select {
-		case <-ctx.Done():
-			s.log.Warn("anidb episodes: stopped early (context done)", slog.Int("merged", n))
-			appendSyncNote(syncNotes, "anidb episodes: stopped early (context cancelled)")
-			return
-		default:
-		}
 		cur := cache[ser.ID]
 		if cur.AniDBAid <= 0 {
 			continue
 		}
-		if cur.AniDBLastFetchedUnix > 0 && now-cur.AniDBLastFetchedUnix < ttlSec {
+		aidToSeriesIDs[cur.AniDBAid] = append(aidToSeriesIDs[cur.AniDBAid], ser.ID)
+	}
+	aids := make([]int, 0, len(aidToSeriesIDs))
+	for aid := range aidToSeriesIDs {
+		aids = append(aids, aid)
+	}
+	sort.Ints(aids)
+	fetches, seriesUpdated := 0, 0
+	for _, aid := range aids {
+		select {
+		case <-ctx.Done():
+			s.log.Warn("anidb episodes: stopped early (context done)", slog.Int("fetches", fetches))
+			appendSyncNote(syncNotes, "anidb episodes: stopped early (context cancelled)")
+			return
+		default:
+		}
+		ids := aidToSeriesIDs[aid]
+		needFetch := false
+		for _, sid := range ids {
+			cur := cache[sid]
+			if cur.AniDBLastFetchedUnix == 0 || now-cur.AniDBLastFetchedUnix >= ttlSec {
+				needFetch = true
+				break
+			}
+		}
+		if !needFetch {
 			continue
 		}
-		titles, err := s.anidb.FetchEpisodeTitlesByAID(ctx, cur.AniDBAid)
+		titles, err := s.anidb.FetchEpisodeTitlesByAID(ctx, aid)
 		if err != nil {
-			s.log.Debug("anidb episodes failed", slog.Int("aid", cur.AniDBAid), slog.String("series", ser.Name), slog.Any("err", err))
-			appendSyncNote(syncNotes, fmt.Sprintf("anidb aid %d: %v", cur.AniDBAid, err))
+			s.log.Debug("anidb episodes failed", slog.Int("aid", aid), slog.Any("err", err))
+			appendSyncNote(syncNotes, fmt.Sprintf("anidb aid %d: %v", aid, err))
 			continue
 		}
+		fetches++
 		add := domain.AniListSeriesEnrichment{AniDBLastFetchedUnix: now}
 		if len(titles) > 0 {
 			add.EpisodeTitleByNum = titles
 		}
-		cache[ser.ID] = domain.MergeAniListEnrichment(cur, add)
-		n++
+		sort.Strings(ids)
+		for _, sid := range ids {
+			cache[sid] = domain.MergeAniListEnrichment(cache[sid], add)
+			seriesUpdated++
+		}
 		if s.anidbDelay > 0 {
 			time.Sleep(s.anidbDelay)
 		}
 	}
-	if n > 0 {
-		s.log.Info("anidb: merged episode titles", slog.Int("series", n))
+	if fetches > 0 {
+		s.log.Info("anidb: merged episode titles", slog.Int("anidb_fetches", fetches), slog.Int("series_rows", seriesUpdated))
 	}
 }
 
@@ -401,8 +464,57 @@ func (s *RSSSyncService) resolveStremioHeroBackgrounds(ctx context.Context, seri
 	if s.tmdb == nil {
 		s.log.Info("tmdb: skipped (no API key or GOANIMES_TMDB_DISABLED; hero uses AniList/Kitsu only)")
 	}
+	// TMDB HTTP is expensive; reuse backdrop candidates for all series that share the same lookup key (IMDb, or MAL id).
+	type tmdbFetchRep struct {
+		en     domain.AniListSeriesEnrichment
+		search string
+		name   string
+	}
+	tmdbKeyOrder := make([]string, 0)
+	tmdbKeyRep := make(map[string]tmdbFetchRep)
+	tmdbCandsByKey := make(map[string][]domain.BackgroundCandidate)
+	for _, ser := range series {
+		en := cache[ser.ID]
+		key := heroTMDBFetchKey(en, ser.ID)
+		if _, ok := tmdbKeyRep[key]; ok {
+			continue
+		}
+		tmdbKeyRep[key] = tmdbFetchRep{en: en, search: ser.Name, name: ser.Name}
+		tmdbKeyOrder = append(tmdbKeyOrder, key)
+	}
+	sort.Strings(tmdbKeyOrder)
+	tmdbFetches := 0
+	for i, key := range tmdbKeyOrder {
+		select {
+		case <-ctx.Done():
+			s.log.Warn("stremio hero: stopped early (context done)", slog.Int("tmdb_fetches", tmdbFetches))
+			appendSyncNote(syncNotes, "stremio hero: stopped early (context cancelled)")
+			return
+		default:
+		}
+		rep := tmdbKeyRep[key]
+		var cands []domain.BackgroundCandidate
+		if s.tmdb != nil {
+			if i > 0 && s.tmdbDelay > 0 {
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(s.tmdbDelay):
+				}
+			}
+			var err error
+			cands, err = services.TMDBBackdropCandidatesForEnrichment(ctx, s.tmdb, rep.en, rep.search)
+			if err != nil {
+				s.log.Debug("tmdb backdrop fetch failed", slog.String("series", rep.name), slog.Any("err", err))
+				appendSyncNote(syncNotes, fmt.Sprintf("tmdb %q: %v", rep.name, err))
+			} else {
+				tmdbFetches++
+			}
+		}
+		tmdbCandsByKey[key] = cands
+	}
 	n := 0
-	for i, ser := range series {
+	for _, ser := range series {
 		select {
 		case <-ctx.Done():
 			s.log.Warn("stremio hero: stopped early (context done)", slog.Int("resolved", n))
@@ -411,24 +523,8 @@ func (s *RSSSyncService) resolveStremioHeroBackgrounds(ctx context.Context, seri
 		default:
 		}
 		en := cache[ser.ID]
-		search := ser.Name
-		var tmdbCands []domain.BackgroundCandidate
-		if s.tmdb != nil {
-			cands, err := services.TMDBBackdropCandidatesForEnrichment(ctx, s.tmdb, en, search)
-			if err != nil {
-				s.log.Debug("tmdb backdrop fetch failed", slog.String("series", ser.Name), slog.Any("err", err))
-				appendSyncNote(syncNotes, fmt.Sprintf("tmdb %q: %v", ser.Name, err))
-			} else {
-				tmdbCands = cands
-			}
-			if i > 0 && s.tmdbDelay > 0 {
-				select {
-				case <-ctx.Done():
-					return
-				case <-time.After(s.tmdbDelay):
-				}
-			}
-		}
+		key := heroTMDBFetchKey(en, ser.ID)
+		tmdbCands := tmdbCandsByKey[key]
 		hero := strings.TrimSpace(domain.ResolveStremioHeroBackground(en, tmdbCands))
 		if hero == "" {
 			continue
@@ -438,6 +534,18 @@ func (s *RSSSyncService) resolveStremioHeroBackgrounds(ctx context.Context, seri
 		n++
 	}
 	if n > 0 {
-		s.log.Info("stremio hero: resolved backgrounds", slog.Int("series", n), slog.Bool("tmdb", s.tmdb != nil))
+		s.log.Info("stremio hero: resolved backgrounds",
+			slog.Int("series", n), slog.Int("tmdb_fetches", tmdbFetches), slog.Bool("tmdb", s.tmdb != nil))
 	}
+}
+
+// heroTMDBFetchKey groups series for a single TMDB request (IMDb id preferred, else MAL id, else unique per Stremio series id).
+func heroTMDBFetchKey(en domain.AniListSeriesEnrichment, seriesID string) string {
+	if imdb := domain.NormalizeIMDbID(en.ImdbID); imdb != "" {
+		return "imdb:" + imdb
+	}
+	if en.MalID > 0 {
+		return fmt.Sprintf("mal:%d", en.MalID)
+	}
+	return "series:" + seriesID
 }

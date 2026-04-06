@@ -22,7 +22,7 @@ const (
 	stremioTypeMovie  = "movie"
 	stremioTypeSeries = "series"
 	// stremioManifestVersion: PATCH = fixes, tuning, deps, docs; MINOR = nova funcionalidade visível (API, sync, catálogo Stremio); MAJOR = contrato que parte instalações.
-	stremioManifestVersion = "1.7.0"
+	stremioManifestVersion = "1.7.1"
 )
 
 func stremioMetaOrStreamTypeOK(t string) bool {
