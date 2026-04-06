@@ -244,8 +244,9 @@ func (s *RSSSyncService) Run(ctx context.Context) domain.SyncResult {
 	s.enrichAniDBEpisodeTitles(ctx, snap.Series, anilistCache, &enrichNotes)
 	s.translateEpisodeTitlesToPT(ctx, snap.Series, anilistCache, &enrichNotes)
 	s.resolveStremioHeroBackgrounds(ctx, snap.Series, anilistCache, &enrichNotes)
-	pruneAniListCache(anilistCache, snap.Series)
 	snap.AniListBySeries = anilistCache
+	domain.MergeSnapshotSeriesBySharedMalID(&snap)
+	pruneAniListCache(snap.AniListBySeries, snap.Series)
 	domain.ApplyAniListEnrichmentToSeries(&snap)
 	snap.Message = fmt.Sprintf("synced %d episodes in %d series from %d feed(s)", len(merged), len(snap.Series), len(sources))
 	snap.LastSyncErrors = capPersistedSyncLines(append(append([]string{}, errs...), enrichNotes...))
