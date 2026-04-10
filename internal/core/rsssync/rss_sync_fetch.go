@@ -18,6 +18,7 @@ type eraiSlugJob struct {
 
 // collectMergedCatalogItems fetches main RSS sources, Erai per-anime feeds, merges with previous items, and backfills info_hash.
 func (s *RSSSyncService) collectMergedCatalogItems(ctx context.Context, sources []domain.RSSSource, prevSnap domain.CatalogSnapshot, defaultEraiToken string) (merged []domain.CatalogItem, errs []string) {
+	skipKnown := rssadapter.BuildFeedSyncSkip(prevSnap.Items)
 	var rssBatch []domain.CatalogItem
 	var eraiJobs []eraiSlugJob
 	slugQueued := make(map[string]struct{})
@@ -32,7 +33,7 @@ func (s *RSSSyncService) collectMergedCatalogItems(ctx context.Context, sources 
 			continue
 		}
 		s.ingestRSSMainFeedProbe(src.URL, body, hdr)
-		items, slugs, perr := rssadapter.ParseFeedWithEraiSlugs(body)
+		items, slugs, perr := rssadapter.ParseFeedWithEraiSlugs(body, skipKnown)
 		if perr != nil {
 			errs = append(errs, fmt.Sprintf("%s: parse: %v", src.Label, perr))
 			continue

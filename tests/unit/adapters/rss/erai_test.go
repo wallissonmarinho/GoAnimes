@@ -109,7 +109,7 @@ func TestParseFeedWithEraiSlugs_collectsSlugFromEpisodesLinkInDescription(t *tes
 </item>
 </channel>
 </rss>`
-	items, slugs, err := rssadapter.ParseFeedWithEraiSlugs([]byte(xmlDoc))
+	items, slugs, err := rssadapter.ParseFeedWithEraiSlugs([]byte(xmlDoc), nil)
 	require.NoError(t, err)
 	require.Len(t, items, 1)
 	require.Equal(t, []string{"reincarnation-no-kaben"}, slugs)
@@ -128,7 +128,7 @@ func TestParseFeedWithEraiSlugs_collectsAnimeListSlugs(t *testing.T) {
 </item>
 </channel>
 </rss>`
-	items, slugs, err := rssadapter.ParseFeedWithEraiSlugs([]byte(xmlDoc))
+	items, slugs, err := rssadapter.ParseFeedWithEraiSlugs([]byte(xmlDoc), nil)
 	require.NoError(t, err)
 	require.Len(t, items, 1)
 	require.Equal(t, []string{"otonari-no-tenshi"}, slugs)
@@ -146,7 +146,7 @@ func TestParseFeedWithEraiSlugs_magnetWithXMLAmpersands_findsEncodeSlug(t *testi
 </item>
 </channel>
 </rss>`
-	items, slugs, err := rssadapter.ParseFeedWithEraiSlugs([]byte(xmlDoc))
+	items, slugs, err := rssadapter.ParseFeedWithEraiSlugs([]byte(xmlDoc), nil)
 	require.NoError(t, err)
 	require.Len(t, items, 1)
 	require.Equal(t, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", items[0].InfoHash)
@@ -166,10 +166,84 @@ func TestParseFeedWithEraiSlugs_collectsSlugFromEncodesLinkInDescription(t *test
 </item>
 </channel>
 </rss>`
-	items, slugs, err := rssadapter.ParseFeedWithEraiSlugs([]byte(xmlDoc))
+	items, slugs, err := rssadapter.ParseFeedWithEraiSlugs([]byte(xmlDoc), nil)
 	require.NoError(t, err)
 	require.Len(t, items, 1)
 	require.Equal(t, []string{"champignon-no-majo"}, slugs)
+}
+
+func TestParseFeedWithEraiSlugs_skipsKnownInfoHash(t *testing.T) {
+	const xmlDoc = `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:erai="http://www.erai-raws.info/dtd">
+<channel>
+<item>
+<title>Show - 01</title>
+<link>magnet:?xt=urn:btih:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&amp;dn=x</link>
+<guid isPermaLink="false">ep01-guid</guid>
+<description><![CDATA[ <a href="https://www.erai-raws.info/anime-list/show-a/">page</a> ]]></description>
+<erai:subtitles>[br]</erai:subtitles>
+</item>
+<item>
+<title>Show - 02</title>
+<link>magnet:?xt=urn:btih:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb&amp;dn=x</link>
+<guid isPermaLink="false">ep02-guid</guid>
+<description><![CDATA[ <a href="https://www.erai-raws.info/anime-list/show-b/">page</a> ]]></description>
+<erai:subtitles>[br]</erai:subtitles>
+</item>
+</channel>
+</rss>`
+	allItems, allSlugs, err := rssadapter.ParseFeedWithEraiSlugs([]byte(xmlDoc), nil)
+	require.NoError(t, err)
+	require.Len(t, allItems, 2)
+	require.Len(t, allSlugs, 2)
+
+	skip := &rssadapter.FeedSyncSkip{
+		InfoHashes: map[string]struct{}{
+			"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": {},
+		},
+	}
+	items, slugs, err := rssadapter.ParseFeedWithEraiSlugs([]byte(xmlDoc), skip)
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	require.Equal(t, "Show - 02", items[0].Name)
+	require.Equal(t, []string{"show-b"}, slugs)
+}
+
+func TestParseFeedWithEraiSlugs_skipsByInfoHashWhenGUIDChanges(t *testing.T) {
+	const xmlV1 = `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:erai="http://www.erai-raws.info/dtd">
+<channel>
+<item>
+<title>Show - 01</title>
+<link>magnet:?xt=urn:btih:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&amp;dn=x</link>
+<guid isPermaLink="false">guid-version-a</guid>
+<description><![CDATA[ <a href="https://www.erai-raws.info/anime-list/show-x/">page</a> ]]></description>
+<erai:subtitles>[br]</erai:subtitles>
+</item>
+</channel>
+</rss>`
+	prev, _, err := rssadapter.ParseFeedWithEraiSlugs([]byte(xmlV1), nil)
+	require.NoError(t, err)
+	require.Len(t, prev, 1)
+	skip := rssadapter.BuildFeedSyncSkip(prev)
+	require.NotNil(t, skip)
+
+	const xmlV2 = `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:erai="http://www.erai-raws.info/dtd">
+<channel>
+<item>
+<title>Show - 01</title>
+<link>magnet:?xt=urn:btih:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&amp;dn=x</link>
+<guid isPermaLink="false">guid-version-b</guid>
+<description><![CDATA[ <a href="https://www.erai-raws.info/anime-list/show-x/">page</a> ]]></description>
+<erai:subtitles>[br]</erai:subtitles>
+</item>
+</channel>
+</rss>`
+	items, slugs, err := rssadapter.ParseFeedWithEraiSlugs([]byte(xmlV2), skip)
+	require.NoError(t, err)
+	require.Empty(t, items)
+	require.Empty(t, slugs)
 }
 
 // Champignon no Majo (encode RSS item): slug a partir de /encodes/… e URL per-anime igual à que a Erai usa (token fictício).

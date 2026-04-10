@@ -48,16 +48,63 @@ func xmlSourceContainsDecodedSubstring(source, s string) bool {
 
 // ParseFeed parses RSS/Atom XML and returns catalog items that include [br] in Erai subtitles.
 func ParseFeed(body []byte) ([]domain.CatalogItem, error) {
-	items, _, err := ParseFeedWithEraiSlugs(body)
+	items, _, err := ParseFeedWithEraiSlugs(body, nil)
 	return items, err
 }
 
+func stableRSSKeyGofeed(guid, link, title string) string {
+	g := strings.TrimSpace(guid)
+	if g == "" {
+		g = strings.TrimSpace(link)
+	}
+	if g == "" {
+		g = title
+	}
+	return g
+}
+
+// FeedSyncSkip holds info_hash values (40-char lowercase hex) already stored from a prior sync.
+// A nil *FeedSyncSkip disables skipping.
+type FeedSyncSkip struct {
+	InfoHashes map[string]struct{}
+}
+
+// BuildFeedSyncSkip builds a hash set from catalog items' persisted InfoHash only. Returns nil if there is nothing to skip.
+func BuildFeedSyncSkip(items []domain.CatalogItem) *FeedSyncSkip {
+	if len(items) == 0 {
+		return nil
+	}
+	s := &FeedSyncSkip{InfoHashes: make(map[string]struct{})}
+	for _, it := range items {
+		if h := strings.ToLower(strings.TrimSpace(it.InfoHash)); h != "" {
+			s.InfoHashes[h] = struct{}{}
+		}
+	}
+	if len(s.InfoHashes) == 0 {
+		return nil
+	}
+	return s
+}
+
+func (s *FeedSyncSkip) skipByInfoHash(hash string) bool {
+	if s == nil || len(s.InfoHashes) == 0 {
+		return false
+	}
+	h := strings.ToLower(strings.TrimSpace(hash))
+	if h == "" {
+		return false
+	}
+	_, ok := s.InfoHashes[h]
+	return ok
+}
+
 // ParseFeedWithEraiSlugs is like ParseFeed but also returns Erai /anime-list/{slug}/ segments found in item links/HTML (for per-anime RSS expansion).
-func ParseFeedWithEraiSlugs(body []byte) ([]domain.CatalogItem, []string, error) {
+// skip, when non-nil, omits RSS rows whose info_hash (from magnet btih or item XML) is already in the snapshot.
+func ParseFeedWithEraiSlugs(body []byte, skip *FeedSyncSkip) ([]domain.CatalogItem, []string, error) {
 	fp := gofeed.NewParser()
 	feed, err := fp.ParseString(string(body))
 	if err != nil {
-		items, slugs, err2 := parseFallbackXMLWithSlugs(body)
+		items, slugs, err2 := parseFallbackXMLWithSlugs(body, skip)
 		if err2 == nil && len(items) > 0 {
 			return items, slugs, nil
 		}
@@ -68,30 +115,32 @@ func ParseFeedWithEraiSlugs(body []byte) ([]domain.CatalogItem, []string, error)
 	}
 	raw := string(body)
 	var slugAcc []string
-	for _, item := range feed.Items {
-		slugAcc = append(slugAcc, discoverSlugsFromGofeedItem(raw, item)...)
-	}
 	var out []domain.CatalogItem
 	for _, item := range feed.Items {
+		block := itemXMLBlock(raw, item)
+		magnet, torrent, hash := resolveStream(item)
+		if hash == "" && block != "" {
+			if m := eraiInfohashRe.FindStringSubmatch(block); len(m) > 1 {
+				hash = strings.ToLower(m[1])
+			}
+		}
+		if skip.skipByInfoHash(hash) {
+			continue
+		}
+
+		slugAcc = append(slugAcc, discoverSlugsFromGofeedItem(raw, item)...)
+
 		subTag := eraiSubtitlesFromExtensions(item)
 		if subTag == "" {
-			subTag = eraiSubtitlesFromRaw(raw, item)
+			subTag = extractEraiSubtitles(block)
 		}
 		if !strings.Contains(subTag, "[br]") {
 			continue
 		}
-		magnet, torrent, hash := resolveStream(item)
-		if hash == "" {
-			if b := itemXMLBlock(raw, item); b != "" {
-				if m := eraiInfohashRe.FindStringSubmatch(b); len(m) > 1 {
-					hash = strings.ToLower(m[1])
-				}
-			}
-		}
 		if magnet == "" && torrent == "" && hash == "" {
 			continue
 		}
-		id := stableItemID(item)
+		id := stableItemIDFromKey(stableRSSKeyGofeed(item.GUID, item.Link, item.Title))
 		name := strings.TrimSpace(item.Title)
 		if name == "" {
 			name = "Untitled"
@@ -166,10 +215,6 @@ func itemXMLBlock(raw string, item *gofeed.Item) string {
 	return ""
 }
 
-func eraiSubtitlesFromRaw(raw string, item *gofeed.Item) string {
-	return extractEraiSubtitles(itemXMLBlock(raw, item))
-}
-
 func extractEraiSubtitles(s string) string {
 	m := eraiSubtitlesRe.FindStringSubmatch(s)
 	if len(m) > 1 {
@@ -204,19 +249,12 @@ func resolveStream(item *gofeed.Item) (magnet, torrent, hash string) {
 	return
 }
 
-func stableItemID(item *gofeed.Item) string {
-	g := strings.TrimSpace(item.GUID)
-	if g == "" {
-		g = strings.TrimSpace(item.Link)
-	}
-	if g == "" {
-		g = item.Title
-	}
-	sum := sha256.Sum256([]byte(g))
+func stableItemIDFromKey(key string) string {
+	sum := sha256.Sum256([]byte(key))
 	return hex.EncodeToString(sum[:])
 }
 
-func parseFallbackXMLWithSlugs(body []byte) ([]domain.CatalogItem, []string, error) {
+func parseFallbackXMLWithSlugs(body []byte, skip *FeedSyncSkip) ([]domain.CatalogItem, []string, error) {
 	var doc struct {
 		Channel struct {
 			Items []struct {
@@ -265,17 +303,6 @@ func parseFallbackXMLWithSlugs(body []byte) ([]domain.CatalogItem, []string, err
 				break
 			}
 		}
-		hay := []string{block, it.Link, it.Guid, it.Title, it.Description}
-		slugAcc = append(slugAcc, ExtractEraiAnimeListSlugs(hay...)...)
-		slugAcc = append(slugAcc, ExtractEraiAnimeListSlugsFromEpisodeLinks(hay...)...)
-		slugAcc = append(slugAcc, ExtractEraiAnimeListSlugsFromEncodesLinks(hay...)...)
-		sub := extractEraiSubtitles(block)
-		if sub == "" {
-			continue
-		}
-		if !strings.Contains(sub, "[br]") {
-			continue
-		}
 		magnet, torrent, hash := "", "", ""
 		if strings.HasPrefix(strings.ToLower(link), "magnet:") {
 			magnet = link
@@ -297,6 +324,20 @@ func parseFallbackXMLWithSlugs(body []byte) ([]domain.CatalogItem, []string, err
 			if m := eraiInfohashRe.FindStringSubmatch(block); len(m) > 1 {
 				hash = strings.ToLower(m[1])
 			}
+		}
+		if skip.skipByInfoHash(hash) {
+			continue
+		}
+		hay := []string{block, it.Link, it.Guid, it.Title, it.Description}
+		slugAcc = append(slugAcc, ExtractEraiAnimeListSlugs(hay...)...)
+		slugAcc = append(slugAcc, ExtractEraiAnimeListSlugsFromEpisodeLinks(hay...)...)
+		slugAcc = append(slugAcc, ExtractEraiAnimeListSlugsFromEncodesLinks(hay...)...)
+		sub := extractEraiSubtitles(block)
+		if sub == "" {
+			continue
+		}
+		if !strings.Contains(sub, "[br]") {
+			continue
 		}
 		if magnet == "" && torrent == "" && hash == "" {
 			continue
