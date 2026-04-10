@@ -9,6 +9,7 @@ import (
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/anilist"
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/jikan"
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/kitsu"
+	"github.com/wallissonmarinho/GoAnimes/internal/adapters/thetvdb"
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/tmdb"
 	"github.com/wallissonmarinho/GoAnimes/internal/core/domain"
 	"github.com/wallissonmarinho/GoAnimes/internal/core/ports"
@@ -21,6 +22,7 @@ type StremioLazyEnrichDeps struct {
 	Jikan         *jikan.Client
 	Kitsu         *kitsu.Client
 	TMDB          *tmdb.Client
+	TheTVDB       *thetvdb.Client
 	SynopsisTrans ports.SynopsisTranslator
 }
 
@@ -64,13 +66,22 @@ func StremioLazyEnrichSeries(ctx context.Context, log *slog.Logger, cat ports.Ca
 			didLazyEnrich = true
 		}
 	}
-	if d.TMDB != nil && strings.TrimSpace(en.StremioHeroBackgroundURL) == "" {
-		if cands, terr := services.TMDBBackdropCandidatesForEnrichment(ctx, d.TMDB, en, search); terr == nil {
-			if hero := strings.TrimSpace(domain.ResolveStremioHeroBackground(en, cands)); hero != "" {
-				cat.ReplaceStremioHeroBackground(ser.ID, hero)
-				en.StremioHeroBackgroundURL = hero
-				didLazyEnrich = true
+	if strings.TrimSpace(en.StremioHeroBackgroundURL) == "" && (d.TMDB != nil || d.TheTVDB != nil) {
+		var combined []domain.BackgroundCandidate
+		if d.TMDB != nil {
+			if cands, terr := services.TMDBBackdropCandidatesForEnrichment(ctx, d.TMDB, en, search); terr == nil {
+				combined = append(combined, cands...)
 			}
+		}
+		if d.TheTVDB != nil {
+			if cands, terr := services.TVDBBackdropCandidatesForEnrichment(ctx, d.TheTVDB, en); terr == nil {
+				combined = append(combined, cands...)
+			}
+		}
+		if hero := strings.TrimSpace(domain.ResolveStremioHeroBackground(en, combined)); hero != "" {
+			cat.ReplaceStremioHeroBackground(ser.ID, hero)
+			en.StremioHeroBackgroundURL = hero
+			didLazyEnrich = true
 		}
 	}
 	if d.Jikan != nil && en.MalID > 0 {

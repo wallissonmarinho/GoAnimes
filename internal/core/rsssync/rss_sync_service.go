@@ -19,6 +19,7 @@ import (
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/kitsu"
 	rssadapter "github.com/wallissonmarinho/GoAnimes/internal/adapters/rss"
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/state"
+	"github.com/wallissonmarinho/GoAnimes/internal/adapters/thetvdb"
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/tmdb"
 	"github.com/wallissonmarinho/GoAnimes/internal/core/domain"
 	"github.com/wallissonmarinho/GoAnimes/internal/core/ports"
@@ -64,6 +65,8 @@ type RSSSyncRuntimeOptions struct {
 	KitsuMinDelay   time.Duration // sleep after each Kitsu enrichment; 0 → default 400ms (client also paces)
 	TMDB            *tmdb.Client
 	TMDBMinDelay    time.Duration            // sleep after each TMDB call; 0 → default 250ms
+	TheTVDB         *thetvdb.Client          // optional: IMDb→TVDB episode titles/thumbnails + fanart hero candidates
+	TVDBMinDelay    time.Duration            // sleep after each TheTVDB call; 0 → default 400ms
 	AniDB           *anidb.Client            // optional: registered HTTP API client; episode titles from request=anime
 	AniDBMinDelay   time.Duration            // extra sleep after each AniDB success; 0 = client pace only (~2.1s)
 	SynopsisTrans   ports.SynopsisTranslator // optional: nil in tests; production passes gilang translator
@@ -82,6 +85,8 @@ type RSSSyncService struct {
 	kitsuDelay         time.Duration
 	tmdb               *tmdb.Client
 	tmdbDelay          time.Duration
+	tvdb               *thetvdb.Client
+	tvdbDelay          time.Duration
 	anidb              *anidb.Client
 	anidbDelay         time.Duration
 	synopsisTrans      ports.SynopsisTranslator
@@ -125,6 +130,10 @@ func NewRSSSyncService(repo ports.CatalogRepository, mem *state.CatalogStore, o 
 	if tmdly <= 0 {
 		tmdly = 250 * time.Millisecond
 	}
+	tvdly := o.TVDBMinDelay
+	if tvdly <= 0 {
+		tvdly = 400 * time.Millisecond
+	}
 	adDly := o.AniDBMinDelay
 	if adDly < 0 {
 		adDly = 0
@@ -141,6 +150,8 @@ func NewRSSSyncService(repo ports.CatalogRepository, mem *state.CatalogStore, o 
 		kitsuDelay:    kdly,
 		tmdb:          o.TMDB,
 		tmdbDelay:     tmdly,
+		tvdb:          o.TheTVDB,
+		tvdbDelay:     tvdly,
 		anidb:         o.AniDB,
 		anidbDelay:    adDly,
 		synopsisTrans: o.SynopsisTrans,
@@ -242,6 +253,7 @@ func (s *RSSSyncService) Run(ctx context.Context) domain.SyncResult {
 	s.enrichKitsuEpisodeMaps(ctx, snap.Series, anilistCache, &enrichNotes)
 	s.enrichJikanMalEpisodeTitles(ctx, snap.Series, anilistCache, &enrichNotes)
 	s.enrichAniDBEpisodeTitles(ctx, snap.Series, anilistCache, &enrichNotes)
+	s.enrichTheTVDBGaps(ctx, snap.Series, anilistCache, &enrichNotes)
 	s.translateEpisodeTitlesToPT(ctx, snap.Series, anilistCache, &enrichNotes)
 	s.resolveStremioHeroBackgrounds(ctx, snap.Series, anilistCache, &enrichNotes)
 	snap.AniListBySeries = anilistCache

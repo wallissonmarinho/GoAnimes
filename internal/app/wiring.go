@@ -12,10 +12,11 @@ import (
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/httpclient"
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/jikan"
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/kitsu"
-	"github.com/wallissonmarinho/GoAnimes/internal/adapters/tmdb"
-	"github.com/wallissonmarinho/GoAnimes/internal/adapters/translate"
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/state"
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/storage"
+	"github.com/wallissonmarinho/GoAnimes/internal/adapters/thetvdb"
+	"github.com/wallissonmarinho/GoAnimes/internal/adapters/tmdb"
+	"github.com/wallissonmarinho/GoAnimes/internal/adapters/translate"
 	"github.com/wallissonmarinho/GoAnimes/internal/core/domain"
 	"github.com/wallissonmarinho/GoAnimes/internal/core/ports"
 	"github.com/wallissonmarinho/GoAnimes/internal/core/rsssync"
@@ -56,7 +57,7 @@ func NewSynopsisTranslator(httpTimeout time.Duration, userAgent string, maxBody 
 }
 
 // NewRSSSyncService builds sync with concrete deps and returns optional API clients for HTTP handlers.
-func NewRSSSyncService(repo *storage.Catalog, mem *state.CatalogStore, o rsssync.RSSSyncRuntimeOptions) (*rsssync.RSSSyncService, *anilist.Client, *jikan.Client, *kitsu.Client, *tmdb.Client) {
+func NewRSSSyncService(repo *storage.Catalog, mem *state.CatalogStore, o rsssync.RSSSyncRuntimeOptions) (*rsssync.RSSSyncService, *anilist.Client, *jikan.Client, *kitsu.Client, *tmdb.Client, *thetvdb.Client) {
 	var al *anilist.Client
 	if !anilistDisabled() {
 		// Smaller cap for JSON POST bodies; AniList responses are tiny.
@@ -105,6 +106,21 @@ func NewRSSSyncService(repo *storage.Catalog, mem *state.CatalogStore, o rsssync
 			}
 		}
 	}
+	var tvdbCl *thetvdb.Client
+	if !tvdbDisabled() {
+		key := strings.TrimSpace(os.Getenv("GOANIMES_TVDB_API_KEY"))
+		if key != "" {
+			g := httpclient.NewGetter(o.HTTPTimeout, o.UserAgent, 8<<20)
+			pin := strings.TrimSpace(os.Getenv("GOANIMES_TVDB_PIN"))
+			tvdbCl = thetvdb.NewClient(g, key, pin)
+			o.TheTVDB = tvdbCl
+			if o.TVDBMinDelay <= 0 {
+				if d, err := time.ParseDuration(getenv("GOANIMES_TVDB_MIN_DELAY", "400ms")); err == nil {
+					o.TVDBMinDelay = d
+				}
+			}
+		}
+	}
 	if !anidbDisabled() {
 		cname := strings.TrimSpace(os.Getenv("GOANIMES_ANIDB_CLIENT"))
 		if verStr := strings.TrimSpace(os.Getenv("GOANIMES_ANIDB_CLIENTVER")); cname != "" && verStr != "" {
@@ -121,7 +137,7 @@ func NewRSSSyncService(repo *storage.Catalog, mem *state.CatalogStore, o rsssync
 			}
 		}
 	}
-	return rsssync.NewRSSSyncService(repo, mem, o, nil), al, jk, ks, tmdbCl
+	return rsssync.NewRSSSyncService(repo, mem, o, nil), al, jk, ks, tmdbCl, tvdbCl
 }
 
 func anilistDisabled() bool {
@@ -141,6 +157,11 @@ func kitsuDisabled() bool {
 
 func tmdbDisabled() bool {
 	v := strings.ToLower(strings.TrimSpace(os.Getenv("GOANIMES_TMDB_DISABLED")))
+	return v == "1" || v == "true" || v == "yes"
+}
+
+func tvdbDisabled() bool {
+	v := strings.ToLower(strings.TrimSpace(os.Getenv("GOANIMES_TVDB_DISABLED")))
 	return v == "1" || v == "true" || v == "yes"
 }
 

@@ -61,7 +61,7 @@ func main() {
 	ua := getenv("GOANIMES_USER_AGENT", "GoAnimes/1.0")
 	synopsisTr := app.NewSynopsisTranslator(httpTimeout, ua, maxBody)
 	slog.Info("synopsis translation", slog.String("translator", synopsisTr.Name()))
-	syncSvc, anilistClient, jikanClient, kitsuClient, tmdbClient := app.NewRSSSyncService(cat, mem, rsssync.RSSSyncRuntimeOptions{
+	syncSvc, anilistClient, jikanClient, kitsuClient, tmdbClient, tvdbClient := app.NewRSSSyncService(cat, mem, rsssync.RSSSyncRuntimeOptions{
 		HTTPTimeout:   httpTimeout,
 		MaxBodyBytes:  maxBody,
 		UserAgent:     ua,
@@ -89,6 +89,7 @@ func main() {
 		Jikan:              jikanClient,
 		Kitsu:              kitsuClient,
 		TMDB:               tmdbClient,
+		TheTVDB:            tvdbClient,
 		SynopsisTrans:      synopsisTr,
 		Log:                lg,
 		SyncStatusLocation: loadSyncStatusLocation(),

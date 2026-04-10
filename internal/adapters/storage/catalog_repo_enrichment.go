@@ -90,12 +90,12 @@ func (r *catalogRepo) insertSeriesEnrichmentRow(ctx context.Context, seriesID st
 	if r.pg {
 		_, err = r.ex.ExecContext(ctx, `
 			INSERT INTO series_enrichment (
-				series_id, anilist_media_id, mal_id, imdb_id, kitsu_anime_id, anidb_aid, anidb_last_fetch_unix,
+				series_id, anilist_media_id, mal_id, imdb_id, kitsu_anime_id, tvdb_series_id, anidb_aid, anidb_last_fetch_unix,
 				al_search_ver, next_air_unix, next_air_ep, next_air_from_al, start_year, episode_length_min,
 				poster_url, background_url, al_banner_url, hero_bg_url, description, trailer_youtube_id,
 				title_preferred, title_native, genres_json, episode_maps_json
-			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)`,
-			seriesID, nil, en.MalID, en.ImdbID, en.KitsuAnimeID, en.AniDBAid, en.AniDBLastFetchedUnix,
+			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)`,
+			seriesID, nil, en.MalID, en.ImdbID, en.KitsuAnimeID, en.TvdbSeriesID, en.AniDBAid, en.AniDBLastFetchedUnix,
 			en.AniListSearchVer, en.NextAiringUnix, en.NextAiringEpisode, en.NextAiringFromAniList, en.StartYear, en.EpisodeLengthMin,
 			en.PosterURL, en.BackgroundURL, en.AniListBannerURL, en.StremioHeroBackgroundURL, en.Description, en.TrailerYouTubeID,
 			en.TitlePreferred, en.TitleNative, string(gb), em)
@@ -107,12 +107,12 @@ func (r *catalogRepo) insertSeriesEnrichmentRow(ctx context.Context, seriesID st
 	}
 	_, err = r.ex.ExecContext(ctx, `
 		INSERT INTO series_enrichment (
-			series_id, anilist_media_id, mal_id, imdb_id, kitsu_anime_id, anidb_aid, anidb_last_fetch_unix,
+			series_id, anilist_media_id, mal_id, imdb_id, kitsu_anime_id, tvdb_series_id, anidb_aid, anidb_last_fetch_unix,
 			al_search_ver, next_air_unix, next_air_ep, next_air_from_al, start_year, episode_length_min,
 			poster_url, background_url, al_banner_url, hero_bg_url, description, trailer_youtube_id,
 			title_preferred, title_native, genres_json, episode_maps_json
-		) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-		seriesID, nil, en.MalID, en.ImdbID, en.KitsuAnimeID, en.AniDBAid, en.AniDBLastFetchedUnix,
+		) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		seriesID, nil, en.MalID, en.ImdbID, en.KitsuAnimeID, en.TvdbSeriesID, en.AniDBAid, en.AniDBLastFetchedUnix,
 		en.AniListSearchVer, en.NextAiringUnix, en.NextAiringEpisode, nextFromAL, en.StartYear, en.EpisodeLengthMin,
 		en.PosterURL, en.BackgroundURL, en.AniListBannerURL, en.StremioHeroBackgroundURL, en.Description, en.TrailerYouTubeID,
 		en.TitlePreferred, en.TitleNative, string(gb), em)
@@ -140,7 +140,7 @@ func (r *catalogRepo) insertAllSeriesEnrichments(ctx context.Context, snap domai
 
 func (r *catalogRepo) loadAllSeriesEnrichments(ctx context.Context) (map[string]domain.AniListSeriesEnrichment, error) {
 	rows, err := r.ex.QueryContext(ctx, `
-		SELECT series_id, anilist_media_id, mal_id, imdb_id, kitsu_anime_id, anidb_aid, anidb_last_fetch_unix,
+		SELECT series_id, anilist_media_id, mal_id, imdb_id, kitsu_anime_id, tvdb_series_id, anidb_aid, anidb_last_fetch_unix,
 		       al_search_ver, next_air_unix, next_air_ep, next_air_from_al, start_year, episode_length_min,
 		       poster_url, background_url, al_banner_url, hero_bg_url, description, trailer_youtube_id,
 		       title_preferred, title_native, genres_json, episode_maps_json
@@ -153,20 +153,20 @@ func (r *catalogRepo) loadAllSeriesEnrichments(ctx context.Context) (map[string]
 	for rows.Next() {
 		var (
 			sid, imdb, kitsu, poster, bg, alBanner, hero, desc, trailer, titlePref, titleNat, gj, em string
-			mal, anidb, alVer, nextEp, startY, epLen                                                   int
+			mal, tvdb, anidb, alVer, nextEp, startY, epLen                                            int
 			anidbFetch, nextUnix                                                                       int64
 			alMedia                                                                                    sql.NullInt64
 		)
 		if r.pg {
 			var nextFromAL bool
-			if err := rows.Scan(&sid, &alMedia, &mal, &imdb, &kitsu, &anidb, &anidbFetch,
+			if err := rows.Scan(&sid, &alMedia, &mal, &imdb, &kitsu, &tvdb, &anidb, &anidbFetch,
 				&alVer, &nextUnix, &nextEp, &nextFromAL, &startY, &epLen,
 				&poster, &bg, &alBanner, &hero, &desc, &trailer, &titlePref, &titleNat, &gj, &em); err != nil {
 				return nil, err
 			}
 			en := domain.AniListSeriesEnrichment{
 				PosterURL: poster, BackgroundURL: bg, AniListBannerURL: alBanner, StremioHeroBackgroundURL: hero,
-				Description: desc, MalID: mal, ImdbID: imdb, KitsuAnimeID: kitsu, AniDBAid: anidb,
+				Description: desc, MalID: mal, ImdbID: imdb, KitsuAnimeID: kitsu, TvdbSeriesID: tvdb, AniDBAid: anidb,
 				AniDBLastFetchedUnix: anidbFetch, AniListSearchVer: alVer, NextAiringUnix: nextUnix, NextAiringEpisode: nextEp,
 				NextAiringFromAniList: nextFromAL, StartYear: startY, EpisodeLengthMin: epLen, TrailerYouTubeID: trailer,
 				TitlePreferred: titlePref, TitleNative: titleNat,
@@ -179,14 +179,14 @@ func (r *catalogRepo) loadAllSeriesEnrichments(ctx context.Context) (map[string]
 			out[sid] = en
 		} else {
 			var nextALInt int
-			if err := rows.Scan(&sid, &alMedia, &mal, &imdb, &kitsu, &anidb, &anidbFetch,
+			if err := rows.Scan(&sid, &alMedia, &mal, &imdb, &kitsu, &tvdb, &anidb, &anidbFetch,
 				&alVer, &nextUnix, &nextEp, &nextALInt, &startY, &epLen,
 				&poster, &bg, &alBanner, &hero, &desc, &trailer, &titlePref, &titleNat, &gj, &em); err != nil {
 				return nil, err
 			}
 			en := domain.AniListSeriesEnrichment{
 				PosterURL: poster, BackgroundURL: bg, AniListBannerURL: alBanner, StremioHeroBackgroundURL: hero,
-				Description: desc, MalID: mal, ImdbID: imdb, KitsuAnimeID: kitsu, AniDBAid: anidb,
+				Description: desc, MalID: mal, ImdbID: imdb, KitsuAnimeID: kitsu, TvdbSeriesID: tvdb, AniDBAid: anidb,
 				AniDBLastFetchedUnix: anidbFetch, AniListSearchVer: alVer, NextAiringUnix: nextUnix, NextAiringEpisode: nextEp,
 				NextAiringFromAniList: nextALInt != 0, StartYear: startY, EpisodeLengthMin: epLen, TrailerYouTubeID: trailer,
 				TitlePreferred: titlePref, TitleNative: titleNat,

@@ -199,4 +199,8 @@ func MergeAniListIntoStremioSeriesMeta(meta map[string]any, en domain.AniListSer
 	if u := strings.TrimSpace(en.PosterURL); u != "" {
 		meta["poster"] = u
 	}
+	if MetaUsesTheTVDBData(en) {
+		cur, _ := meta["description"].(string)
+		meta["description"] = AppendTheTVDBAttributionToDescription(cur)
+	}
 }

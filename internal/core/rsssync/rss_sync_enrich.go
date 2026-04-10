@@ -395,6 +395,95 @@ func (s *RSSSyncService) enrichAniDBEpisodeTitles(ctx context.Context, series []
 	}
 }
 
+func (s *RSSSyncService) enrichTheTVDBGaps(ctx context.Context, series []domain.CatalogSeries, cache map[string]domain.AniListSeriesEnrichment, syncNotes *[]string) {
+	if len(series) == 0 || s.tvdb == nil {
+		return
+	}
+	imdbToSeriesIDs := make(map[string][]string)
+	for _, ser := range series {
+		cur := cache[ser.ID]
+		imdb := domain.NormalizeIMDbID(cur.ImdbID)
+		if imdb == "" {
+			continue
+		}
+		imdbToSeriesIDs[imdb] = append(imdbToSeriesIDs[imdb], ser.ID)
+	}
+	keys := make([]string, 0, len(imdbToSeriesIDs))
+	for imdb := range imdbToSeriesIDs {
+		keys = append(keys, imdb)
+	}
+	sort.Strings(keys)
+	fetches, seriesUpdated := 0, 0
+	for i, imdb := range keys {
+		select {
+		case <-ctx.Done():
+			s.log.Warn("thetvdb: stopped early (context done)", slog.Int("fetches", fetches))
+			appendSyncNote(syncNotes, "thetvdb: stopped early (context cancelled)")
+			return
+		default:
+		}
+		if i > 0 && s.tvdbDelay > 0 {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(s.tvdbDelay):
+			}
+		}
+		ids := imdbToSeriesIDs[imdb]
+		sort.Strings(ids)
+		repID := ids[0]
+		rep := cache[repID]
+		tvdbID := rep.TvdbSeriesID
+		if tvdbID <= 0 {
+			var err error
+			tvdbID, err = s.tvdb.SeriesIDByIMDbRemote(ctx, imdb)
+			if err != nil {
+				s.log.Debug("thetvdb remote id failed", slog.String("imdb", imdb), slog.Any("err", err))
+				appendSyncNote(syncNotes, fmt.Sprintf("thetvdb imdb %s: %v", imdb, err))
+				continue
+			}
+			fetches++
+		}
+		if tvdbID <= 0 {
+			continue
+		}
+		skipEpisodes := rep.TvdbSeriesID == tvdbID && tvdbID > 0 &&
+			domain.EnrichmentHasAnyEpisodeTitle(rep) && len(rep.EpisodeThumbnailByNum) > 0
+		var titles, thumbs map[int]string
+		if !skipEpisodes {
+			if s.tvdbDelay > 0 {
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(s.tvdbDelay):
+				}
+			}
+			var err error
+			titles, thumbs, err = s.tvdb.EpisodeMapsOfficial(ctx, tvdbID)
+			if err != nil {
+				s.log.Debug("thetvdb episodes failed", slog.Int("tvdb_series_id", tvdbID), slog.Any("err", err))
+				appendSyncNote(syncNotes, fmt.Sprintf("thetvdb series %d episodes: %v", tvdbID, err))
+			} else {
+				fetches++
+			}
+		}
+		add := domain.AniListSeriesEnrichment{TvdbSeriesID: tvdbID}
+		if len(titles) > 0 {
+			add.EpisodeTitleByNum = titles
+		}
+		if len(thumbs) > 0 {
+			add.EpisodeThumbnailByNum = thumbs
+		}
+		for _, sid := range ids {
+			cache[sid] = domain.MergeAniListEnrichment(cache[sid], add)
+			seriesUpdated++
+		}
+	}
+	if fetches > 0 {
+		s.log.Info("thetvdb: merged series id / episode maps", slog.Int("http_roundtrips", fetches), slog.Int("series_rows", seriesUpdated))
+	}
+}
+
 func (s *RSSSyncService) translateEpisodeTitlesToPT(ctx context.Context, series []domain.CatalogSeries, cache map[string]domain.AniListSeriesEnrichment, syncNotes *[]string) {
 	if len(series) == 0 || s.synopsisTrans == nil {
 		return
@@ -462,9 +551,15 @@ func (s *RSSSyncService) resolveStremioHeroBackgrounds(ctx context.Context, seri
 		return
 	}
 	if s.tmdb == nil {
-		s.log.Info("tmdb: skipped (no API key or GOANIMES_TMDB_DISABLED; hero uses AniList/Kitsu only)")
+		s.log.Info("tmdb: skipped (no API key or GOANIMES_TMDB_DISABLED; hero uses AniList/Kitsu/TheTVDB only)")
 	}
-	// TMDB HTTP is expensive; reuse backdrop candidates for all series that share the same lookup key (IMDb, or MAL id).
+	if s.tvdb == nil {
+		s.log.Info("thetvdb: skipped (no GOANIMES_TVDB_API_KEY or GOANIMES_TVDB_DISABLED)")
+	}
+	if s.tmdb == nil && s.tvdb == nil {
+		return
+	}
+	// TMDB/TheTVDB HTTP is expensive; reuse backdrop candidates for all series that share the same lookup key (IMDb, or MAL id).
 	type tmdbFetchRep struct {
 		en     domain.AniListSeriesEnrichment
 		search string
@@ -473,6 +568,7 @@ func (s *RSSSyncService) resolveStremioHeroBackgrounds(ctx context.Context, seri
 	tmdbKeyOrder := make([]string, 0)
 	tmdbKeyRep := make(map[string]tmdbFetchRep)
 	tmdbCandsByKey := make(map[string][]domain.BackgroundCandidate)
+	tvdbCandsByKey := make(map[string][]domain.BackgroundCandidate)
 	for _, ser := range series {
 		en := cache[ser.ID]
 		key := heroTMDBFetchKey(en, ser.ID)
@@ -483,7 +579,7 @@ func (s *RSSSyncService) resolveStremioHeroBackgrounds(ctx context.Context, seri
 		tmdbKeyOrder = append(tmdbKeyOrder, key)
 	}
 	sort.Strings(tmdbKeyOrder)
-	tmdbFetches := 0
+	tmdbFetches, tvdbFetches := 0, 0
 	for i, key := range tmdbKeyOrder {
 		select {
 		case <-ctx.Done():
@@ -512,6 +608,26 @@ func (s *RSSSyncService) resolveStremioHeroBackgrounds(ctx context.Context, seri
 			}
 		}
 		tmdbCandsByKey[key] = cands
+
+		var tvCands []domain.BackgroundCandidate
+		if s.tvdb != nil {
+			if s.tvdbDelay > 0 && (i > 0 || s.tmdb != nil) {
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(s.tvdbDelay):
+				}
+			}
+			tv, err := services.TVDBBackdropCandidatesForEnrichment(ctx, s.tvdb, rep.en)
+			if err != nil {
+				s.log.Debug("thetvdb backdrop fetch failed", slog.String("series", rep.name), slog.Any("err", err))
+				appendSyncNote(syncNotes, fmt.Sprintf("thetvdb %q: %v", rep.name, err))
+			} else {
+				tvdbFetches++
+				tvCands = tv
+			}
+		}
+		tvdbCandsByKey[key] = tvCands
 	}
 	n := 0
 	for _, ser := range series {
@@ -525,7 +641,9 @@ func (s *RSSSyncService) resolveStremioHeroBackgrounds(ctx context.Context, seri
 		en := cache[ser.ID]
 		key := heroTMDBFetchKey(en, ser.ID)
 		tmdbCands := tmdbCandsByKey[key]
-		hero := strings.TrimSpace(domain.ResolveStremioHeroBackground(en, tmdbCands))
+		tvCands := tvdbCandsByKey[key]
+		combined := append(append([]domain.BackgroundCandidate{}, tmdbCands...), tvCands...)
+		hero := strings.TrimSpace(domain.ResolveStremioHeroBackground(en, combined))
 		if hero == "" {
 			continue
 		}
@@ -535,7 +653,8 @@ func (s *RSSSyncService) resolveStremioHeroBackgrounds(ctx context.Context, seri
 	}
 	if n > 0 {
 		s.log.Info("stremio hero: resolved backgrounds",
-			slog.Int("series", n), slog.Int("tmdb_fetches", tmdbFetches), slog.Bool("tmdb", s.tmdb != nil))
+			slog.Int("series", n), slog.Int("tmdb_fetches", tmdbFetches), slog.Int("thetvdb_fetches", tvdbFetches),
+			slog.Bool("tmdb", s.tmdb != nil), slog.Bool("thetvdb", s.tvdb != nil))
 	}
 }
 

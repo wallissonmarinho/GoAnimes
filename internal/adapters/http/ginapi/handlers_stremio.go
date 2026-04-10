@@ -18,11 +18,11 @@ import (
 const (
 	catalogStremioID     = "goanimes"
 	catalogStremioWeekID = "goanimes-week"
-	stremioTypeAnime  = "anime"
-	stremioTypeMovie  = "movie"
-	stremioTypeSeries = "series"
+	stremioTypeAnime     = "anime"
+	stremioTypeMovie     = "movie"
+	stremioTypeSeries    = "series"
 	// stremioManifestVersion: PATCH = fixes, tuning, deps, docs; MINOR = nova funcionalidade visível (API, sync, catálogo Stremio); MAJOR = contrato que parte instalações.
-	stremioManifestVersion = "1.8.0"
+	stremioManifestVersion = "1.8.1"
 )
 
 func stremioMetaOrStreamTypeOK(t string) bool {
@@ -81,11 +81,15 @@ func (h *handlers) getManifest(c *gin.Context) {
 		"options":    genreOpts,
 	}}
 	genres := genreOpts
+	manifestDesc := "RSS anime torrents with pt-BR (Erai [br]) filter."
+	if h.deps.TheTVDB != nil {
+		manifestDesc += " Parte dos metadados (episódios, imagens) pode vir do TheTVDB — https://www.thetvdb.com/ (atribuição exigida pelo serviço)."
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"id":          "org.goanimes",
 		"version":     stremioManifestVersion,
 		"name":        "GoAnimes",
-		"description": "RSS anime torrents with pt-BR (Erai [br]) filter",
+		"description": manifestDesc,
 		"types":       []string{stremioTypeAnime, stremioTypeMovie, stremioTypeSeries},
 		"genres":      genres,
 		"catalogs": []gin.H{
@@ -148,6 +152,7 @@ func (h *handlers) getMeta(c *gin.Context) {
 			Jikan:         h.deps.Jikan,
 			Kitsu:         h.deps.Kitsu,
 			TMDB:          h.deps.TMDB,
+			TheTVDB:       h.deps.TheTVDB,
 			SynopsisTrans: h.deps.SynopsisTrans,
 		}
 		didLazyEnrich, synopsisUpdated := stremio.StremioLazyEnrichSeries(

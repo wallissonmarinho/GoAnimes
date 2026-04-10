@@ -23,6 +23,8 @@ type AniListSeriesEnrichment struct {
 	MalID                    int      `json:"mal_id,omitempty"`       // MyAnimeList id (AniList idMal / Jikan)
 	ImdbID                   string   `json:"imdb,omitempty"`         // tt… when Jikan/MAL lists IMDb (TMDB find)
 	KitsuAnimeID             string   `json:"kitsu_id,omitempty"`     // Kitsu JSON:API anime id (episodes list)
+	// TvdbSeriesID is TheTVDB v4 series id (remote IMDb search + episode/artwork APIs).
+	TvdbSeriesID int `json:"tvdb_id,omitempty"`
 	// AniDBAid is AniDB anime id (from AniList externalLinks); used with registered HTTP API client for episode titles.
 	AniDBAid int `json:"anidb_aid,omitempty"`
 	// AniDBLastFetchedUnix avoids repeat request=anime calls within TTL (AniDB policy: heavy caching).
@@ -129,6 +131,9 @@ func MergeAniListEnrichment(stored, add AniListSeriesEnrichment) AniListSeriesEn
 	}
 	if strings.TrimSpace(out.KitsuAnimeID) == "" {
 		out.KitsuAnimeID = strings.TrimSpace(add.KitsuAnimeID)
+	}
+	if out.TvdbSeriesID == 0 && add.TvdbSeriesID > 0 {
+		out.TvdbSeriesID = add.TvdbSeriesID
 	}
 	if out.AniDBAid == 0 && add.AniDBAid > 0 {
 		out.AniDBAid = add.AniDBAid

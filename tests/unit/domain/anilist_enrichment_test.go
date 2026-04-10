@@ -104,6 +104,17 @@ func TestMergeAniListEnrichment_episodeThumbnailsFillGaps(t *testing.T) {
 	require.Equal(t, "https://u/2", out.EpisodeThumbnailByNum[2])
 }
 
+func TestMergeAniListEnrichment_tvdbSeriesID(t *testing.T) {
+	stored := domain.AniListSeriesEnrichment{}
+	add := domain.AniListSeriesEnrichment{TvdbSeriesID: 452026}
+	out := domain.MergeAniListEnrichment(stored, add)
+	require.Equal(t, 452026, out.TvdbSeriesID)
+	stored2 := domain.AniListSeriesEnrichment{TvdbSeriesID: 1}
+	add2 := domain.AniListSeriesEnrichment{TvdbSeriesID: 2}
+	out2 := domain.MergeAniListEnrichment(stored2, add2)
+	require.Equal(t, 1, out2.TvdbSeriesID, "stored id wins")
+}
+
 func TestMergeAniListEnrichment_anidbAidAndFetchUnix(t *testing.T) {
 	stored := domain.AniListSeriesEnrichment{AniDBAid: 0, AniDBLastFetchedUnix: 100}
 	add := domain.AniListSeriesEnrichment{AniDBAid: 19614, AniDBLastFetchedUnix: 200}
