@@ -15,12 +15,14 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	goaiadapter "github.com/wallissonmarinho/GoAnimes/internal/adapters/goai"
 	ginapi "github.com/wallissonmarinho/GoAnimes/internal/adapters/http/ginapi"
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/observability"
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/scheduler"
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/state"
 	"github.com/wallissonmarinho/GoAnimes/internal/app"
 	"github.com/wallissonmarinho/GoAnimes/internal/core/rsssync"
+	"github.com/wallissonmarinho/GoAnimes/internal/core/services"
 )
 
 func main() {
@@ -73,6 +75,12 @@ func main() {
 	syncRunTimeout := durationEnv("GOANIMES_SYNC_RUN_TIMEOUT", 30*time.Minute)
 	rssPollEvery := durationEnv("GOANIMES_RSS_POLL_INTERVAL", time.Minute)
 
+	goaiRepo := cat.GoaiAuditRepo()
+	goaiEnabled := boolEnv("GOANIMES_GOAI_AUDIT_ENABLED")
+	goaiInterval := durationEnv("GOANIMES_GOAI_AUDIT_INTERVAL", 12*time.Hour)
+	goaiBase := strings.TrimSpace(os.Getenv("GOANIMES_GOAI_BASE_URL"))
+	goaiKey := strings.TrimSpace(os.Getenv("GOANIMES_GOAI_ADMIN_API_KEY"))
+
 	if getenv("GIN_MODE", "") == "release" {
 		gin.SetMode(gin.ReleaseMode)
 	}
@@ -94,6 +102,7 @@ func main() {
 		Log:                lg,
 		SyncStatusLocation: loadSyncStatusLocation(),
 		SyncRunTimeout:     syncRunTimeout,
+		GoaiAuditRepo:      goaiRepo,
 	})
 
 	addr := listenAddr()
@@ -107,6 +116,21 @@ func main() {
 	defer schedCancel()
 	loop := &scheduler.SyncLoop{Sync: syncSvc, Interval: syncInterval, RunTimeout: syncRunTimeout, PollInterval: rssPollEvery, Log: lg}
 	go loop.Run(schedCtx)
+
+	if goaiEnabled && goaiInterval > 0 && goaiBase != "" && goaiKey != "" {
+		goaiClient := goaiadapter.NewClient(goaiBase, goaiKey, httpTimeout, ua)
+		goaiWorker := &services.GoaiAuditWorker{Repo: goaiRepo, Client: goaiClient, Log: lg}
+		goaiLoop := &scheduler.GoaiAuditLoop{Runner: goaiWorker, Interval: goaiInterval, Log: lg}
+		go goaiLoop.Run(schedCtx)
+		slog.Info("goai audit loop enabled",
+			slog.Duration("interval", goaiInterval),
+			slog.String("base_url", goaiBase))
+	} else if goaiEnabled {
+		slog.Warn("goai audit enabled but missing interval, base URL, or API key; loop not started",
+			slog.Duration("interval", goaiInterval),
+			slog.Bool("has_base", goaiBase != ""),
+			slog.Bool("has_key", goaiKey != ""))
+	}
 
 	go func() {
 		slog.Info("listening", slog.String("addr", addr))
@@ -196,4 +220,9 @@ func durationEnv(k string, def time.Duration) time.Duration {
 		return def
 	}
 	return d
+}
+
+func boolEnv(k string) bool {
+	v := strings.TrimSpace(strings.ToLower(os.Getenv(k)))
+	return v == "1" || v == "true" || v == "yes" || v == "on"
 }

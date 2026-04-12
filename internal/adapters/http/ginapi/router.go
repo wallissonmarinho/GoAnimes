@@ -35,6 +35,8 @@ type Deps struct {
 	SyncStatusLocation *time.Location
 	// SyncRunTimeout is the context deadline for RSSSyncService.Run on POST rebuild (GOANIMES_SYNC_RUN_TIMEOUT; zero → 30m).
 	SyncRunTimeout time.Duration
+	// GoaiAuditRepo optional; when nil, GoAI admin routes return 503.
+	GoaiAuditRepo ports.GoAIAuditRepository
 }
 
 // handlers binds Gin routes to ports. See handlers_public.go, handlers_admin.go, handlers_stremio.go, handlers_rss.go, handlers_sync.go, middleware.go.

@@ -9,6 +9,7 @@ func (h *handlers) registerAdminV1(engine *gin.Engine) {
 
 	h.registerRSSSourceRoutes(admin)
 	h.registerInspectRoutes(admin)
+	h.registerGoaiAuditRoutes(admin)
 	admin.POST("/rebuild", h.postRebuild)
 	admin.GET("/sync-status", h.getSyncStatus)
 }

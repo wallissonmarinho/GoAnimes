@@ -77,6 +77,12 @@ Autenticação: `Authorization: Bearer <chave>` ou `X-Admin-API-Key: <chave>`.
 | `GOANIMES_SYNC_STATUS_TZ` | Fuso IANA só para `started_at` / `finished_at` em `GET /api/v1/sync-status`. **Brasília:** `America/Sao_Paulo`. Vazio = **UTC** (`Z`). O servidor continua a gravar sync em UTC na base. |
 | `GOANIMES_SYNC_INTERVAL` | Intervalo de **sync completo** (default `30m`) — metadados, Erai por anime, etc. |
 | `GOANIMES_RSS_POLL_INTERVAL` | Sondagem dos feeds RSS **principais** (default `1m`; `0` desliga). Compara o feed atual com o **último corpo usado no build** guardado no snapshot (`sha256` + `ETag`/`Last-Modified`); se diferente (ou fonte nova/removida), dispara sync completo. Sem baseline ainda (primeira subida), adota o feed atual sem rebuild até o próximo sync gravar metadados. Não cobre mudança só em feeds Erai por-anime se o feed global não mudar. |
+| `GOANIMES_GOAI_AUDIT_ENABLED` | `true`, `1`, `yes` ou `on` liga o **loop em background** que audita o catálogo via serviço **GoAI** (independente do sync RSS). Sem isto o loop não arranca. |
+| `GOANIMES_GOAI_AUDIT_INTERVAL` | Intervalo entre passadas do auditor (default `12h`). Tem de ser **> 0** para o loop arrancar quando o audit está ligado. |
+| `GOANIMES_GOAI_BASE_URL` | URL base do GoAI (ex. `https://goai.example.com`), sem barra final. Obrigatória para o loop quando o audit está ligado. |
+| `GOANIMES_GOAI_ADMIN_API_KEY` | Token **Bearer** para os endpoints `/v1/audit/*` do GoAI. Tratar como segredo (GitHub **Secret** em `prd`). Obrigatória para o loop quando o audit está ligado. |
+
+**GoAI (admin HTTP):** com `GOANIMES_ADMIN_API_KEY` (ou `ADMIN_API_KEY`), `GET /api/v1/goai-audit/series` lista séries já auditadas; `POST /api/v1/goai-audit/series/:id/reaudit` marca re-auditoria (só se já existir linha em `goai_series_audit`). Corpo JSON opcional: `{"scope":"full"}` (omissão ou `full`/`default`) apaga antes as linhas `goai_release_audit` dessa série; `{"scope":"series_only"}` ou `"flag_only"` só define `needs_reaudit` sem apagar releases em cache.
 
 **Fingerprint RSS (várias URLs):** a fonte de verdade continua a ser o mapa `rss_main_feed_build` dentro de `items_json` (uma entrada por URL de feed principal: `sha256` do corpo + `etag` / `last_modified` quando existem). Uma única coluna tipo `last_rss_content_fingerprint` não substitui isso com várias fontes; mantém-se o modelo em JSON até haver requisito explícito de tabela dedicada por URL.
 
