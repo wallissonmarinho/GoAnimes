@@ -79,6 +79,7 @@ Autenticação: `Authorization: Bearer <chave>` ou `X-Admin-API-Key: <chave>`.
 | `GOANIMES_RSS_POLL_INTERVAL` | Sondagem dos feeds RSS **principais** (default `1m`; `0` desliga). Compara o feed atual com o **último corpo usado no build** guardado no snapshot (`sha256` + `ETag`/`Last-Modified`); se diferente (ou fonte nova/removida), dispara sync completo. Sem baseline ainda (primeira subida), adota o feed atual sem rebuild até o próximo sync gravar metadados. Não cobre mudança só em feeds Erai por-anime se o feed global não mudar. |
 | `GOANIMES_GOAI_AUDIT_ENABLED` | `true`, `1`, `yes` ou `on` liga o **loop em background** que audita o catálogo via serviço **GoAI** (independente do sync RSS). Sem isto o loop não arranca. |
 | `GOANIMES_GOAI_AUDIT_INTERVAL` | Intervalo entre passadas do auditor (default `12h`). Tem de ser **> 0** para o loop arrancar quando o audit está ligado. |
+| `GOANIMES_GOAI_HTTP_TIMEOUT` | Timeout HTTP dedicado para chamadas do GoAnimes ao GoAI (default: herda `GOANIMES_HTTP_TIMEOUT`, que por sua vez default `45s`). Em produção com Gemini, costuma ser melhor `90s`/`120s`. |
 | `GOANIMES_GOAI_BASE_URL` | URL base do GoAI (ex. `https://goai.example.com`), sem barra final. Obrigatória para o loop quando o audit está ligado. |
 | `GOANIMES_GOAI_ADMIN_API_KEY` | Token **Bearer** para os endpoints `/v1/audit/*` do GoAI. Tratar como segredo (GitHub **Secret** em `prd`). Obrigatória para o loop quando o audit está ligado. |
 

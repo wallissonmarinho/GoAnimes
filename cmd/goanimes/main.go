@@ -78,6 +78,7 @@ func main() {
 	goaiRepo := cat.GoaiAuditRepo()
 	goaiEnabled := boolEnv("GOANIMES_GOAI_AUDIT_ENABLED")
 	goaiInterval := durationEnv("GOANIMES_GOAI_AUDIT_INTERVAL", 12*time.Hour)
+	goaiHTTPTimeout := durationEnv("GOANIMES_GOAI_HTTP_TIMEOUT", httpTimeout)
 	goaiBase := strings.TrimSpace(os.Getenv("GOANIMES_GOAI_BASE_URL"))
 	goaiKey := strings.TrimSpace(os.Getenv("GOANIMES_GOAI_ADMIN_API_KEY"))
 
@@ -118,12 +119,13 @@ func main() {
 	go loop.Run(schedCtx)
 
 	if goaiEnabled && goaiInterval > 0 && goaiBase != "" && goaiKey != "" {
-		goaiClient := goaiadapter.NewClient(goaiBase, goaiKey, httpTimeout, ua)
+		goaiClient := goaiadapter.NewClient(goaiBase, goaiKey, goaiHTTPTimeout, ua)
 		goaiWorker := &services.GoaiAuditWorker{Repo: goaiRepo, Client: goaiClient, Log: lg}
 		goaiLoop := &scheduler.GoaiAuditLoop{Runner: goaiWorker, Interval: goaiInterval, Log: lg}
 		go goaiLoop.Run(schedCtx)
 		slog.Info("goai audit loop enabled",
 			slog.Duration("interval", goaiInterval),
+			slog.Duration("http_timeout", goaiHTTPTimeout),
 			slog.String("base_url", goaiBase))
 	} else if goaiEnabled {
 		slog.Warn("goai audit enabled but missing interval, base URL, or API key; loop not started",
