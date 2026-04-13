@@ -3,6 +3,8 @@ package storage
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
+	"strings"
 	"time"
 
 	"github.com/wallissonmarinho/GoAnimes/internal/core/domain"
@@ -255,7 +257,7 @@ func (r *catalogRepo) ListSeriesAuditsForAdmin(ctx context.Context, limit, offse
 	}
 	if r.pg {
 		rows, err := r.ex.QueryContext(ctx, `
-			SELECT g.series_id, s.name, g.audited_at, g.prompt_version, g.needs_reaudit, g.reaudit_requested_at
+			SELECT g.series_id, s.name, g.audited_at, g.prompt_version, g.needs_reaudit, g.reaudit_requested_at, g.response_json
 			FROM goai_series_audit g
 			JOIN catalog_series s ON s.id = g.series_id
 			ORDER BY g.audited_at DESC
@@ -267,7 +269,7 @@ func (r *catalogRepo) ListSeriesAuditsForAdmin(ctx context.Context, limit, offse
 		return scanGoaiAdminRowsPG(rows)
 	}
 	rows, err := r.ex.QueryContext(ctx, `
-		SELECT g.series_id, s.name, g.audited_at, g.prompt_version, g.needs_reaudit, g.reaudit_requested_at
+		SELECT g.series_id, s.name, g.audited_at, g.prompt_version, g.needs_reaudit, g.reaudit_requested_at, g.response_json
 		FROM goai_series_audit g
 		JOIN catalog_series s ON s.id = g.series_id
 		ORDER BY g.audited_at DESC
@@ -293,13 +295,15 @@ func scanGoaiAdminRowsPG(rows *sql.Rows) ([]domain.GoaiSeriesAuditListItem, erro
 	for rows.Next() {
 		var it domain.GoaiSeriesAuditListItem
 		var reqAt sql.NullTime
-		if err := rows.Scan(&it.SeriesID, &it.SeriesName, &it.AuditedAt, &it.PromptVersion, &it.NeedsReaudit, &reqAt); err != nil {
+		var respJSON string
+		if err := rows.Scan(&it.SeriesID, &it.SeriesName, &it.AuditedAt, &it.PromptVersion, &it.NeedsReaudit, &reqAt, &respJSON); err != nil {
 			return nil, err
 		}
 		if reqAt.Valid {
 			t := reqAt.Time
 			it.ReauditRequestedAt = &t
 		}
+		applySeriesAuditListFields(&it, respJSON)
 		out = append(out, it)
 	}
 	return out, rows.Err()
@@ -311,7 +315,8 @@ func scanGoaiAdminRowsSQLite(rows *sql.Rows) ([]domain.GoaiSeriesAuditListItem, 
 		var it domain.GoaiSeriesAuditListItem
 		var at, reqAt sql.NullString
 		var needs int
-		if err := rows.Scan(&it.SeriesID, &it.SeriesName, &at, &it.PromptVersion, &needs, &reqAt); err != nil {
+		var respJSON string
+		if err := rows.Scan(&it.SeriesID, &it.SeriesName, &at, &it.PromptVersion, &needs, &reqAt, &respJSON); err != nil {
 			return nil, err
 		}
 		it.NeedsReaudit = needs != 0
@@ -328,9 +333,34 @@ func scanGoaiAdminRowsSQLite(rows *sql.Rows) ([]domain.GoaiSeriesAuditListItem, 
 				it.ReauditRequestedAt = &t
 			}
 		}
+		applySeriesAuditListFields(&it, respJSON)
 		out = append(out, it)
 	}
 	return out, rows.Err()
+}
+
+func applySeriesAuditListFields(it *domain.GoaiSeriesAuditListItem, respJSON string) {
+	respJSON = strings.TrimSpace(respJSON)
+	if respJSON == "" {
+		return
+	}
+	it.RawResponseJSON = respJSON
+	var resp domain.GoaiSeriesAuditResponse
+	if err := json.Unmarshal([]byte(respJSON), &resp); err != nil {
+		return
+	}
+	it.TheTVDBSeriesID = resp.TheTVDBSeriesID
+	it.TheTVDBSeriesURL = resp.TheTVDBSeriesURL
+	it.TheTVDBName = resp.TheTVDBName
+	it.MalID = resp.MalID
+	it.AniDBAID = resp.AniDBAID
+	it.AniListID = resp.AniListID
+	it.TMDBTVID = resp.TMDBTVID
+	it.ReleaseSeason = resp.ReleaseSeason
+	it.ReleaseEpisode = resp.ReleaseEpisode
+	it.ReleaseIsSpecial = resp.ReleaseIsSpecial
+	it.Confidence = resp.Confidence
+	it.Notes = resp.Notes
 }
 
 func (r *catalogRepo) DeleteReleaseAuditsForSeries(ctx context.Context, seriesID string) error {

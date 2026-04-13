@@ -77,6 +77,19 @@ type GoaiSeriesAuditListItem struct {
 	PromptVersion      int        `json:"prompt_version"`
 	NeedsReaudit       bool       `json:"needs_reaudit"`
 	ReauditRequestedAt *time.Time `json:"reaudit_requested_at,omitempty"`
+	TheTVDBSeriesID    int        `json:"thetvdb_series_id"`
+	TheTVDBSeriesURL   string     `json:"thetvdb_series_url,omitempty"`
+	TheTVDBName        string     `json:"thetvdb_name,omitempty"`
+	MalID              int        `json:"mal_id"`
+	AniDBAID           int        `json:"anidb_aid"`
+	AniListID          int        `json:"anilist_id"`
+	TMDBTVID           int        `json:"tmdb_tv_id"`
+	ReleaseSeason      int        `json:"release_season"`
+	ReleaseEpisode     int        `json:"release_episode"`
+	ReleaseIsSpecial   bool       `json:"release_is_special"`
+	Confidence         float64    `json:"confidence"`
+	Notes              string     `json:"notes,omitempty"`
+	RawResponseJSON    string     `json:"raw_response_json,omitempty"`
 }
 
 // GoaiReleaseKey identifies a logical episode for dedupe (catalog_item / goai_release_audit).
