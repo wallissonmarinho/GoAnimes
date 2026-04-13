@@ -149,9 +149,13 @@ func (r *catalogRepo) ListUnauditedReleaseKeysForSeries(ctx context.Context, ser
 			WHERE ci.series_id = $1
 			AND NOT EXISTS (
 				SELECT 1 FROM goai_release_audit g
-				WHERE g.series_id = ci.series_id AND g.season = ci.season AND g.episode = ci.episode AND g.is_special = ci.is_special
+				WHERE g.series_id = ci.series_id
+				  AND g.season = ci.season
+				  AND g.episode = ci.episode
+				  AND g.is_special = ci.is_special
+				  AND g.prompt_version >= $2
 			)
-			ORDER BY ci.season ASC, ci.episode ASC`, seriesID)
+			ORDER BY ci.season ASC, ci.episode ASC`, seriesID, domain.GoaiAuditPromptVersion)
 		if err != nil {
 			return nil, err
 		}
@@ -173,9 +177,13 @@ func (r *catalogRepo) ListUnauditedReleaseKeysForSeries(ctx context.Context, ser
 		WHERE ci.series_id = ?
 		AND NOT EXISTS (
 			SELECT 1 FROM goai_release_audit g
-			WHERE g.series_id = ci.series_id AND g.season = ci.season AND g.episode = ci.episode AND g.is_special = ci.is_special
+			WHERE g.series_id = ci.series_id
+			  AND g.season = ci.season
+			  AND g.episode = ci.episode
+			  AND g.is_special = ci.is_special
+			  AND g.prompt_version >= ?
 		)
-		ORDER BY ci.season ASC, ci.episode ASC`, seriesID)
+		ORDER BY ci.season ASC, ci.episode ASC`, seriesID, domain.GoaiAuditPromptVersion)
 	if err != nil {
 		return nil, err
 	}

@@ -11,10 +11,14 @@ import (
 )
 
 type workerTestRepo struct {
-	seriesIDs   []string
-	seriesRec   *domain.GoaiSeriesAuditRecord
-	releaseKeys []domain.GoaiReleaseKey
-	upserts     int
+	seriesIDs      []string
+	seriesRec      *domain.GoaiSeriesAuditRecord
+	releaseKeys    []domain.GoaiReleaseKey
+	upserts        int
+	seriesUpserts  int
+	seriesTitle    string
+	seriesName     string
+	enrichmentTVDB int
 }
 
 func (r *workerTestRepo) ListSeriesIDsWithCatalogItems(ctx context.Context) ([]string, error) {
@@ -26,7 +30,8 @@ func (r *workerTestRepo) GetSeriesAudit(ctx context.Context, seriesID string) (*
 }
 
 func (r *workerTestRepo) UpsertSeriesAudit(ctx context.Context, seriesID string, auditedAt time.Time, promptVersion int, responseJSON string, needsReaudit bool) error {
-	panic("unexpected UpsertSeriesAudit")
+	r.seriesUpserts++
+	return nil
 }
 
 func (r *workerTestRepo) UpsertReleaseAudit(ctx context.Context, seriesID string, season, episode int, isSpecial bool, auditedAt time.Time, promptVersion int, responseJSON, sourceTitle string) error {
@@ -39,7 +44,10 @@ func (r *workerTestRepo) ListUnauditedReleaseKeysForSeries(ctx context.Context, 
 }
 
 func (r *workerTestRepo) SampleItemTitleForSeries(ctx context.Context, seriesID string) (string, error) {
-	panic("unexpected SampleItemTitleForSeries")
+	if r.seriesTitle != "" {
+		return r.seriesTitle, nil
+	}
+	return "series title", nil
 }
 
 func (r *workerTestRepo) SampleItemTitleForRelease(ctx context.Context, key domain.GoaiReleaseKey) (string, error) {
@@ -63,14 +71,18 @@ func (r *workerTestRepo) SetSeriesNeedsReaudit(ctx context.Context, seriesID str
 }
 
 func (r *workerTestRepo) UpdateSeriesEnrichmentTVDB(ctx context.Context, seriesID string, tvdbSeriesID int) error {
-	panic("unexpected UpdateSeriesEnrichmentTVDB")
+	r.enrichmentTVDB = tvdbSeriesID
+	return nil
 }
 
 func (r *workerTestRepo) GetEnrichmentTVDBSeriesID(ctx context.Context, seriesID string) (int, error) {
-	panic("unexpected GetEnrichmentTVDBSeriesID")
+	return r.enrichmentTVDB, nil
 }
 
 func (r *workerTestRepo) GetCatalogSeriesName(ctx context.Context, seriesID string) (string, error) {
+	if r.seriesName != "" {
+		return r.seriesName, nil
+	}
 	return "Show", nil
 }
 
@@ -78,10 +90,15 @@ var _ ports.GoAIAuditRepository = (*workerTestRepo)(nil)
 
 type workerTestClient struct {
 	releaseN int
+	seriesN  int
 }
 
 func (c *workerTestClient) AuditSeries(ctx context.Context, req domain.GoaiSeriesAuditRequest) (*domain.GoaiSeriesAuditResponse, error) {
-	panic("unexpected AuditSeries")
+	c.seriesN++
+	return &domain.GoaiSeriesAuditResponse{
+		TheTVDBSeriesID: 100,
+		Confidence:      0.9,
+	}, nil
 }
 
 func (c *workerTestClient) AuditRelease(ctx context.Context, req domain.GoaiReleaseAuditRequest) (*domain.GoaiReleaseAuditResponse, error) {
@@ -116,5 +133,25 @@ func TestGoaiAuditWorker_StopsMidRunOnGoAIError(t *testing.T) {
 	}
 	if cli.releaseN != 2 {
 		t.Fatalf("expected 2 AuditRelease calls (second fails), got %d", cli.releaseN)
+	}
+}
+
+func TestGoaiAuditWorker_ReauditsSeriesWhenPromptVersionIsOutdated(t *testing.T) {
+	repo := &workerTestRepo{
+		seriesIDs: []string{"s1"},
+		seriesRec: &domain.GoaiSeriesAuditRecord{
+			NeedsReaudit:  false,
+			PromptVersion: domain.GoaiAuditPromptVersion - 1,
+		},
+		releaseKeys: nil,
+	}
+	cli := &workerTestClient{}
+	w := &GoaiAuditWorker{Repo: repo, Client: cli}
+	w.Run(context.Background())
+	if cli.seriesN != 1 {
+		t.Fatalf("expected AuditSeries call for outdated prompt version, got %d", cli.seriesN)
+	}
+	if repo.seriesUpserts != 1 {
+		t.Fatalf("expected series upsert for re-audit, got %d", repo.seriesUpserts)
 	}
 }

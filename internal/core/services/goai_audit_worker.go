@@ -41,7 +41,7 @@ func (w *GoaiAuditWorker) Run(ctx context.Context) {
 			w.Log.Error("goai audit: get series audit", slog.String("series_id", sid), slog.Any("err", err))
 			return
 		}
-		needSeries := rec == nil || rec.NeedsReaudit
+		needSeries := rec == nil || rec.NeedsReaudit || rec.PromptVersion < domain.GoaiAuditPromptVersion
 		if needSeries {
 			sample, err := w.Repo.SampleItemTitleForSeries(ctx, sid)
 			if err != nil {
