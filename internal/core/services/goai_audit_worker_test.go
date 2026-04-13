@@ -46,11 +46,11 @@ func (r *workerTestRepo) SampleItemTitleForRelease(ctx context.Context, key doma
 	return "ep title", nil
 }
 
-func (r *workerTestRepo) ListSeriesAuditsForAdmin(ctx context.Context, limit, offset int) ([]domain.GoaiSeriesAuditListItem, error) {
+func (r *workerTestRepo) ListSeriesAuditsForAdmin(ctx context.Context, params domain.GoaiAuditListParams) ([]domain.GoaiSeriesAuditListItem, error) {
 	panic("unexpected ListSeriesAuditsForAdmin")
 }
 
-func (r *workerTestRepo) CountSeriesAuditsForAdmin(ctx context.Context) (int, error) {
+func (r *workerTestRepo) CountSeriesAuditsForAdmin(ctx context.Context, params domain.GoaiAuditListParams) (int, error) {
 	panic("unexpected CountSeriesAuditsForAdmin")
 }
 

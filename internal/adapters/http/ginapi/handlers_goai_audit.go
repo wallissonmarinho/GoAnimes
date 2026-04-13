@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"math"
 	"strconv"
 	"strings"
 
@@ -35,13 +36,47 @@ func (h *handlers) getGoaiSeriesAudits(c *gin.Context) {
 			offset = n
 		}
 	}
+	confMin, err := parseConfidenceBound(c.Query("confidence_min"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid confidence_min (use number between 0 and 1)"})
+		return
+	}
+	confMax, err := parseConfidenceBound(c.Query("confidence_max"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid confidence_max (use number between 0 and 1)"})
+		return
+	}
+	if confMin != nil && confMax != nil && *confMin > *confMax {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "confidence_min cannot be greater than confidence_max"})
+		return
+	}
 	ctx := c.Request.Context()
-	page, err := svc.ListSeriesAudits(ctx, domain.GoaiAuditListParams{Limit: limit, Offset: offset})
+	page, err := svc.ListSeriesAudits(ctx, domain.GoaiAuditListParams{
+		Limit:         limit,
+		Offset:        offset,
+		ConfidenceMin: confMin,
+		ConfidenceMax: confMax,
+	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, page)
+}
+
+func parseConfidenceBound(raw string) (*float64, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+	v, err := strconv.ParseFloat(raw, 64)
+	if err != nil {
+		return nil, err
+	}
+	if math.IsNaN(v) || math.IsInf(v, 0) || v < 0 || v > 1 {
+		return nil, strconv.ErrSyntax
+	}
+	return &v, nil
 }
 
 // postGoaiSeriesReauditBody optional JSON: scope controls whether release rows are cleared.

@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -245,7 +247,9 @@ func (r *catalogRepo) SampleItemTitleForRelease(ctx context.Context, key domain.
 	return name, nil
 }
 
-func (r *catalogRepo) ListSeriesAuditsForAdmin(ctx context.Context, limit, offset int) ([]domain.GoaiSeriesAuditListItem, error) {
+func (r *catalogRepo) ListSeriesAuditsForAdmin(ctx context.Context, params domain.GoaiAuditListParams) ([]domain.GoaiSeriesAuditListItem, error) {
+	limit := params.Limit
+	offset := params.Offset
 	if limit <= 0 {
 		limit = 50
 	}
@@ -255,25 +259,32 @@ func (r *catalogRepo) ListSeriesAuditsForAdmin(ctx context.Context, limit, offse
 	if offset < 0 {
 		offset = 0
 	}
+	where, args := buildGoaiSeriesAuditConfidenceFilter(r.pg, params.ConfidenceMin, params.ConfidenceMax)
 	if r.pg {
-		rows, err := r.ex.QueryContext(ctx, `
+		query := `
 			SELECT g.series_id, s.name, g.audited_at, g.prompt_version, g.needs_reaudit, g.reaudit_requested_at, g.response_json
 			FROM goai_series_audit g
 			JOIN catalog_series s ON s.id = g.series_id
+		` + where + `
 			ORDER BY g.audited_at DESC
-			LIMIT $1 OFFSET $2`, limit, offset)
+			LIMIT $` + strconv.Itoa(len(args)+1) + ` OFFSET $` + strconv.Itoa(len(args)+2)
+		args = append(args, limit, offset)
+		rows, err := r.ex.QueryContext(ctx, query, args...)
 		if err != nil {
 			return nil, err
 		}
 		defer rows.Close()
 		return scanGoaiAdminRowsPG(rows)
 	}
-	rows, err := r.ex.QueryContext(ctx, `
+	query := `
 		SELECT g.series_id, s.name, g.audited_at, g.prompt_version, g.needs_reaudit, g.reaudit_requested_at, g.response_json
 		FROM goai_series_audit g
 		JOIN catalog_series s ON s.id = g.series_id
+	` + where + `
 		ORDER BY g.audited_at DESC
-		LIMIT ? OFFSET ?`, limit, offset)
+		LIMIT ? OFFSET ?`
+	args = append(args, limit, offset)
+	rows, err := r.ex.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -281,13 +292,48 @@ func (r *catalogRepo) ListSeriesAuditsForAdmin(ctx context.Context, limit, offse
 	return scanGoaiAdminRowsSQLite(rows)
 }
 
-func (r *catalogRepo) CountSeriesAuditsForAdmin(ctx context.Context) (int, error) {
+func (r *catalogRepo) CountSeriesAuditsForAdmin(ctx context.Context, params domain.GoaiAuditListParams) (int, error) {
 	var n int
-	row := r.ex.QueryRowContext(ctx, `SELECT COUNT(*) FROM goai_series_audit`)
+	where, args := buildGoaiSeriesAuditConfidenceFilter(r.pg, params.ConfidenceMin, params.ConfidenceMax)
+	row := r.ex.QueryRowContext(ctx, `SELECT COUNT(*) FROM goai_series_audit g`+where, args...)
 	if err := row.Scan(&n); err != nil {
 		return 0, err
 	}
 	return n, nil
+}
+
+func buildGoaiSeriesAuditConfidenceFilter(pg bool, min, max *float64) (string, []any) {
+	if min == nil && max == nil {
+		return "", nil
+	}
+	expr := "COALESCE(CAST(json_extract(g.response_json, '$.confidence') AS REAL), 0.0)"
+	if pg {
+		expr = "COALESCE((g.response_json::jsonb ->> 'confidence')::double precision, 0.0)"
+	}
+	args := make([]any, 0, 2)
+	clauses := make([]string, 0, 2)
+	argPos := 1
+	if min != nil {
+		if pg {
+			clauses = append(clauses, fmt.Sprintf("%s >= $%d", expr, argPos))
+			argPos++
+		} else {
+			clauses = append(clauses, expr+" >= ?")
+		}
+		args = append(args, *min)
+	}
+	if max != nil {
+		if pg {
+			clauses = append(clauses, fmt.Sprintf("%s <= $%d", expr, argPos))
+		} else {
+			clauses = append(clauses, expr+" <= ?")
+		}
+		args = append(args, *max)
+	}
+	if len(clauses) == 0 {
+		return "", nil
+	}
+	return " WHERE " + strings.Join(clauses, " AND "), args
 }
 
 func scanGoaiAdminRowsPG(rows *sql.Rows) ([]domain.GoaiSeriesAuditListItem, error) {

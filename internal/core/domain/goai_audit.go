@@ -3,7 +3,7 @@ package domain
 import "time"
 
 // GoaiAuditPromptVersion must match GoAI domain.AuditPromptVersion when interpreting cached JSON.
-const GoaiAuditPromptVersion = 4
+const GoaiAuditPromptVersion = 5
 
 // GoaiSeriesAuditRequest mirrors GoAI POST /v1/audit/series (no import of GoAI module).
 type GoaiSeriesAuditRequest struct {
@@ -102,8 +102,10 @@ type GoaiReleaseKey struct {
 
 // GoaiAuditListParams carries pagination inputs for admin list endpoint.
 type GoaiAuditListParams struct {
-	Limit  int
-	Offset int
+	Limit         int
+	Offset        int
+	ConfidenceMin *float64
+	ConfidenceMax *float64
 }
 
 // GoaiSeriesAuditPage is a paginated response model for admin listing.

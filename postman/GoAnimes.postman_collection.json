@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "a1b2c3d4-goanimes-api",
     "name": "GoAnimes",
-    "description": "GoAnimes — admin API + URLs do addon Stremio.\n\n**Variáveis de coleção:** `baseUrl`, `adminApiKey`, `rssSourceId`, `sampleRssUrl`, `seriesId`, `videoId`, `goaiAuditLimit`, `goaiAuditOffset`, `goaiSeriesId`\n\n- **Meta / Stream (path):** coloca em `seriesId` e `videoId` o id **já com encoding URL** (ex. `goanimes%3Aseries%3A…`, `goanimes%3Avid%3A…`), ou edita o path manualmente no Postman.\n- **Inspect series:** usa `seriesId` **sem** encoding no query param; o Postman codifica no `?id=`.\n- **GoAI audit:** `goaiSeriesId` é o `series_id` do catálogo (igual ao retornado em **List series audits**). O script desse GET pode preencher `goaiSeriesId` automaticamente a partir do primeiro item.\n\nSe **não** usares `GOANIMES_ADMIN_API_KEY`, na pasta **Admin** → **Authorization** → **No Auth**.\n\n**Create RSS source** grava `rssSourceId` para o **Delete**.",
+    "description": "GoAnimes — admin API + URLs do addon Stremio.\n\n**Variáveis de coleção:** `baseUrl`, `adminApiKey`, `rssSourceId`, `sampleRssUrl`, `seriesId`, `videoId`, `goaiAuditLimit`, `goaiAuditOffset`, `goaiAuditConfidenceMin`, `goaiAuditConfidenceMax`, `goaiSeriesId`\n\n- **Meta / Stream (path):** coloca em `seriesId` e `videoId` o id **já com encoding URL** (ex. `goanimes%3Aseries%3A…`, `goanimes%3Avid%3A…`), ou edita o path manualmente no Postman.\n- **Inspect series:** usa `seriesId` **sem** encoding no query param; o Postman codifica no `?id=`.\n- **GoAI audit:** `goaiSeriesId` é o `series_id` do catálogo (igual ao retornado em **List series audits**). O script desse GET pode preencher `goaiSeriesId` automaticamente a partir do primeiro item.\n\nSe **não** usares `GOANIMES_ADMIN_API_KEY`, na pasta **Admin** → **Authorization** → **No Auth**.\n\n**Create RSS source** grava `rssSourceId` para o **Delete**.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -17,6 +17,8 @@
     { "key": "videoId", "value": "" },
     { "key": "goaiAuditLimit", "value": "50" },
     { "key": "goaiAuditOffset", "value": "0" },
+    { "key": "goaiAuditConfidenceMin", "value": "" },
+    { "key": "goaiAuditConfidenceMax", "value": "" },
     { "key": "goaiSeriesId", "value": "" }
   ],
   "item": [
@@ -237,8 +239,8 @@
               "request": {
                 "method": "GET",
                 "header": [],
-                "url": "{{baseUrl}}/api/v1/goai-audit/series?limit={{goaiAuditLimit}}&offset={{goaiAuditOffset}}",
-                "description": "Lista séries com linha em `goai_series_audit` (paginação `limit` / `offset`).\n\n**503** se o repositório GoAI não estiver configurado. Após **200**, o teste grava `goaiSeriesId` com o primeiro `series_id` da página (útil para **Re-audit**)."
+                "url": "{{baseUrl}}/api/v1/goai-audit/series?limit={{goaiAuditLimit}}&offset={{goaiAuditOffset}}&confidence_min={{goaiAuditConfidenceMin}}&confidence_max={{goaiAuditConfidenceMax}}",
+                "description": "Lista séries com linha em `goai_series_audit` (paginação `limit` / `offset`). Filtros opcionais: `confidence_min` e `confidence_max` (0..1).\n\n**503** se o repositório GoAI não estiver configurado. Após **200**, o teste grava `goaiSeriesId` com o primeiro `series_id` da página (útil para **Re-audit**)."
               }
             },
             {

@@ -49,11 +49,19 @@ func (s *GoaiAuditAdminService) ListSeriesAudits(ctx context.Context, in domain.
 	if offset < 0 {
 		offset = 0
 	}
-	total, err := s.repo.CountSeriesAuditsForAdmin(ctx)
+	total, err := s.repo.CountSeriesAuditsForAdmin(ctx, domain.GoaiAuditListParams{
+		ConfidenceMin: in.ConfidenceMin,
+		ConfidenceMax: in.ConfidenceMax,
+	})
 	if err != nil {
 		return domain.GoaiSeriesAuditPage{}, err
 	}
-	items, err := s.repo.ListSeriesAuditsForAdmin(ctx, limit, offset)
+	items, err := s.repo.ListSeriesAuditsForAdmin(ctx, domain.GoaiAuditListParams{
+		Limit:         limit,
+		Offset:        offset,
+		ConfidenceMin: in.ConfidenceMin,
+		ConfidenceMax: in.ConfidenceMax,
+	})
 	if err != nil {
 		return domain.GoaiSeriesAuditPage{}, err
 	}
