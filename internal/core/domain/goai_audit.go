@@ -3,7 +3,7 @@ package domain
 import "time"
 
 // GoaiAuditPromptVersion must match GoAI domain.AuditPromptVersion when interpreting cached JSON.
-const GoaiAuditPromptVersion = 3
+const GoaiAuditPromptVersion = 4
 
 // GoaiSeriesAuditRequest mirrors GoAI POST /v1/audit/series (no import of GoAI module).
 type GoaiSeriesAuditRequest struct {
