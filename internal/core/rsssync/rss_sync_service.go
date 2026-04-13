@@ -101,6 +101,10 @@ type RSSSyncService struct {
 	rssLastBuildOnce   sync.Once
 }
 
+type goaiReleaseAuditOverrideApplier interface {
+	ApplyGoaiReleaseAuditOverrides(ctx context.Context, items []domain.CatalogItem) ([]domain.CatalogItem, error)
+}
+
 func NewRSSSyncService(repo ports.CatalogRepository, mem *state.CatalogStore, o RSSSyncRuntimeOptions, log *slog.Logger) *RSSSyncService {
 	if log == nil {
 		log = slog.Default()
@@ -235,6 +239,15 @@ func (s *RSSSyncService) Run(ctx context.Context) domain.SyncResult {
 	}
 
 	merged, errs := s.collectMergedCatalogItems(ctx, sources, prevSnap, defaultEraiToken)
+	if applier, ok := s.repo.(goaiReleaseAuditOverrideApplier); ok {
+		adjusted, err := applier.ApplyGoaiReleaseAuditOverrides(ctx, merged)
+		if err != nil {
+			errs = append(errs, "apply goai release overrides: "+err.Error())
+			s.log.Error("goai release overrides", slog.Any("err", err))
+		} else {
+			merged = adjusted
+		}
+	}
 
 	snap := domain.CatalogSnapshot{
 		OK:                    true,
