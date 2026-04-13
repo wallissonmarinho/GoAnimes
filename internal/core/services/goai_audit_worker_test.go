@@ -50,6 +50,10 @@ func (r *workerTestRepo) ListSeriesAuditsForAdmin(ctx context.Context, limit, of
 	panic("unexpected ListSeriesAuditsForAdmin")
 }
 
+func (r *workerTestRepo) CountSeriesAuditsForAdmin(ctx context.Context) (int, error) {
+	panic("unexpected CountSeriesAuditsForAdmin")
+}
+
 func (r *workerTestRepo) DeleteReleaseAuditsForSeries(ctx context.Context, seriesID string) error {
 	panic("unexpected DeleteReleaseAuditsForSeries")
 }

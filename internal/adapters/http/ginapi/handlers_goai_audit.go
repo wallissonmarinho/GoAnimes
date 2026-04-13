@@ -1,13 +1,15 @@
 package ginapi
 
 import (
-	"database/sql"
+	"errors"
 	"io"
 	"net/http"
 	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/wallissonmarinho/GoAnimes/internal/core/domain"
+	"github.com/wallissonmarinho/GoAnimes/internal/core/services"
 )
 
 func (h *handlers) registerGoaiAuditRoutes(admin *gin.RouterGroup) {
@@ -16,9 +18,9 @@ func (h *handlers) registerGoaiAuditRoutes(admin *gin.RouterGroup) {
 }
 
 func (h *handlers) getGoaiSeriesAudits(c *gin.Context) {
-	repo := h.deps.GoaiAuditRepo
-	if repo == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "goai audit repository not configured"})
+	svc := h.deps.GoaiAuditAdmin
+	if svc == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "goai audit admin not configured"})
 		return
 	}
 	limit := 50
@@ -34,12 +36,12 @@ func (h *handlers) getGoaiSeriesAudits(c *gin.Context) {
 		}
 	}
 	ctx := c.Request.Context()
-	items, err := repo.ListSeriesAuditsForAdmin(ctx, limit, offset)
+	page, err := svc.ListSeriesAudits(ctx, domain.GoaiAuditListParams{Limit: limit, Offset: offset})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"items": items, "limit": limit, "offset": offset})
+	c.JSON(http.StatusOK, page)
 }
 
 // postGoaiSeriesReauditBody optional JSON: scope controls whether release rows are cleared.
@@ -49,22 +51,10 @@ type postGoaiSeriesReauditBody struct {
 	Scope string `json:"scope,omitempty"`
 }
 
-func parseReauditScope(scope string) (fullClear bool, ok bool) {
-	s := strings.TrimSpace(strings.ToLower(scope))
-	switch s {
-	case "", "full", "default":
-		return true, true
-	case "series_only", "flag_only":
-		return false, true
-	default:
-		return false, false
-	}
-}
-
 func (h *handlers) postGoaiSeriesReaudit(c *gin.Context) {
-	repo := h.deps.GoaiAuditRepo
-	if repo == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "goai audit repository not configured"})
+	svc := h.deps.GoaiAuditAdmin
+	if svc == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "goai audit admin not configured"})
 		return
 	}
 	seriesID := strings.TrimSpace(c.Param("id"))
@@ -79,29 +69,28 @@ func (h *handlers) postGoaiSeriesReaudit(c *gin.Context) {
 			return
 		}
 	}
-	fullClear, valid := parseReauditScope(body.Scope)
-	if !valid {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid scope (use full, default, series_only, or flag_only)"})
-		return
-	}
 	ctx := c.Request.Context()
-	if fullClear {
-		if err := repo.DeleteReleaseAuditsForSeries(ctx, seriesID); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	out, err := svc.RequestSeriesReaudit(ctx, domain.GoaiSeriesReauditRequest{
+		SeriesID: seriesID,
+		Scope:    body.Scope,
+	})
+	if err != nil {
+		if errors.Is(err, services.ErrGoaiAuditInvalidScope) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid scope (use full, default, series_only, or flag_only)"})
 			return
 		}
-	}
-	if err := repo.SetSeriesNeedsReaudit(ctx, seriesID); err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, services.ErrGoaiAuditSeriesAbsent) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "series has no goai_series_audit row yet"})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusAccepted, gin.H{
-		"status":                 "accepted",
-		"series_id":              seriesID,
-		"cleared_release_audits": fullClear,
+	c.JSON(http.StatusAccepted, struct {
+		Status string `json:"status"`
+		domain.GoaiSeriesReauditResult
+	}{
+		Status:                  "accepted",
+		GoaiSeriesReauditResult: out,
 	})
 }

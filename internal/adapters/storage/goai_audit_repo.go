@@ -279,6 +279,15 @@ func (r *catalogRepo) ListSeriesAuditsForAdmin(ctx context.Context, limit, offse
 	return scanGoaiAdminRowsSQLite(rows)
 }
 
+func (r *catalogRepo) CountSeriesAuditsForAdmin(ctx context.Context) (int, error) {
+	var n int
+	row := r.ex.QueryRowContext(ctx, `SELECT COUNT(*) FROM goai_series_audit`)
+	if err := row.Scan(&n); err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
 func scanGoaiAdminRowsPG(rows *sql.Rows) ([]domain.GoaiSeriesAuditListItem, error) {
 	var out []domain.GoaiSeriesAuditListItem
 	for rows.Next() {

@@ -60,13 +60,13 @@ type GoaiReleaseAuditResponse struct {
 
 // GoaiSeriesAuditRecord is persisted goai_series_audit row.
 type GoaiSeriesAuditRecord struct {
-	SeriesID            string
-	AuditedAt           time.Time
-	PromptVersion       int
-	ResponseJSON        string
-	NeedsReaudit        bool
-	ReauditRequestedAt  *time.Time
-	Response            *GoaiSeriesAuditResponse // lazy from ResponseJSON when needed
+	SeriesID           string
+	AuditedAt          time.Time
+	PromptVersion      int
+	ResponseJSON       string
+	NeedsReaudit       bool
+	ReauditRequestedAt *time.Time
+	Response           *GoaiSeriesAuditResponse // lazy from ResponseJSON when needed
 }
 
 // GoaiSeriesAuditListItem is one row for admin list (includes series display name).
@@ -85,4 +85,30 @@ type GoaiReleaseKey struct {
 	Season    int
 	Episode   int
 	IsSpecial bool
+}
+
+// GoaiAuditListParams carries pagination inputs for admin list endpoint.
+type GoaiAuditListParams struct {
+	Limit  int
+	Offset int
+}
+
+// GoaiSeriesAuditPage is a paginated response model for admin listing.
+type GoaiSeriesAuditPage struct {
+	Items  []GoaiSeriesAuditListItem `json:"items"`
+	Limit  int                       `json:"limit"`
+	Offset int                       `json:"offset"`
+	Total  int                       `json:"total"`
+}
+
+// GoaiSeriesReauditRequest is the service-level input for re-audit request.
+type GoaiSeriesReauditRequest struct {
+	SeriesID string
+	Scope    string
+}
+
+// GoaiSeriesReauditResult is the service-level outcome for re-audit request.
+type GoaiSeriesReauditResult struct {
+	SeriesID             string `json:"series_id"`
+	ClearedReleaseAudits bool   `json:"cleared_release_audits"`
 }

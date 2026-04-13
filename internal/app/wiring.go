@@ -44,6 +44,11 @@ func NewCatalogAdmin(repo *storage.Catalog, store *state.CatalogStore) *services
 	return services.NewCatalogAdminService(repo, store)
 }
 
+// NewGoaiAuditAdmin wires GoAI audit admin service (HTTP handlers use this, not repo directly).
+func NewGoaiAuditAdmin(repo ports.GoAIAuditRepository) *services.GoaiAuditAdminService {
+	return services.NewGoaiAuditAdminService(repo)
+}
+
 // NewSynopsisTranslator wires gilang Google Translate for AniList synopsis en→pt (always on; no env toggle).
 func NewSynopsisTranslator(httpTimeout time.Duration, userAgent string, maxBody int64) ports.SynopsisTranslator {
 	if httpTimeout <= 0 {

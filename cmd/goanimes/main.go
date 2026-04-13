@@ -76,6 +76,7 @@ func main() {
 	rssPollEvery := durationEnv("GOANIMES_RSS_POLL_INTERVAL", time.Minute)
 
 	goaiRepo := cat.GoaiAuditRepo()
+	goaiAdmin := app.NewGoaiAuditAdmin(goaiRepo)
 	goaiEnabled := boolEnv("GOANIMES_GOAI_AUDIT_ENABLED")
 	goaiInterval := durationEnv("GOANIMES_GOAI_AUDIT_INTERVAL", 12*time.Hour)
 	goaiHTTPTimeout := durationEnv("GOANIMES_GOAI_HTTP_TIMEOUT", httpTimeout)
@@ -103,7 +104,7 @@ func main() {
 		Log:                lg,
 		SyncStatusLocation: loadSyncStatusLocation(),
 		SyncRunTimeout:     syncRunTimeout,
-		GoaiAuditRepo:      goaiRepo,
+		GoaiAuditAdmin:     goaiAdmin,
 	})
 
 	addr := listenAddr()
