@@ -63,7 +63,7 @@ func main() {
 	ua := getenv("GOANIMES_USER_AGENT", "GoAnimes/1.0")
 	synopsisTr := app.NewSynopsisTranslator(httpTimeout, ua, maxBody)
 	slog.Info("synopsis translation", slog.String("translator", synopsisTr.Name()))
-	syncSvc, anilistClient, jikanClient, kitsuClient, tmdbClient, tvdbClient := app.NewRSSSyncService(cat, mem, rsssync.RSSSyncRuntimeOptions{
+	syncSvc, tmdbClient, tvdbClient := app.NewRSSSyncService(cat, mem, rsssync.RSSSyncRuntimeOptions{
 		HTTPTimeout:   httpTimeout,
 		MaxBodyBytes:  maxBody,
 		UserAgent:     ua,
@@ -95,9 +95,6 @@ func main() {
 	ginapi.Register(engine, ginapi.Config{AdminAPIKey: app.AdminAPIKey()}, ginapi.Deps{
 		Sync:               syncSvc,
 		Catalog:            catalogAdmin,
-		AniList:            anilistClient,
-		Jikan:              jikanClient,
-		Kitsu:              kitsuClient,
 		TMDB:               tmdbClient,
 		TheTVDB:            tvdbClient,
 		SynopsisTrans:      synopsisTr,
@@ -107,9 +104,8 @@ func main() {
 		GoaiAuditAdmin:     goaiAdmin,
 	})
 
-	addr := listenAddr()
 	srv := &http.Server{
-		Addr:              addr,
+		Addr:              listenAddr(),
 		Handler:           engine,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
@@ -136,7 +132,7 @@ func main() {
 	}
 
 	go func() {
-		slog.Info("listening", slog.String("addr", addr))
+		slog.Info("listening", slog.String("addr", listenAddr()))
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			slog.Error("http server", slog.Any("err", err))
 			os.Exit(1)
@@ -166,21 +162,21 @@ func main() {
 	<-sig
 	slog.Info("shutting down")
 	schedCancel()
-	shCtx, shCancel := context.WithTimeout(context.Background(), 25*time.Second)
+	shCtx, shCancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer shCancel()
 	_ = srv.Shutdown(shCtx)
 	_ = otelShutdown(shCtx)
 }
 
 func listenAddr() string {
-	if p := os.Getenv("PORT"); p != "" {
+	if p := strings.TrimSpace(os.Getenv("PORT")); p != "" {
 		return ":" + p
 	}
 	return getenv("GOANIMES_ADDR", ":8080")
 }
 
 func getenv(k, def string) string {
-	if v := os.Getenv(k); v != "" {
+	if v := strings.TrimSpace(os.Getenv(k)); v != "" {
 		return v
 	}
 	return def
@@ -198,7 +194,7 @@ func int64Env(k string, def int64) int64 {
 	return n
 }
 
-// loadSyncStatusLocation returns IANA zone for GET /api/v1/sync-status timestamps (empty env → nil → UTC in JSON).
+// loadSyncStatusLocation returns IANA zone for GET /api/v1/sync-status timestamps (empty env -> nil -> UTC in JSON).
 func loadSyncStatusLocation() *time.Location {
 	tz := strings.TrimSpace(os.Getenv("GOANIMES_SYNC_STATUS_TZ"))
 	if tz == "" {
@@ -214,7 +210,7 @@ func loadSyncStatusLocation() *time.Location {
 }
 
 func durationEnv(k string, def time.Duration) time.Duration {
-	v := os.Getenv(k)
+	v := strings.TrimSpace(os.Getenv(k))
 	if v == "" {
 		return def
 	}

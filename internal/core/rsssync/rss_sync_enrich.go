@@ -5,397 +5,296 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
-	"github.com/wallissonmarinho/GoAnimes/internal/adapters/anilist"
+	"github.com/wallissonmarinho/GoAnimes/internal/adapters/cinemeta"
 	"github.com/wallissonmarinho/GoAnimes/internal/core/domain"
 	"github.com/wallissonmarinho/GoAnimes/internal/core/services"
 )
 
-func (s *RSSSyncService) enrichAniListSeries(ctx context.Context, series []domain.CatalogSeries, cache map[string]domain.AniListSeriesEnrichment, syncNotes *[]string) {
-	if len(series) == 0 {
-		return
-	}
-	if s.anilist == nil {
-		s.log.Info("anilist: skipped (set GOANIMES_ANILIST_DISABLED=true to disable; no client)")
-		return
-	}
-	missing := 0
-	for _, ser := range series {
-		if domain.AniListNeedsRefetch(cache[ser.ID]) {
-			missing++
-		}
-	}
-	if missing == 0 {
-		s.log.Info("anilist: all series have full cached metadata", slog.Int("series", len(series)))
-		return
-	}
-	s.log.Info("anilist: fetching metadata (posters, synopsis, genres, …)",
-		slog.Int("to_fetch", missing),
-		slog.Int("series_total", len(series)),
-		slog.Duration("min_delay_between_requests", s.anilistDelay))
+var (
+	cinemetaBracket    = regexp.MustCompile(`\[[^\]]*\]|\([^\)]*\)`)
+	cinemetaNoise      = regexp.MustCompile(`(?i)\b(1080p|720p|2160p|540p|480p|sd|hevc|x265|x264|avc|aac|eac3|webrip|web[- ]?dl|bluray|multisub|multi(sub|audio)?|cr|torrent|mkv|mp4|amzn|dsnp|nf|adn|hidive|batch|repack|encoded|airing|chinese\s+audio|ca)\b`)
+	cinemetaSxE        = regexp.MustCompile(`(?i)\bS(\d{1,2})\s*[-Ex ]\s*(\d{1,3})\b`)
+	cinemetaDashEp     = regexp.MustCompile(`\s-\s(\d{1,3})(?:\D|$)`)
+	cinemetaVerTag     = regexp.MustCompile(`(?i)\bv\d+\b`)
+	cinemetaRangeEp    = regexp.MustCompile(`(?i)\b\d{1,4}\s*~\s*\d{1,4}\b`)
+	cinemetaRangeTail  = regexp.MustCompile(`(?i)\s*~\s*\d{1,4}(?:v\d+)?\b`)
+	cinemetaSeasonTail = regexp.MustCompile(`(?i)\s+(?:(?:\d{1,2}(?:st|nd|rd|th)\s+season)|(?:season\s+\d{1,2})|(?:s\d{1,2})|(?:part\s+\d{1,2})|(?:cour\s+\d{1,2})|(?:act\s+[ivx]+)|(?:final\s+season))\s*$`)
+	cinemetaSpace      = regexp.MustCompile(`\s+`)
+)
 
-	newN, fails := 0, 0
-	for _, ser := range series {
+func (s *RSSSyncService) enrichCinemetaGaps(ctx context.Context, series []domain.CatalogSeries, cache map[string]domain.SeriesEnrichment, syncNotes *[]string) {
+	if len(series) == 0 || s.cinemeta == nil {
+		return
+	}
+	updated := 0
+	for i, ser := range series {
 		select {
 		case <-ctx.Done():
-			s.log.Warn("anilist: stopped early (context done)", slog.Int("new_rows", newN), slog.Int("failures", fails))
-			appendSyncNote(syncNotes, "anilist: stopped early (context cancelled)")
+			s.log.Warn("cinemeta: stopped early (context done)", slog.Int("updated", updated))
+			appendSyncNote(syncNotes, "cinemeta: stopped early (context cancelled)")
 			return
 		default:
 		}
-		if !domain.AniListNeedsRefetch(cache[ser.ID]) {
+		if i > 0 && s.cinemetaDelay > 0 {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(s.cinemetaDelay):
+			}
+		}
+		cur := cache[ser.ID]
+		queries := cinemetaQueriesForSeries(ser.Name)
+		if len(queries) == 0 {
 			continue
 		}
-		det, err := s.anilist.SearchAnimeMedia(ctx, ser.Name)
-		if err != nil {
-			fails++
-			qlog := domain.NormalizeExternalAnimeSearchQuery(ser.Name)
-			s.log.Warn("anilist lookup failed", slog.String("series", ser.Name), slog.String("search_query", qlog), slog.Any("err", err))
-			cur := cache[ser.ID]
-			if s.jikan != nil && domain.EnrichmentCouldUseJikan(cur) {
-				add, jerr := s.jikan.SearchAnimeEnrichment(ctx, ser.Name)
-				if jerr == nil {
-					merged := domain.MergeAniListEnrichment(cur, add)
-					merged.Description = services.TranslateSynopsisToPT(s.synopsisTrans, s.log, merged.Description)
-					cache[ser.ID] = merged
-					newN++
-					s.log.Info("jikan: filled series after anilist miss", slog.String("series", ser.Name), slog.String("search_query", qlog))
-					if s.jikanDelay > 0 {
-						time.Sleep(s.jikanDelay)
-					}
-					continue
-				}
-				s.log.Debug("jikan fallback after anilist failure", slog.String("series", ser.Name), slog.Any("err", jerr))
-				if s.kitsu != nil && domain.EnrichmentCouldUseJikan(cur) {
-					addK, kerr := s.kitsu.SearchAnimeEnrichment(ctx, ser.Name)
-					if kerr == nil {
-						merged := domain.MergeAniListEnrichment(cur, addK)
-						merged.Description = services.TranslateSynopsisToPT(s.synopsisTrans, s.log, merged.Description)
-						cache[ser.ID] = merged
-						newN++
-						s.log.Info("kitsu: filled series after anilist+jikan miss", slog.String("series", ser.Name), slog.String("search_query", qlog))
-						if s.kitsuDelay > 0 {
-							time.Sleep(s.kitsuDelay)
-						}
-						continue
-					}
-					appendSyncNote(syncNotes, fmt.Sprintf("enrichment %q: anilist: %v; jikan: %v; kitsu: %v", qlog, err, jerr, kerr))
-					continue
-				}
-				appendSyncNote(syncNotes, fmt.Sprintf("enrichment %q: anilist: %v; jikan: %v", qlog, err, jerr))
+		meta, err := s.cinemetaResolveSeries(ctx, queries)
+		if err != nil || meta == nil {
+			if err != nil {
+				appendSyncNote(syncNotes, fmt.Sprintf("cinemeta %q: %v", ser.Name, err))
+			}
+			continue
+		}
+		add := domain.SeriesEnrichment{
+			AniListSearchVer:               domain.ExternalMetadataSearchVersion,
+			PosterURL:                      strings.TrimSpace(meta.Poster),
+			BackgroundURL:                  strings.TrimSpace(meta.Background),
+			Description:                    strings.TrimSpace(meta.Description),
+			ImdbID:                         domain.NormalizeIMDbID(firstNonEmpty(meta.IMDBID, meta.ID)),
+			TvdbSeriesID:                   meta.TVDBID,
+			TitlePreferred:                 strings.TrimSpace(meta.Name),
+			SeriesStatus:                   strings.TrimSpace(meta.Status),
+			SeriesReleasedISO:              strings.TrimSpace(meta.Released),
+			SeriesYearLabel:                strings.TrimSpace(meta.Year),
+			EpisodeTitleByNum:              map[int]string{},
+			EpisodeThumbnailByNum:          map[int]string{},
+			EpisodeReleasedBySeasonEpisode: map[string]string{},
+		}
+		if add.SeriesYearLabel == "" {
+			add.SeriesYearLabel = strings.TrimSpace(meta.ReleaseInfo)
+		}
+		if len(meta.Genre) > 0 {
+			add.Genres = append([]string(nil), meta.Genre...)
+		}
+		add.StartYear = extractStartYear(firstNonEmpty(meta.ReleaseInfo, meta.Year))
+		for _, v := range meta.Videos {
+			epNum := v.Episode
+			if epNum <= 0 {
+				epNum = v.Number
+			}
+			if epNum <= 0 {
 				continue
 			}
-			if s.kitsu != nil && domain.EnrichmentCouldUseJikan(cur) {
-				addK, kerr := s.kitsu.SearchAnimeEnrichment(ctx, ser.Name)
-				if kerr == nil {
-					merged := domain.MergeAniListEnrichment(cur, addK)
-					merged.Description = services.TranslateSynopsisToPT(s.synopsisTrans, s.log, merged.Description)
-					cache[ser.ID] = merged
-					newN++
-					s.log.Info("kitsu: filled series after anilist miss (no jikan)", slog.String("series", ser.Name), slog.String("search_query", qlog))
-					if s.kitsuDelay > 0 {
-						time.Sleep(s.kitsuDelay)
-					}
-					continue
+			add.EpisodeTitleByNum[epNum] = strings.TrimSpace(v.Name)
+			add.EpisodeThumbnailByNum[epNum] = strings.TrimSpace(v.Thumbnail)
+			numInSeason := v.Number
+			if numInSeason <= 0 {
+				numInSeason = v.Episode
+			}
+			if numInSeason > 0 {
+				air := strings.TrimSpace(v.Released)
+				if air == "" {
+					air = strings.TrimSpace(v.FirstAired)
 				}
-				appendSyncNote(syncNotes, fmt.Sprintf("enrichment %q: anilist: %v; kitsu: %v", qlog, err, kerr))
-				continue
-			}
-			appendSyncNote(syncNotes, fmt.Sprintf("anilist %q: %v", qlog, err))
-			continue
-		}
-		en := anilist.ToDomainEnrichment(det)
-		en.Description = services.TranslateSynopsisToPT(s.synopsisTrans, s.log, en.Description)
-		cache[ser.ID] = en
-		newN++
-		if s.anilistDelay > 0 {
-			time.Sleep(s.anilistDelay)
-		}
-	}
-	s.log.Info("anilist: finished", slog.Int("new_or_refreshed", newN), slog.Int("lookup_failures", fails))
-}
-
-func (s *RSSSyncService) enrichJikanGaps(ctx context.Context, series []domain.CatalogSeries, cache map[string]domain.AniListSeriesEnrichment, syncNotes *[]string) {
-	if len(series) == 0 || s.jikan == nil {
-		if s.jikan == nil {
-			s.log.Info("jikan: skipped (set GOANIMES_JIKAN_DISABLED=true to disable; no client)")
-		}
-		return
-	}
-	n := 0
-	for _, ser := range series {
-		select {
-		case <-ctx.Done():
-			s.log.Warn("jikan: stopped early (context done)", slog.Int("merged", n))
-			appendSyncNote(syncNotes, "jikan: stopped early (context cancelled)")
-			return
-		default:
-		}
-		if strings.TrimSpace(ser.Name) == "" {
-			continue
-		}
-		cur := cache[ser.ID]
-		if !domain.EnrichmentCouldUseJikan(cur) {
-			continue
-		}
-		add, err := s.jikan.SearchAnimeEnrichment(ctx, ser.Name)
-		if err != nil {
-			s.log.Debug("jikan lookup skipped or failed", slog.String("series", ser.Name), slog.Any("err", err))
-			appendSyncNote(syncNotes, fmt.Sprintf("jikan %q: %v", ser.Name, err))
-			continue
-		}
-		merged := domain.MergeAniListEnrichment(cur, add)
-		merged.Description = services.TranslateSynopsisToPT(s.synopsisTrans, s.log, merged.Description)
-		cache[ser.ID] = merged
-		n++
-		if s.jikanDelay > 0 {
-			time.Sleep(s.jikanDelay)
-		}
-	}
-	if n > 0 {
-		s.log.Info("jikan: filled gaps", slog.Int("series", n))
-	}
-}
-
-func (s *RSSSyncService) enrichKitsuGaps(ctx context.Context, series []domain.CatalogSeries, cache map[string]domain.AniListSeriesEnrichment, syncNotes *[]string) {
-	if len(series) == 0 || s.kitsu == nil {
-		if s.kitsu == nil {
-			s.log.Info("kitsu: skipped (set GOANIMES_KITSU_DISABLED=true to disable; no client)")
-		}
-		return
-	}
-	n := 0
-	for _, ser := range series {
-		select {
-		case <-ctx.Done():
-			s.log.Warn("kitsu: stopped early (context done)", slog.Int("merged", n))
-			appendSyncNote(syncNotes, "kitsu: stopped early (context cancelled)")
-			return
-		default:
-		}
-		if strings.TrimSpace(ser.Name) == "" {
-			continue
-		}
-		cur := cache[ser.ID]
-		if !domain.EnrichmentCouldUseJikan(cur) {
-			continue
-		}
-		add, err := s.kitsu.SearchAnimeEnrichment(ctx, ser.Name)
-		if err != nil {
-			s.log.Debug("kitsu lookup skipped or failed", slog.String("series", ser.Name), slog.Any("err", err))
-			appendSyncNote(syncNotes, fmt.Sprintf("kitsu %q: %v", ser.Name, err))
-			continue
-		}
-		merged := domain.MergeAniListEnrichment(cur, add)
-		merged.Description = services.TranslateSynopsisToPT(s.synopsisTrans, s.log, merged.Description)
-		cache[ser.ID] = merged
-		n++
-		if s.kitsuDelay > 0 {
-			time.Sleep(s.kitsuDelay)
-		}
-	}
-	if n > 0 {
-		s.log.Info("kitsu: filled gaps", slog.Int("series", n))
-	}
-}
-
-func (s *RSSSyncService) enrichKitsuEpisodeMaps(ctx context.Context, series []domain.CatalogSeries, cache map[string]domain.AniListSeriesEnrichment, syncNotes *[]string) {
-	if len(series) == 0 || s.kitsu == nil {
-		return
-	}
-	// Resolve Kitsu id per series, then one FetchEpisodeMaps per distinct kid (many series share the same Kitsu row).
-	kidToSeriesIDs := make(map[string][]string)
-	for _, ser := range series {
-		select {
-		case <-ctx.Done():
-			s.log.Warn("kitsu episodes: stopped early (context done)", slog.Int("phase", 0))
-			appendSyncNote(syncNotes, "kitsu episodes: stopped early (context cancelled)")
-			return
-		default:
-		}
-		cur := cache[ser.ID]
-		kid := strings.TrimSpace(cur.KitsuAnimeID)
-		if kid == "" && strings.TrimSpace(ser.Name) != "" {
-			id, err := s.kitsu.SearchAnimeID(ctx, ser.Name)
-			if err == nil && id != "" {
-				cur.KitsuAnimeID = id
-				cache[ser.ID] = cur
-				kid = id
+				if air != "" {
+					sk := domain.SeasonEpisodeScheduleKey(v.Season, numInSeason)
+					add.EpisodeReleasedBySeasonEpisode[sk] = air
+				}
 			}
 		}
-		if kid == "" {
-			continue
-		}
-		kidToSeriesIDs[kid] = append(kidToSeriesIDs[kid], ser.ID)
+		cache[ser.ID] = domain.MergeSeriesEnrichment(cur, add)
+		updated++
 	}
-	kids := make([]string, 0, len(kidToSeriesIDs))
-	for k := range kidToSeriesIDs {
-		kids = append(kids, k)
-	}
-	sort.Strings(kids)
-	fetches, seriesUpdated := 0, 0
-	for _, kid := range kids {
-		select {
-		case <-ctx.Done():
-			s.log.Warn("kitsu episodes: stopped early (context done)", slog.Int("fetches", fetches))
-			appendSyncNote(syncNotes, "kitsu episodes: stopped early (context cancelled)")
-			return
-		default:
-		}
-		titles, thumbs, err := s.kitsu.FetchEpisodeMaps(ctx, kid)
-		if err != nil {
-			s.log.Debug("kitsu episodes failed", slog.String("kitsu_id", kid), slog.Any("err", err))
-			appendSyncNote(syncNotes, fmt.Sprintf("kitsu episodes %s: %v", kid, err))
-			continue
-		}
-		if len(titles) == 0 && len(thumbs) == 0 {
-			continue
-		}
-		fetches++
-		ids := append([]string(nil), kidToSeriesIDs[kid]...)
-		sort.Strings(ids)
-		add := domain.AniListSeriesEnrichment{
-			KitsuAnimeID:          kid,
-			EpisodeTitleByNum:     titles,
-			EpisodeThumbnailByNum: thumbs,
-		}
-		for _, sid := range ids {
-			cache[sid] = domain.MergeAniListEnrichment(cache[sid], add)
-			seriesUpdated++
-		}
-		if s.kitsuDelay > 0 {
-			time.Sleep(s.kitsuDelay)
-		}
-	}
-	if fetches > 0 {
-		s.log.Info("kitsu: merged episode titles/thumbnails",
-			slog.Int("kitsu_fetches", fetches), slog.Int("series_rows", seriesUpdated))
+	if updated > 0 {
+		s.log.Info("cinemeta: merged metadata", slog.Int("series_rows", updated))
 	}
 }
 
-func (s *RSSSyncService) enrichJikanMalEpisodeTitles(ctx context.Context, series []domain.CatalogSeries, cache map[string]domain.AniListSeriesEnrichment, syncNotes *[]string) {
-	if len(series) == 0 || s.jikan == nil {
-		return
-	}
-	// One Jikan episode-list fetch per distinct MalID (after Mal-merge many series rows share the same MAL id).
-	malToSeriesIDs := make(map[int][]string)
-	for _, ser := range series {
-		cur := cache[ser.ID]
-		if cur.MalID <= 0 {
-			continue
-		}
-		malToSeriesIDs[cur.MalID] = append(malToSeriesIDs[cur.MalID], ser.ID)
-	}
-	malIDs := make([]int, 0, len(malToSeriesIDs))
-	for mal := range malToSeriesIDs {
-		malIDs = append(malIDs, mal)
-	}
-	sort.Ints(malIDs)
-	fetches, seriesUpdated := 0, 0
-	for _, malID := range malIDs {
-		select {
-		case <-ctx.Done():
-			s.log.Warn("jikan mal episodes: stopped early (context done)", slog.Int("fetches", fetches))
-			appendSyncNote(syncNotes, "jikan mal episodes: stopped early (context cancelled)")
-			return
-		default:
-		}
-		eps, err := s.jikan.FetchEpisodeTitlesByMalID(ctx, malID)
+func (s *RSSSyncService) cinemetaResolveSeries(ctx context.Context, queries []string) (*cinemeta.SeriesMeta, error) {
+	var bestID string
+	bestScore := -1.0
+	for _, q := range queries {
+		hits, err := s.cinemeta.SearchSeries(ctx, q)
 		if err != nil {
-			s.log.Debug("jikan mal episodes failed", slog.Int("mal_id", malID), slog.Any("err", err))
-			appendSyncNote(syncNotes, fmt.Sprintf("jikan mal episodes %d: %v", malID, err))
 			continue
 		}
-		if len(eps) == 0 {
-			continue
-		}
-		fetches++
-		add := domain.AniListSeriesEnrichment{EpisodeTitleByNum: eps}
-		ids := append([]string(nil), malToSeriesIDs[malID]...)
-		sort.Strings(ids)
-		for _, sid := range ids {
-			cache[sid] = domain.MergeAniListEnrichment(cache[sid], add)
-			seriesUpdated++
-		}
-		if s.jikanDelay > 0 {
-			time.Sleep(s.jikanDelay)
+		for _, h := range hits {
+			sc := scoreCinemetaCandidate(q, h.Name)
+			if sc > bestScore {
+				bestScore = sc
+				bestID = strings.TrimSpace(h.ID)
+			}
 		}
 	}
-	if fetches > 0 {
-		s.log.Info("jikan: merged MAL episode titles by mal_id",
-			slog.Int("mal_fetches", fetches), slog.Int("series_rows", seriesUpdated))
+	if bestID == "" {
+		return nil, nil
 	}
+	meta, err := s.cinemeta.GetSeriesMeta(ctx, bestID)
+	if err != nil || meta == nil {
+		return nil, err
+	}
+	return meta, nil
 }
 
-func (s *RSSSyncService) enrichAniDBEpisodeTitles(ctx context.Context, series []domain.CatalogSeries, cache map[string]domain.AniListSeriesEnrichment, syncNotes *[]string) {
-	if len(series) == 0 || s.anidb == nil {
-		return
+func cinemetaQueriesForSeries(name string) []string {
+	raw := strings.TrimSpace(name)
+	if raw == "" {
+		return nil
 	}
-	now := time.Now().Unix()
-	const ttlSec int64 = 86400
-	aidToSeriesIDs := make(map[int][]string)
-	for _, ser := range series {
-		cur := cache[ser.ID]
-		if cur.AniDBAid <= 0 {
+	full := cinemetaBracket.ReplaceAllString(raw, " ")
+	full = cinemetaNoise.ReplaceAllString(full, " ")
+	full = cinemetaSxE.ReplaceAllString(full, " ")
+	full = cinemetaDashEp.ReplaceAllString(full, " ")
+	full = cinemetaVerTag.ReplaceAllString(full, " ")
+	full = cinemetaRangeEp.ReplaceAllString(full, " ")
+	full = cinemetaRangeTail.ReplaceAllString(full, " ")
+	full = strings.ReplaceAll(full, "_", " ")
+	full = cinemetaSpace.ReplaceAllString(full, " ")
+	full = strings.TrimSpace(full)
+	if full == "" {
+		return nil
+	}
+	// Prefer short canonical title first (better retrieval quality), then long cleaned title.
+	base := full
+	if i := strings.Index(base, " - "); i > 0 {
+		base = strings.TrimSpace(base[:i])
+	}
+	if i := strings.Index(base, ":"); i > 0 {
+		base = strings.TrimSpace(base[:i])
+	}
+	out := []string{base}
+	if noSeason := trimCinemetaSeasonSuffix(base); noSeason != "" && !strings.EqualFold(noSeason, base) {
+		out = append(out, noSeason)
+	}
+	if !strings.EqualFold(full, base) {
+		out = append(out, full)
+	}
+	if noSeason := trimCinemetaSeasonSuffix(full); noSeason != "" && !strings.EqualFold(noSeason, full) {
+		out = append(out, noSeason)
+	}
+	if n := normalizeForCinemeta(full); strings.Contains(n, "honzuki no gekokujou") {
+		out = append(out,
+			"Honzuki no Gekokujou",
+			"Honzuki no Gekokujou Shisho ni Naru Tame ni wa Shudan wo Erandeiraremasen",
+			"Ascendance of a Bookworm",
+		)
+	}
+	uniq := make([]string, 0, len(out))
+	for _, q := range out {
+		q = strings.TrimSpace(q)
+		if q == "" {
 			continue
 		}
-		aidToSeriesIDs[cur.AniDBAid] = append(aidToSeriesIDs[cur.AniDBAid], ser.ID)
-	}
-	aids := make([]int, 0, len(aidToSeriesIDs))
-	for aid := range aidToSeriesIDs {
-		aids = append(aids, aid)
-	}
-	sort.Ints(aids)
-	fetches, seriesUpdated := 0, 0
-	for _, aid := range aids {
-		select {
-		case <-ctx.Done():
-			s.log.Warn("anidb episodes: stopped early (context done)", slog.Int("fetches", fetches))
-			appendSyncNote(syncNotes, "anidb episodes: stopped early (context cancelled)")
-			return
-		default:
-		}
-		ids := aidToSeriesIDs[aid]
-		needFetch := false
-		for _, sid := range ids {
-			cur := cache[sid]
-			if cur.AniDBLastFetchedUnix == 0 || now-cur.AniDBLastFetchedUnix >= ttlSec {
-				needFetch = true
+		found := false
+		for _, e := range uniq {
+			if strings.EqualFold(e, q) {
+				found = true
 				break
 			}
 		}
-		if !needFetch {
-			continue
-		}
-		titles, err := s.anidb.FetchEpisodeTitlesByAID(ctx, aid)
-		if err != nil {
-			s.log.Debug("anidb episodes failed", slog.Int("aid", aid), slog.Any("err", err))
-			appendSyncNote(syncNotes, fmt.Sprintf("anidb aid %d: %v", aid, err))
-			continue
-		}
-		fetches++
-		add := domain.AniListSeriesEnrichment{AniDBLastFetchedUnix: now}
-		if len(titles) > 0 {
-			add.EpisodeTitleByNum = titles
-		}
-		sort.Strings(ids)
-		for _, sid := range ids {
-			cache[sid] = domain.MergeAniListEnrichment(cache[sid], add)
-			seriesUpdated++
-		}
-		if s.anidbDelay > 0 {
-			time.Sleep(s.anidbDelay)
+		if !found {
+			uniq = append(uniq, q)
 		}
 	}
-	if fetches > 0 {
-		s.log.Info("anidb: merged episode titles", slog.Int("anidb_fetches", fetches), slog.Int("series_rows", seriesUpdated))
-	}
+	return uniq
 }
 
-func (s *RSSSyncService) enrichTheTVDBGaps(ctx context.Context, series []domain.CatalogSeries, cache map[string]domain.AniListSeriesEnrichment, syncNotes *[]string) {
+func scoreCinemetaCandidate(query, name string) float64 {
+	q := normalizeForCinemeta(query)
+	n := normalizeForCinemeta(name)
+	if q == "" || n == "" {
+		return 0
+	}
+	if q == n {
+		return 100
+	}
+	if strings.Contains(n, q) || strings.Contains(q, n) {
+		return 70
+	}
+	qTok := strings.Fields(q)
+	if len(qTok) == 0 {
+		return 0
+	}
+	set := map[string]struct{}{}
+	for _, t := range strings.Fields(n) {
+		set[t] = struct{}{}
+	}
+	hit := 0
+	for _, t := range qTok {
+		if _, ok := set[t]; ok {
+			hit++
+		}
+	}
+	return float64(hit) / float64(len(qTok)) * 60
+}
+
+func normalizeForCinemeta(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	s = strings.ReplaceAll(s, ":", " ")
+	s = strings.ReplaceAll(s, "-", " ")
+	s = cinemetaSpace.ReplaceAllString(s, " ")
+	return strings.TrimSpace(s)
+}
+
+func trimCinemetaSeasonSuffix(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ""
+	}
+	for {
+		next := strings.TrimSpace(cinemetaSeasonTail.ReplaceAllString(s, ""))
+		if next == "" || strings.EqualFold(next, s) {
+			break
+		}
+		s = next
+	}
+	return s
+}
+
+func extractStartYear(releaseInfo string) int {
+	releaseInfo = strings.TrimSpace(releaseInfo)
+	if releaseInfo == "" {
+		return 0
+	}
+	digits := strings.Builder{}
+	for _, r := range releaseInfo {
+		if r >= '0' && r <= '9' {
+			digits.WriteRune(r)
+			if digits.Len() == 4 {
+				break
+			}
+		} else {
+			if digits.Len() > 0 {
+				break
+			}
+		}
+	}
+	if digits.Len() != 4 {
+		return 0
+	}
+	yr, _ := strconv.Atoi(digits.String())
+	if yr < 1900 || yr > time.Now().UTC().Year()+2 {
+		return 0
+	}
+	return yr
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		v = strings.TrimSpace(v)
+		if v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+func (s *RSSSyncService) enrichTheTVDBGaps(ctx context.Context, series []domain.CatalogSeries, cache map[string]domain.SeriesEnrichment, syncNotes *[]string) {
 	if len(series) == 0 || s.tvdb == nil {
 		return
 	}
@@ -467,7 +366,7 @@ func (s *RSSSyncService) enrichTheTVDBGaps(ctx context.Context, series []domain.
 				fetches++
 			}
 		}
-		add := domain.AniListSeriesEnrichment{TvdbSeriesID: tvdbID}
+		add := domain.SeriesEnrichment{TvdbSeriesID: tvdbID}
 		if len(titles) > 0 {
 			add.EpisodeTitleByNum = titles
 		}
@@ -475,7 +374,7 @@ func (s *RSSSyncService) enrichTheTVDBGaps(ctx context.Context, series []domain.
 			add.EpisodeThumbnailByNum = thumbs
 		}
 		for _, sid := range ids {
-			cache[sid] = domain.MergeAniListEnrichment(cache[sid], add)
+			cache[sid] = domain.MergeSeriesEnrichment(cache[sid], add)
 			seriesUpdated++
 		}
 	}
@@ -484,7 +383,7 @@ func (s *RSSSyncService) enrichTheTVDBGaps(ctx context.Context, series []domain.
 	}
 }
 
-func (s *RSSSyncService) translateEpisodeTitlesToPT(ctx context.Context, series []domain.CatalogSeries, cache map[string]domain.AniListSeriesEnrichment, syncNotes *[]string) {
+func (s *RSSSyncService) translateEpisodeTitlesToPT(ctx context.Context, series []domain.CatalogSeries, cache map[string]domain.SeriesEnrichment, syncNotes *[]string) {
 	if len(series) == 0 || s.synopsisTrans == nil {
 		return
 	}
@@ -546,12 +445,12 @@ func (s *RSSSyncService) translateEpisodeTitlesToPT(ctx context.Context, series 
 	}
 }
 
-func (s *RSSSyncService) resolveStremioHeroBackgrounds(ctx context.Context, series []domain.CatalogSeries, cache map[string]domain.AniListSeriesEnrichment, syncNotes *[]string) {
+func (s *RSSSyncService) resolveStremioHeroBackgrounds(ctx context.Context, series []domain.CatalogSeries, cache map[string]domain.SeriesEnrichment, syncNotes *[]string) {
 	if len(series) == 0 {
 		return
 	}
 	if s.tmdb == nil {
-		s.log.Info("tmdb: skipped (no API key or GOANIMES_TMDB_DISABLED; hero uses AniList/Kitsu/TheTVDB only)")
+		s.log.Info("tmdb: skipped (no API key or GOANIMES_TMDB_DISABLED; hero uses cached/TheTVDB candidates only)")
 	}
 	if s.tvdb == nil {
 		s.log.Info("thetvdb: skipped (no GOANIMES_TVDB_API_KEY or GOANIMES_TVDB_DISABLED)")
@@ -561,7 +460,7 @@ func (s *RSSSyncService) resolveStremioHeroBackgrounds(ctx context.Context, seri
 	}
 	// TMDB/TheTVDB HTTP is expensive; reuse backdrop candidates for all series that share the same lookup key (IMDb, or MAL id).
 	type tmdbFetchRep struct {
-		en     domain.AniListSeriesEnrichment
+		en     domain.SeriesEnrichment
 		search string
 		name   string
 	}
@@ -659,7 +558,7 @@ func (s *RSSSyncService) resolveStremioHeroBackgrounds(ctx context.Context, seri
 }
 
 // heroTMDBFetchKey groups series for a single TMDB request (IMDb id preferred, else MAL id, else unique per Stremio series id).
-func heroTMDBFetchKey(en domain.AniListSeriesEnrichment, seriesID string) string {
+func heroTMDBFetchKey(en domain.SeriesEnrichment, seriesID string) string {
 	if imdb := domain.NormalizeIMDbID(en.ImdbID); imdb != "" {
 		return "imdb:" + imdb
 	}

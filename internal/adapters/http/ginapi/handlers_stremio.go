@@ -148,9 +148,6 @@ func (h *handlers) getMeta(c *gin.Context) {
 		groups := domain.GroupItemsByEpisode(snap.Items, id)
 		keys := domain.OrderedEpisodeKeys(groups)
 		enrichDeps := stremio.StremioLazyEnrichDeps{
-			AniList:       h.deps.AniList,
-			Jikan:         h.deps.Jikan,
-			Kitsu:         h.deps.Kitsu,
 			TMDB:          h.deps.TMDB,
 			TheTVDB:       h.deps.TheTVDB,
 			SynopsisTrans: h.deps.SynopsisTrans,
@@ -161,7 +158,7 @@ func (h *handlers) getMeta(c *gin.Context) {
 		if s2, ok := h.deps.Catalog.SeriesByID(id); ok {
 			ser = s2
 		}
-		en := h.deps.Catalog.AniListEnrichment(ser.ID)
+		en := h.deps.Catalog.SeriesEnrichment(ser.ID)
 		if didLazyEnrich || synopsisUpdated {
 			pctx, pcancel := context.WithTimeout(context.Background(), 60*time.Second)
 			if err := h.deps.Catalog.PersistActiveCatalog(pctx); err != nil && h.deps.Log != nil {
@@ -180,10 +177,15 @@ func (h *handlers) getMeta(c *gin.Context) {
 			if k.Special {
 				epNum = 0
 			}
+			scheduleKey := domain.SeasonEpisodeScheduleKey(k.Season, k.Episode)
+			scheduleAir := ""
+			if en.EpisodeReleasedBySeasonEpisode != nil {
+				scheduleAir = en.EpisodeReleasedBySeasonEpisode[scheduleKey]
+			}
 			row := map[string]any{
 				"id":       vid,
 				"title":    domain.EpisodeListTitleForGroup(k.Episode, k.Special, en.EpisodeTitleByNum, group),
-				"released": stremio.StremioVideoReleasedISO(domain.LatestReleased(group)),
+				"released": stremio.PickStremioVideoReleasedISO(scheduleAir, domain.LatestReleased(group)),
 				"season":   k.Season,
 				"episode":  epNum,
 			}
@@ -195,7 +197,7 @@ func (h *handlers) getMeta(c *gin.Context) {
 			videos = append(videos, row)
 		}
 		calSeason := domain.MaxSeasonAmongSeriesItems(snap.Items, id)
-		stremio.AppendAniListCalendarVideo(ser.ID, calSeason, en.NextAiringEpisode, en, groups, &videos)
+		stremio.AppendEnrichmentCalendarVideo(ser.ID, calSeason, en.NextAiringEpisode, en, groups, &videos)
 		stremio.SortStremioMetaVideosByReleased(videos)
 		meta := map[string]any{
 			"id":          ser.ID,
@@ -206,7 +208,10 @@ func (h *handlers) getMeta(c *gin.Context) {
 			"description": "Torrent releases with pt-BR subtitles (Erai).",
 			"videos":      videos,
 		}
-		stremio.MergeAniListIntoStremioSeriesMeta(meta, en)
+		stremio.MergeSeriesEnrichmentIntoStremioMeta(meta, en)
+		if bh := stremio.StremioMetaBehaviorHintsIfScheduled(videos); bh != nil {
+			meta["behaviorHints"] = bh
+		}
 		c.JSON(http.StatusOK, gin.H{"meta": meta})
 		return
 	}
@@ -248,7 +253,7 @@ func (h *handlers) getStream(c *gin.Context) {
 		}
 		var epDisplay string
 		if it0 := releases[0]; it0.SeriesID != "" {
-			en := snap.AniListBySeries[it0.SeriesID]
+			en := snap.SeriesEnrichmentBySeriesID[it0.SeriesID]
 			epDisplay = domain.EpisodeListTitleForGroup(it0.Episode, it0.IsSpecial, en.EpisodeTitleByNum, releases)
 		}
 		streams := make([]map[string]any, 0, len(releases))
@@ -273,7 +278,7 @@ func (h *handlers) getStream(c *gin.Context) {
 	var epDisplay string
 	if it.SeriesID != "" && (it.Episode > 0 || it.IsSpecial) {
 		snap := h.deps.Catalog.Snapshot()
-		en := snap.AniListBySeries[it.SeriesID]
+		en := snap.SeriesEnrichmentBySeriesID[it.SeriesID]
 		epDisplay = domain.EpisodeListTitleForGroup(it.Episode, it.IsSpecial, en.EpisodeTitleByNum, []domain.CatalogItem{it})
 	}
 	one := stremio.StreamFromCatalogItem(it, it.ID, epDisplay)

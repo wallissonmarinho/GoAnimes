@@ -11,7 +11,7 @@ import (
 const TheTVDBAttributionLine = "Metadados em parte do TheTVDB (https://www.thetvdb.com/). Podes complementar informações no site ou subscrever."
 
 // MetaUsesTheTVDBData is true when stored enrichment clearly includes TVDB-sourced fields (id, artwork, or episode thumbs).
-func MetaUsesTheTVDBData(en domain.AniListSeriesEnrichment) bool {
+func MetaUsesTheTVDBData(en domain.SeriesEnrichment) bool {
 	if en.TvdbSeriesID > 0 {
 		return true
 	}

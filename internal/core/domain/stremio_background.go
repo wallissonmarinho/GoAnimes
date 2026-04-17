@@ -63,9 +63,9 @@ func PickBestStremioBackground(cands []BackgroundCandidate, posterFallback strin
 	return strings.TrimSpace(posterFallback)
 }
 
-// EnrichmentBackgroundCandidates builds nominal WxH guesses for AniList/Kitsu URLs so we can compare
+// EnrichmentBackgroundCandidates builds nominal WxH guesses for cached backdrop URLs so we can compare
 // them to TMDB backdrops without fetching every image.
-func EnrichmentBackgroundCandidates(en AniListSeriesEnrichment) []BackgroundCandidate {
+func EnrichmentBackgroundCandidates(en SeriesEnrichment) []BackgroundCandidate {
 	seen := make(map[string]struct{})
 	var out []BackgroundCandidate
 	add := func(u string, w, h int) {
@@ -94,8 +94,8 @@ func EnrichmentBackgroundCandidates(en AniListSeriesEnrichment) []BackgroundCand
 	return out
 }
 
-// ResolveStremioHeroBackground merges AniList/Kitsu nominal candidates with TMDB (exact sizes) and picks the best.
-func ResolveStremioHeroBackground(en AniListSeriesEnrichment, tmdb []BackgroundCandidate) string {
+// ResolveStremioHeroBackground merges cached nominal candidates with TMDB (exact sizes) and picks the best.
+func ResolveStremioHeroBackground(en SeriesEnrichment, tmdb []BackgroundCandidate) string {
 	c := EnrichmentBackgroundCandidates(en)
 	c = append(c, tmdb...)
 	return PickBestStremioBackground(c, en.PosterURL)

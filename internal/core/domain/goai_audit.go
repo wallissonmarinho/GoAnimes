@@ -3,13 +3,17 @@ package domain
 import "time"
 
 // GoaiAuditPromptVersion must match GoAI domain.AuditPromptVersion when interpreting cached JSON.
-const GoaiAuditPromptVersion = 5
+const GoaiAuditPromptVersion = 6
 
 // GoaiSeriesAuditRequest mirrors GoAI POST /v1/audit/series (no import of GoAI module).
 type GoaiSeriesAuditRequest struct {
 	SeriesName           string `json:"series_name,omitempty"`
 	TorrentTitle         string `json:"torrent_title,omitempty"`
 	TorrentLink          string `json:"torrent_link,omitempty"`
+	FeedPublishedAt      string `json:"feed_published_at,omitempty"`
+	ParsedSeasonHint     int    `json:"parsed_season_hint,omitempty"`
+	ParsedEpisodeHint    int    `json:"parsed_episode_hint,omitempty"`
+	ParsedIsSpecialHint  bool   `json:"parsed_is_special_hint,omitempty"`
 	SeriesID             string `json:"series_id,omitempty"`
 	MalID                int    `json:"mal_id,omitempty"`
 	ImdbID               string `json:"imdb_id,omitempty"`
@@ -42,6 +46,8 @@ type GoaiSeriesAuditResponse struct {
 // GoaiReleaseAuditRequest mirrors GoAI POST /v1/audit/release.
 type GoaiReleaseAuditRequest struct {
 	TorrentTitle   string `json:"torrent_title"`
+	TorrentLink    string `json:"torrent_link,omitempty"`
+	FeedPublishedAt string `json:"feed_published_at,omitempty"`
 	SeriesName     string `json:"series_name,omitempty"`
 	SeriesID       string `json:"series_id,omitempty"`
 	CurrentSeason  int    `json:"current_season,omitempty"`
@@ -56,6 +62,16 @@ type GoaiReleaseAuditResponse struct {
 	IsSpecial  bool    `json:"is_special"`
 	Confidence float64 `json:"confidence"`
 	Notes      string  `json:"notes,omitempty"`
+}
+
+// GoaiAuditItemContext carries source RSS/catalog context for a sampled item.
+type GoaiAuditItemContext struct {
+	Title      string
+	TorrentURL string
+	Released   string
+	Season     int
+	Episode    int
+	IsSpecial  bool
 }
 
 // GoaiSeriesAuditRecord is persisted goai_series_audit row.

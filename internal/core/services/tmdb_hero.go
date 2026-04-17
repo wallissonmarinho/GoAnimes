@@ -9,7 +9,7 @@ import (
 )
 
 // TMDBBackdropCandidatesForEnrichment loads TMDB backdrop URLs (with WxH) via IMDb id when present, else TV search.
-func TMDBBackdropCandidatesForEnrichment(ctx context.Context, tc *tmdb.Client, en domain.AniListSeriesEnrichment, searchTitle string) ([]domain.BackgroundCandidate, error) {
+func TMDBBackdropCandidatesForEnrichment(ctx context.Context, tc *tmdb.Client, en domain.SeriesEnrichment, searchTitle string) ([]domain.BackgroundCandidate, error) {
 	if tc == nil {
 		return nil, nil
 	}

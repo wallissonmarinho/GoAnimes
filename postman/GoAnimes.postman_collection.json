@@ -187,7 +187,7 @@
                 "method": "GET",
                 "header": [],
                 "url": "{{baseUrl}}/api/v1/sync-status",
-                "description": "Inclui `errors`: linhas de falha do último sync (RSS, save, AniList, Jikan), persistidas no snapshot."
+                "description": "Inclui `errors`: linhas de falha do último sync (RSS, save, enrich), persistidas no snapshot."
               }
             }
           ]

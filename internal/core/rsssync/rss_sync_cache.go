@@ -2,15 +2,15 @@ package rsssync
 
 import "github.com/wallissonmarinho/GoAnimes/internal/core/domain"
 
-func cloneAniListCache(m map[string]domain.AniListSeriesEnrichment) map[string]domain.AniListSeriesEnrichment {
-	out := make(map[string]domain.AniListSeriesEnrichment)
+func cloneSeriesEnrichmentCache(m map[string]domain.SeriesEnrichment) map[string]domain.SeriesEnrichment {
+	out := make(map[string]domain.SeriesEnrichment)
 	for k, v := range m {
 		out[k] = v
 	}
 	return out
 }
 
-func pruneAniListCache(m map[string]domain.AniListSeriesEnrichment, series []domain.CatalogSeries) {
+func pruneSeriesEnrichmentCache(m map[string]domain.SeriesEnrichment, series []domain.CatalogSeries) {
 	want := make(map[string]struct{}, len(series))
 	for _, s := range series {
 		want[s.ID] = struct{}{}

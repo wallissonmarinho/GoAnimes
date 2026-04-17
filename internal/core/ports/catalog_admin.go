@@ -19,10 +19,10 @@ type CatalogAdmin interface {
 	Snapshot() domain.CatalogSnapshot
 	SeriesByID(seriesID string) (domain.CatalogSeries, bool)
 	ItemByID(id string) (domain.CatalogItem, bool)
-	AniListEnrichment(seriesID string) domain.AniListSeriesEnrichment
-	MergeAniListEnrichment(seriesID string, add domain.AniListSeriesEnrichment)
-	// ReplaceAniListSynopsis overwrites cached synopsis and the catalog row (e.g. optional machine translation).
-	ReplaceAniListSynopsis(seriesID, description string)
+	SeriesEnrichment(seriesID string) domain.SeriesEnrichment
+	MergeSeriesEnrichment(seriesID string, add domain.SeriesEnrichment)
+	// ReplaceSeriesSynopsis overwrites cached synopsis and the catalog row (e.g. optional machine translation).
+	ReplaceSeriesSynopsis(seriesID, description string)
 	// ReplaceStremioHeroBackground sets the resolved wide backdrop for Stremio (sync or lazy TMDB).
 	ReplaceStremioHeroBackground(seriesID, backgroundURL string)
 }

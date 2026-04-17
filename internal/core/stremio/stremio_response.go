@@ -29,6 +29,43 @@ func StremioVideoReleasedISO(raw string) string {
 	return "1970-01-01T00:00:00.000Z"
 }
 
+// PickStremioVideoReleasedISO prefers a metadata schedule string (e.g. Cinemeta) when set, otherwise RSS/torrent dates.
+// Stremio shows the green “upcoming” badge when released is in the future.
+func PickStremioVideoReleasedISO(scheduleAirISO, rssFallback string) string {
+	if s := strings.TrimSpace(scheduleAirISO); s != "" {
+		return StremioVideoReleasedISO(s)
+	}
+	return StremioVideoReleasedISO(rssFallback)
+}
+
+func parseStremioReleasedTime(s string) (time.Time, bool) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return time.Time{}, false
+	}
+	for _, layout := range []string{time.RFC3339Nano, time.RFC3339} {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t.UTC(), true
+		}
+	}
+	return time.Time{}, false
+}
+
+// StremioMetaBehaviorHintsIfScheduled returns behaviorHints like Cinemeta when any video has a future released time.
+func StremioMetaBehaviorHintsIfScheduled(videos []map[string]any) map[string]any {
+	now := time.Now().UTC()
+	for _, v := range videos {
+		s, _ := v["released"].(string)
+		if t, ok := parseStremioReleasedTime(s); ok && t.After(now) {
+			return map[string]any{
+				"defaultVideoId":     nil,
+				"hasScheduledVideos": true,
+			}
+		}
+	}
+	return nil
+}
+
 // SortStremioMetaVideosByReleased sorts video rows by "released" ascending.
 func SortStremioMetaVideosByReleased(videos []map[string]any) {
 	parse := func(s string) time.Time {
@@ -61,8 +98,8 @@ func SortStremioMetaVideosByReleased(videos []map[string]any) {
 	})
 }
 
-// AppendAniListCalendarVideo adds a synthetic video row for AniList-scheduled next episode.
-func AppendAniListCalendarVideo(seriesID string, season, nextEp int, en domain.AniListSeriesEnrichment, groups map[domain.EpSortKey][]domain.CatalogItem, videos *[]map[string]any) {
+// AppendEnrichmentCalendarVideo adds a synthetic video row for a scheduled next episode (calendar metadata).
+func AppendEnrichmentCalendarVideo(seriesID string, season, nextEp int, en domain.SeriesEnrichment, groups map[domain.EpSortKey][]domain.CatalogItem, videos *[]map[string]any) {
 	if !en.NextAiringFromAniList || en.NextAiringUnix <= 0 || nextEp <= 0 {
 		return
 	}
@@ -77,7 +114,7 @@ func AppendAniListCalendarVideo(seriesID string, season, nextEp int, en domain.A
 	if strings.TrimSpace(title) == "" {
 		title = "Episódio " + fmt.Sprintf("%d", nextEp)
 	}
-	title = title + " · agendado (AniList)"
+	title = title + " · agendado"
 	row := map[string]any{
 		"id":       vid,
 		"title":    title,
@@ -161,16 +198,28 @@ func StreamFromCatalogItem(it domain.CatalogItem, bingeGroup string, episodeDisp
 	return nil
 }
 
-// MergeAniListIntoStremioSeriesMeta merges enrichment into a Stremio meta map (mutates meta).
-func MergeAniListIntoStremioSeriesMeta(meta map[string]any, en domain.AniListSeriesEnrichment) {
+// MergeSeriesEnrichmentIntoStremioMeta merges enrichment into a Stremio meta map (mutates meta).
+func MergeSeriesEnrichmentIntoStremioMeta(meta map[string]any, en domain.SeriesEnrichment) {
 	if strings.TrimSpace(en.Description) != "" {
-		meta["description"] = domain.LocalizeAniListDescriptionPTBR(en.Description)
+		meta["description"] = domain.LocalizeEnrichedDescriptionPTBR(en.Description)
 	}
 	if len(en.Genres) > 0 {
 		meta["genres"] = domain.TranslateAnimeGenresToPTBR(en.Genres)
 	}
-	if en.StartYear > 0 {
+	if y := strings.TrimSpace(en.SeriesYearLabel); y != "" {
+		meta["year"] = y
+		meta["releaseInfo"] = y
+	} else if en.StartYear > 0 {
 		meta["releaseInfo"] = fmt.Sprintf("%d-", en.StartYear)
+	}
+	if r := strings.TrimSpace(en.SeriesReleasedISO); r != "" {
+		meta["released"] = r
+	}
+	if s := strings.TrimSpace(en.SeriesStatus); s != "" {
+		meta["status"] = s
+	}
+	if id := strings.TrimSpace(en.ImdbID); id != "" {
+		meta["imdb_id"] = id
 	}
 	if en.EpisodeLengthMin > 0 {
 		meta["runtime"] = fmt.Sprintf("~%d min por episódio", en.EpisodeLengthMin)

@@ -18,7 +18,7 @@ func TranslateSynopsisToPT(tr ports.SynopsisTranslator, log *slog.Logger, descri
 	if tr == nil {
 		return description
 	}
-	localized := domain.LocalizeAniListDescriptionPTBR(description)
+	localized := domain.LocalizeEnrichedDescriptionPTBR(description)
 	body, attr := domain.SplitSynopsisBodyAndAttribution(localized)
 	if body == "" {
 		return localized

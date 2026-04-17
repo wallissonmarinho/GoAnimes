@@ -39,8 +39,8 @@ type CatalogSnapshot struct {
 	FinishedAt      time.Time
 	Items           []CatalogItem
 	LastSyncErrors  []string                           // RSS/save/enrichment issues from last successful snapshot write; stored in items_json
-	Series          []CatalogSeries                    `json:"-"`
-	AniListBySeries map[string]AniListSeriesEnrichment `json:"-"` // persisted as anilist_series (+ legacy anilist_posters)
+	Series                     []CatalogSeries               `json:"-"`
+	SeriesEnrichmentBySeriesID map[string]SeriesEnrichment   `json:"-"` // persisted as anilist_series (+ legacy anilist_posters)
 	// RSSMainFeedBuildByURL fingerprints main feed URLs used for this snapshot (RSS poll compares live feeds to this).
 	RSSMainFeedBuildByURL map[string]RssMainFeedBuildFingerprint `json:"-"`
 }

@@ -25,7 +25,7 @@ func TestPickBestStremioBackground_prefersNear1280x720(t *testing.T) {
 }
 
 func TestResolveStremioHeroBackground_mergesTMDB(t *testing.T) {
-	en := domain.AniListSeriesEnrichment{
+	en := domain.SeriesEnrichment{
 		PosterURL:        "https://p.example/p.jpg",
 		AniListBannerURL: "https://al.example/banner.jpg",
 	}

@@ -216,7 +216,7 @@ func TorrentReleaseEpisodeSuffix(releaseTitle string) string {
 }
 
 // EpisodeListTitle is the Stremio row label without quality (qualities show as stream choices).
-// epTitles is optional AniList/Jikan episode titles keyed by episode number (season 1 assumed).
+// epTitles is optional cached episode titles keyed by episode number (season 1 assumed).
 // releaseHint is optional legacy text when epTitles is empty; Stremio list rows omit it so codec tags
 // from Erai titles do not replace human episode titles (quality stays on stream entries only).
 func EpisodeListTitle(episode int, isSpecial bool, epTitles map[int]string, releaseHint string) string {
@@ -238,7 +238,7 @@ func EpisodeListTitle(episode int, isSpecial bool, epTitles map[int]string, rele
 	return base
 }
 
-// EpisodeListTitleForGroup builds the Stremio episode row title (AniList/Jikan when present, else Episódio N only).
+// EpisodeListTitleForGroup builds the Stremio episode row title (cached title when present, else Episódio N only).
 func EpisodeListTitleForGroup(episode int, special bool, epTitles map[int]string, group []CatalogItem) string {
 	_ = group
 	return EpisodeListTitle(episode, special, epTitles, "")
@@ -395,9 +395,9 @@ func ItemsForEpisodeVideoID(items []CatalogItem, videoID string) []CatalogItem {
 	return out
 }
 
-// AniListSearchQueryFromItems returns the RSS-parsed series title (best match for AniList/Jikan search).
+// ExternalSearchQueryFromItems returns the RSS-parsed series title for external metadata lookup.
 // Display name may be native Japanese from enrichment; items keep the Erai string used for lookup.
-func AniListSearchQueryFromItems(items []CatalogItem, seriesID string) string {
+func ExternalSearchQueryFromItems(items []CatalogItem, seriesID string) string {
 	for _, it := range items {
 		if it.SeriesID != seriesID {
 			continue
@@ -431,6 +431,8 @@ var eraiSeasonSuffixRes = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)\s+Part\s+(\d{1,2})\s*$`),
 	regexp.MustCompile(`(?i)\s+Cour\s+(\d{1,2})\s*$`),
 }
+
+var eraiBatchRangeRe = regexp.MustCompile(`(?i)-\s*\d{1,4}\s*~\s*\d{1,4}\b`)
 
 // ParseEraiReleaseTitle parses Erai-style RSS titles into series name and episode.
 func ParseEraiReleaseTitle(title string) (seriesName string, episode int, isSpecial, ok bool) {
@@ -474,6 +476,35 @@ func EraiSeasonFromSeriesName(seriesPart string) (season int) {
 		return n
 	}
 	return 1
+}
+
+// IsBatchReleaseTitle reports whether an Erai title is a multi-episode batch release.
+func IsBatchReleaseTitle(title string) bool {
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return false
+	}
+	low := strings.ToLower(title)
+	if strings.Contains(low, "[batch]") {
+		return true
+	}
+	return eraiBatchRangeRe.MatchString(title)
+}
+
+// DropBatchCatalogItems removes batch/range releases (e.g. "01 ~ 10") from the incoming episode list.
+func DropBatchCatalogItems(items []CatalogItem) (filtered []CatalogItem, dropped int) {
+	if len(items) == 0 {
+		return nil, 0
+	}
+	filtered = make([]CatalogItem, 0, len(items))
+	for _, it := range items {
+		if IsBatchReleaseTitle(it.Name) {
+			dropped++
+			continue
+		}
+		filtered = append(filtered, it)
+	}
+	return filtered, dropped
 }
 
 var qualityHintRe = regexp.MustCompile(`\[(720p|1080p|SD)\b`)
@@ -580,20 +611,20 @@ func SeriesPosterURL(seriesName string) string {
 	return "https://placehold.co/480x720/2a2a35/eeeeee/png?text=" + url.QueryEscape(label)
 }
 
-// ApplyAniListEnrichmentToSeries copies cached AniList/Jikan fields onto catalog rows (Discover list).
-func ApplyAniListEnrichmentToSeries(snap *CatalogSnapshot) {
-	if snap == nil || len(snap.Series) == 0 || len(snap.AniListBySeries) == 0 {
+// ApplySeriesEnrichmentToSeries copies cached enrichment fields onto catalog rows (Discover list).
+func ApplySeriesEnrichmentToSeries(snap *CatalogSnapshot) {
+	if snap == nil || len(snap.Series) == 0 || len(snap.SeriesEnrichmentBySeriesID) == 0 {
 		return
 	}
 	for i := range snap.Series {
-		if en, ok := snap.AniListBySeries[snap.Series[i].ID]; ok {
+		if en, ok := snap.SeriesEnrichmentBySeriesID[snap.Series[i].ID]; ok {
 			ApplyEnrichmentToCatalogSeries(&snap.Series[i], en)
 		}
 	}
 }
 
-// ApplyEnrichmentToCatalogSeries merges cached AniList/Jikan metadata into one catalog row.
-func ApplyEnrichmentToCatalogSeries(s *CatalogSeries, en AniListSeriesEnrichment) {
+// ApplyEnrichmentToCatalogSeries merges cached enrichment metadata into one catalog row.
+func ApplyEnrichmentToCatalogSeries(s *CatalogSeries, en SeriesEnrichment) {
 	if s == nil {
 		return
 	}
@@ -604,12 +635,14 @@ func ApplyEnrichmentToCatalogSeries(s *CatalogSeries, en AniListSeriesEnrichment
 		s.Name = t
 	}
 	if d := strings.TrimSpace(en.Description); d != "" {
-		s.Description = LocalizeAniListDescriptionPTBR(d)
+		s.Description = LocalizeEnrichedDescriptionPTBR(d)
 	}
 	if len(en.Genres) > 0 {
 		s.Genres = TranslateAnimeGenresToPTBR(append([]string(nil), en.Genres...))
 	}
-	if en.StartYear > 0 {
+	if y := strings.TrimSpace(en.SeriesYearLabel); y != "" {
+		s.ReleaseInfo = y
+	} else if en.StartYear > 0 {
 		s.ReleaseInfo = fmt.Sprintf("%d-", en.StartYear)
 	}
 }

@@ -43,12 +43,12 @@ func (w *GoaiAuditWorker) Run(ctx context.Context) {
 		}
 		needSeries := rec == nil || rec.NeedsReaudit || rec.PromptVersion < domain.GoaiAuditPromptVersion
 		if needSeries {
-			sample, err := w.Repo.SampleItemTitleForSeries(ctx, sid)
+			sampleCtx, err := w.Repo.SampleItemContextForSeries(ctx, sid)
 			if err != nil {
-				w.Log.Error("goai audit: sample title", slog.String("series_id", sid), slog.Any("err", err))
+				w.Log.Error("goai audit: sample series context", slog.String("series_id", sid), slog.Any("err", err))
 				return
 			}
-			if sample == "" {
+			if sampleCtx == nil || sampleCtx.Title == "" {
 				w.Log.Debug("goai audit: skip series (no item title)", slog.String("series_id", sid))
 				continue
 			}
@@ -63,7 +63,12 @@ func (w *GoaiAuditWorker) Run(ctx context.Context) {
 				return
 			}
 			req := domain.GoaiSeriesAuditRequest{
-				TorrentTitle:         sample,
+				TorrentTitle:         sampleCtx.Title,
+				TorrentLink:          sampleCtx.TorrentURL,
+				FeedPublishedAt:      sampleCtx.Released,
+				ParsedSeasonHint:     sampleCtx.Season,
+				ParsedEpisodeHint:    sampleCtx.Episode,
+				ParsedIsSpecialHint:  sampleCtx.IsSpecial,
 				SeriesName:           sname,
 				SeriesID:             sid,
 				ExistingTVDBSeriesID: tvdb,
@@ -100,10 +105,14 @@ func (w *GoaiAuditWorker) Run(ctx context.Context) {
 			if ctx.Err() != nil {
 				return
 			}
-			itemTitle, err := w.Repo.SampleItemTitleForRelease(ctx, k)
+			itemCtx, err := w.Repo.SampleItemContextForRelease(ctx, k)
 			if err != nil {
-				w.Log.Error("goai audit: sample release title", slog.Any("key", k), slog.Any("err", err))
+				w.Log.Error("goai audit: sample release context", slog.Any("key", k), slog.Any("err", err))
 				return
+			}
+			itemTitle := ""
+			if itemCtx != nil {
+				itemTitle = itemCtx.Title
 			}
 			if itemTitle == "" {
 				itemTitle = sampleFallbackTitle(ctx, w.Repo, sid)
@@ -115,6 +124,8 @@ func (w *GoaiAuditWorker) Run(ctx context.Context) {
 			}
 			req := domain.GoaiReleaseAuditRequest{
 				TorrentTitle:   itemTitle,
+				TorrentLink:    releaseField(itemCtx, func(x *domain.GoaiAuditItemContext) string { return x.TorrentURL }),
+				FeedPublishedAt: releaseField(itemCtx, func(x *domain.GoaiAuditItemContext) string { return x.Released }),
 				SeriesName:     sname,
 				SeriesID:       sid,
 				CurrentSeason:  k.Season,
@@ -144,4 +155,12 @@ func (w *GoaiAuditWorker) Run(ctx context.Context) {
 func sampleFallbackTitle(ctx context.Context, repo ports.GoAIAuditRepository, seriesID string) string {
 	t, _ := repo.SampleItemTitleForSeries(ctx, seriesID)
 	return t
+}
+
+func releaseField[T any](ctx *domain.GoaiAuditItemContext, pick func(*domain.GoaiAuditItemContext) T) T {
+	var zero T
+	if ctx == nil {
+		return zero
+	}
+	return pick(ctx)
 }

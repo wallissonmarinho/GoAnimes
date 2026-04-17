@@ -1,15 +1,20 @@
 package domain
 
 import (
+	"strconv"
 	"strings"
-	"time"
 )
 
-// AniListSeriesEnrichment is cached Stremio-facing metadata from AniList (per series id).
-type AniListSeriesEnrichment struct {
+// SeasonEpisodeScheduleKey is the lookup key for EpisodeReleasedBySeasonEpisode (Cinemeta season + in-season number).
+func SeasonEpisodeScheduleKey(season, episodeInSeason int) string {
+	return strconv.Itoa(season) + ":" + strconv.Itoa(episodeInSeason)
+}
+
+// SeriesEnrichment is cached Stremio-facing metadata per series id.
+type SeriesEnrichment struct {
 	PosterURL     string `json:"poster,omitempty"`
 	BackgroundURL string `json:"background,omitempty"`
-	// AniListBannerURL is the wide banner from AniList (if any), used with Kitsu/TMDB to pick a Stremio hero image.
+	// AniListBannerURL keeps the existing serialized field name for compatibility.
 	AniListBannerURL string `json:"al_banner,omitempty"`
 	// StremioHeroBackgroundURL is the chosen wide backdrop for Stremio meta.background (1280×720-oriented pick incl. TMDB).
 	StremioHeroBackgroundURL string   `json:"hero_bg,omitempty"`
@@ -20,68 +25,24 @@ type AniListSeriesEnrichment struct {
 	TrailerYouTubeID         string   `json:"trailer_yt,omitempty"`
 	TitlePreferred           string   `json:"title_pref,omitempty"`   // romaji / English / ASCII userPreferred (Stremio catalog listing)
 	TitleNative              string   `json:"title_native,omitempty"` // Japanese (optional; meta detail)
-	MalID                    int      `json:"mal_id,omitempty"`       // MyAnimeList id (AniList idMal / Jikan)
-	ImdbID                   string   `json:"imdb,omitempty"`         // tt… when Jikan/MAL lists IMDb (TMDB find)
-	KitsuAnimeID             string   `json:"kitsu_id,omitempty"`     // Kitsu JSON:API anime id (episodes list)
+	MalID                    int      `json:"mal_id,omitempty"`       // MyAnimeList id
+	ImdbID                   string   `json:"imdb,omitempty"`         // tt… id
 	// TvdbSeriesID is TheTVDB v4 series id (remote IMDb search + episode/artwork APIs).
-	TvdbSeriesID int `json:"tvdb_id,omitempty"`
-	// AniDBAid is AniDB anime id (from AniList externalLinks); used with registered HTTP API client for episode titles.
-	AniDBAid int `json:"anidb_aid,omitempty"`
-	// AniDBLastFetchedUnix avoids repeat request=anime calls within TTL (AniDB policy: heavy caching).
-	AniDBLastFetchedUnix int64          `json:"anidb_fetch_unix,omitempty"`
-	AniListSearchVer     int            `json:"al_search_ver,omitempty"` // bump forces refetch after search logic changes
-	EpisodeTitleByNum    map[int]string `json:"ep_titles"`
-	// EpisodeThumbnailByNum is Stremio video thumbnail per episode number (AniList streaming / Kitsu); merge fills missing
-	// keys and replaces empty placeholders so later sources (Jikan / Kitsu / AniDB) can patch per-episode gaps.
+	TvdbSeriesID     int `json:"tvdb_id,omitempty"`
+	AniListSearchVer int `json:"al_search_ver,omitempty"` // bump forces refetch after search logic changes
+	// SeriesStatus, SeriesReleasedISO, SeriesYearLabel mirror Cinemeta/Stremio meta (when available).
+	SeriesStatus      string         `json:"series_status,omitempty"`
+	SeriesReleasedISO string         `json:"series_released,omitempty"`
+	SeriesYearLabel   string         `json:"series_year,omitempty"`
+	EpisodeTitleByNum map[int]string `json:"ep_titles"`
+	// EpisodeThumbnailByNum is Stremio video thumbnail per episode number.
 	EpisodeThumbnailByNum map[int]string `json:"ep_thumbs,omitempty"`
-	// NextAiring* from AniList nextAiringEpisode (Stremio Calendar). NextAiringFromAniList=true means the last
-	// AniList fetch set these values (including zeros when nothing is scheduled); Jikan/Kitsu merges must not overwrite.
+	// EpisodeReleasedBySeasonEpisode maps "season:episodeInSeason" (e.g. "1:5") to an ISO 8601 instant from Cinemeta (Stremio "upcoming" badge uses future released).
+	EpisodeReleasedBySeasonEpisode map[string]string `json:"ep_released_se,omitempty"`
+	// NextAiring* keeps scheduled calendar metadata. NextAiringFromAniList keeps the serialized field name.
 	NextAiringUnix        int64 `json:"next_air_unix,omitempty"`    // Unix seconds; 0 = none
 	NextAiringEpisode     int   `json:"next_air_ep,omitempty"`      // next broadcast episode number
 	NextAiringFromAniList bool  `json:"next_air_from_al,omitempty"` // merge: only update airing when true on add
-}
-
-// AniListNeedsRefetch is true when we should call AniList again (missing data or legacy poster-only row).
-func AniListNeedsRefetch(en AniListSeriesEnrichment) bool {
-	if en.AniListSearchVer < AniListSearcherVersion {
-		return true
-	}
-	if strings.TrimSpace(en.PosterURL) == "" {
-		return true
-	}
-	if strings.TrimSpace(en.Description) == "" {
-		return true
-	}
-	// nil = snapshot row from before episode titles were stored; fetch once to populate streamingEpisodes.
-	if en.EpisodeTitleByNum == nil {
-		return true
-	}
-	// Refresh schedule after the announced air time so Calendar gets the next slot.
-	if en.NextAiringFromAniList && en.NextAiringUnix > 0 && time.Now().Unix() >= en.NextAiringUnix+3600 {
-		return true
-	}
-	return false
-}
-
-// EnrichmentCouldUseJikan is true when key Stremio fields are still empty after AniList (Jikan may fill them).
-func EnrichmentCouldUseJikan(en AniListSeriesEnrichment) bool {
-	if strings.TrimSpace(en.Description) == "" {
-		return true
-	}
-	if strings.TrimSpace(en.PosterURL) == "" {
-		return true
-	}
-	if len(en.Genres) == 0 {
-		return true
-	}
-	if en.StartYear == 0 {
-		return true
-	}
-	// Treat map-with-only-empty values like "no titles" so Jikan can still run.
-	if !episodeTitleMapHasAnyNonEmpty(en.EpisodeTitleByNum) {
-		return true
-	}
-	return false
 }
 
 // episodeTitleMapHasAnyNonEmpty is true if m has at least one non-blank title.
@@ -98,12 +59,12 @@ func episodeTitleMapHasAnyNonEmpty(m map[int]string) bool {
 }
 
 // EnrichmentHasAnyEpisodeTitle is true when at least one episode number has a non-blank title (after trim).
-func EnrichmentHasAnyEpisodeTitle(en AniListSeriesEnrichment) bool {
+func EnrichmentHasAnyEpisodeTitle(en SeriesEnrichment) bool {
 	return episodeTitleMapHasAnyNonEmpty(en.EpisodeTitleByNum)
 }
 
-// MergeAniListEnrichment fills empty fields in stored with values from add (e.g. DB row + lazy AniList fetch).
-func MergeAniListEnrichment(stored, add AniListSeriesEnrichment) AniListSeriesEnrichment {
+// MergeSeriesEnrichment fills empty fields in stored with values from add (e.g. DB row + lazy Cinemeta fetch).
+func MergeSeriesEnrichment(stored, add SeriesEnrichment) SeriesEnrichment {
 	out := stored
 	if strings.TrimSpace(out.Description) == "" {
 		out.Description = strings.TrimSpace(add.Description)
@@ -129,17 +90,8 @@ func MergeAniListEnrichment(stored, add AniListSeriesEnrichment) AniListSeriesEn
 	if strings.TrimSpace(out.ImdbID) == "" {
 		out.ImdbID = strings.TrimSpace(add.ImdbID)
 	}
-	if strings.TrimSpace(out.KitsuAnimeID) == "" {
-		out.KitsuAnimeID = strings.TrimSpace(add.KitsuAnimeID)
-	}
 	if out.TvdbSeriesID == 0 && add.TvdbSeriesID > 0 {
 		out.TvdbSeriesID = add.TvdbSeriesID
-	}
-	if out.AniDBAid == 0 && add.AniDBAid > 0 {
-		out.AniDBAid = add.AniDBAid
-	}
-	if add.AniDBLastFetchedUnix > out.AniDBLastFetchedUnix {
-		out.AniDBLastFetchedUnix = add.AniDBLastFetchedUnix
 	}
 	if out.StartYear == 0 && add.StartYear > 0 {
 		out.StartYear = add.StartYear
@@ -155,6 +107,15 @@ func MergeAniListEnrichment(stored, add AniListSeriesEnrichment) AniListSeriesEn
 	}
 	if strings.TrimSpace(out.TitleNative) == "" {
 		out.TitleNative = strings.TrimSpace(add.TitleNative)
+	}
+	if strings.TrimSpace(out.SeriesStatus) == "" {
+		out.SeriesStatus = strings.TrimSpace(add.SeriesStatus)
+	}
+	if strings.TrimSpace(out.SeriesReleasedISO) == "" {
+		out.SeriesReleasedISO = strings.TrimSpace(add.SeriesReleasedISO)
+	}
+	if strings.TrimSpace(out.SeriesYearLabel) == "" {
+		out.SeriesYearLabel = strings.TrimSpace(add.SeriesYearLabel)
 	}
 	if add.AniListSearchVer > out.AniListSearchVer {
 		out.AniListSearchVer = add.AniListSearchVer
@@ -187,6 +148,18 @@ func MergeAniListEnrichment(stored, add AniListSeriesEnrichment) AniListSeriesEn
 			if !ok || strings.TrimSpace(cur) == "" {
 				out.EpisodeThumbnailByNum[k] = v
 			}
+		}
+	}
+	if add.EpisodeReleasedBySeasonEpisode != nil {
+		if out.EpisodeReleasedBySeasonEpisode == nil {
+			out.EpisodeReleasedBySeasonEpisode = make(map[string]string)
+		}
+		for k, v := range add.EpisodeReleasedBySeasonEpisode {
+			v = strings.TrimSpace(v)
+			if v == "" {
+				continue
+			}
+			out.EpisodeReleasedBySeasonEpisode[k] = v
 		}
 	}
 	if add.NextAiringFromAniList {

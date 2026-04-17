@@ -5,14 +5,14 @@ import (
 )
 
 // MergeSnapshotSeriesBySharedMalID collapses multiple Stremio series buckets that share the same
-// MyAnimeList id (AniList idMal / enrichment MalID) into one canonical series id.
+// MyAnimeList id (enrichment MalID) into one canonical series id.
 //
-// Items are remapped; AniListBySeries rows are merged with MergeAniListEnrichment in sorted key order
+// Items are remapped; SeriesEnrichmentBySeriesID rows are merged with MergeSeriesEnrichment in sorted key order
 // for determinism. Series with MalID==0 or a unique MalID are left unchanged.
 //
 // Canonical id is the series id with the most catalog items; ties break by lexicographically smallest id.
 func MergeSnapshotSeriesBySharedMalID(snap *CatalogSnapshot) {
-	if snap == nil || len(snap.Items) == 0 || len(snap.AniListBySeries) == 0 {
+	if snap == nil || len(snap.Items) == 0 || len(snap.SeriesEnrichmentBySeriesID) == 0 {
 		return
 	}
 
@@ -26,7 +26,7 @@ func MergeSnapshotSeriesBySharedMalID(snap *CatalogSnapshot) {
 	// malID -> distinct series IDs that have items and MalID set
 	malToSeries := make(map[int]map[string]struct{})
 	for id := range seriesIDs {
-		en := snap.AniListBySeries[id]
+		en := snap.SeriesEnrichmentBySeriesID[id]
 		if en.MalID <= 0 {
 			continue
 		}
@@ -64,22 +64,22 @@ func MergeSnapshotSeriesBySharedMalID(snap *CatalogSnapshot) {
 		}
 	}
 
-	oldKeys := make([]string, 0, len(snap.AniListBySeries))
-	for k := range snap.AniListBySeries {
+	oldKeys := make([]string, 0, len(snap.SeriesEnrichmentBySeriesID))
+	for k := range snap.SeriesEnrichmentBySeriesID {
 		oldKeys = append(oldKeys, k)
 	}
 	sort.Strings(oldKeys)
 
-	merged := make(map[string]AniListSeriesEnrichment, len(snap.AniListBySeries))
+	merged := make(map[string]SeriesEnrichment, len(snap.SeriesEnrichmentBySeriesID))
 	for _, oldID := range oldKeys {
-		en := snap.AniListBySeries[oldID]
+		en := snap.SeriesEnrichmentBySeriesID[oldID]
 		canon := oldID
 		if c, ok := remap[oldID]; ok {
 			canon = c
 		}
-		merged[canon] = MergeAniListEnrichment(merged[canon], en)
+		merged[canon] = MergeSeriesEnrichment(merged[canon], en)
 	}
-	snap.AniListBySeries = merged
+	snap.SeriesEnrichmentBySeriesID = merged
 
 	// Rebuild series rows from items only — do not call AssignSeriesFields here or it would
 	// recompute SeriesID from RSS titles and undo the MalID merge.

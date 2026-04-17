@@ -9,12 +9,12 @@ import (
 )
 
 func TestMetaUsesTheTVDBData(t *testing.T) {
-	require.False(t, MetaUsesTheTVDBData(domain.AniListSeriesEnrichment{}))
-	require.True(t, MetaUsesTheTVDBData(domain.AniListSeriesEnrichment{TvdbSeriesID: 1}))
-	require.True(t, MetaUsesTheTVDBData(domain.AniListSeriesEnrichment{
+	require.False(t, MetaUsesTheTVDBData(domain.SeriesEnrichment{}))
+	require.True(t, MetaUsesTheTVDBData(domain.SeriesEnrichment{TvdbSeriesID: 1}))
+	require.True(t, MetaUsesTheTVDBData(domain.SeriesEnrichment{
 		StremioHeroBackgroundURL: "https://artworks.thetvdb.com/banners/fanart/x.jpg",
 	}))
-	require.True(t, MetaUsesTheTVDBData(domain.AniListSeriesEnrichment{
+	require.True(t, MetaUsesTheTVDBData(domain.SeriesEnrichment{
 		EpisodeThumbnailByNum: map[int]string{1: "https://artworks.thetvdb.com/ep/1.jpg"},
 	}))
 }

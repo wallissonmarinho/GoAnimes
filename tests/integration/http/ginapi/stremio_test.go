@@ -40,7 +40,7 @@ func TestStremioRoutes_catalogMetaStream(t *testing.T) {
 	}
 	domain.EnsureSnapshotGrouped(&snap)
 	serID := snap.Series[0].ID
-	snap.AniListBySeries = map[string]domain.AniListSeriesEnrichment{
+	snap.SeriesEnrichmentBySeriesID = map[string]domain.SeriesEnrichment{
 		serID: {
 			PosterURL:      "https://cdn.example/poster.jpg",
 			Description:    "A test synopsis for catalog.",
@@ -51,7 +51,7 @@ func TestStremioRoutes_catalogMetaStream(t *testing.T) {
 			EpisodeTitleByNum: map[int]string{},
 		},
 	}
-	domain.ApplyAniListEnrichmentToSeries(&snap)
+	domain.ApplySeriesEnrichmentToSeries(&snap)
 	store.Set(snap)
 	vid := domain.EpisodeVideoStremioID(serID, 1, 1, false)
 

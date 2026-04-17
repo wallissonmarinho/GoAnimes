@@ -92,6 +92,10 @@ func (s *RSSSyncService) collectMergedCatalogItems(ctx context.Context, sources 
 		rssBatch = append(rssBatch, subItems...)
 	}
 eraiPerAnimeDone:
+	rssBatch, droppedBatch := domain.DropBatchCatalogItems(rssBatch)
+	if droppedBatch > 0 {
+		s.log.Info("catalog merge: dropped batch releases", slog.Int("dropped", droppedBatch))
+	}
 	s.log.Info("erai per-anime rss",
 		slog.Int("slugs_queued", len(eraiJobs)),
 		slog.Int("fetched", perAnimeOK),

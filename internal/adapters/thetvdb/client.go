@@ -207,7 +207,7 @@ type episodePage struct {
 }
 
 // EpisodeMapsOfficial returns episode titles and thumbnails keyed by flat episode number (season 1 only),
-// matching GoAnimes AniList/Jikan episode maps.
+// matching GoAnimes cached episode maps.
 func (c *Client) EpisodeMapsOfficial(ctx context.Context, seriesID int) (titles, thumbs map[int]string, err error) {
 	if seriesID <= 0 {
 		return nil, nil, nil

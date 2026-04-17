@@ -22,7 +22,7 @@ func (h *handlers) getInspectCatalog(c *gin.Context) {
 	snap := h.deps.Catalog.Snapshot()
 	seriesOut := make([]gin.H, 0, len(snap.Series))
 	for _, s := range snap.Series {
-		en := snap.AniListBySeries[s.ID]
+		en := snap.SeriesEnrichmentBySeriesID[s.ID]
 		groups := domain.GroupItemsByEpisode(snap.Items, s.ID)
 		keys := domain.OrderedEpisodeKeys(groups)
 		bySeason := make(map[int]int)
@@ -46,14 +46,11 @@ func (h *handlers) getInspectCatalog(c *gin.Context) {
 				"poster_url":           en.PosterURL,
 				"background_url":       en.BackgroundURL,
 				"stremio_hero_bg":      en.StremioHeroBackgroundURL,
-				"imdb_id":                  en.ImdbID,
-				"kitsu_id":                 en.KitsuAnimeID,
-				"anidb_aid":                en.AniDBAid,
-				"anidb_last_fetch_unix":    en.AniDBLastFetchedUnix,
-				"description_len":          len(strings.TrimSpace(en.Description)),
-				"genres":                   en.Genres,
-				"start_year":               en.StartYear,
-				"episode_length_min":       en.EpisodeLengthMin,
+				"imdb_id":             en.ImdbID,
+				"description_len":     len(strings.TrimSpace(en.Description)),
+				"genres":              en.Genres,
+				"start_year":          en.StartYear,
+				"episode_length_min":  en.EpisodeLengthMin,
 				"episode_titles_count":     len(en.EpisodeTitleByNum),
 				"episode_thumbnails_count": len(en.EpisodeThumbnailByNum),
 			},
@@ -100,8 +97,8 @@ func (h *handlers) getInspectSeries(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "series not found", "id": id})
 		return
 	}
-	en := snap.AniListBySeries[id]
-	searchHint := domain.AniListSearchQueryFromItems(snap.Items, id)
+	en := snap.SeriesEnrichmentBySeriesID[id]
+	searchHint := domain.ExternalSearchQueryFromItems(snap.Items, id)
 
 	groups := domain.GroupItemsByEpisode(snap.Items, id)
 	keys := domain.OrderedEpisodeKeys(groups)

@@ -54,6 +54,30 @@ func (r *workerTestRepo) SampleItemTitleForRelease(ctx context.Context, key doma
 	return "ep title", nil
 }
 
+func (r *workerTestRepo) SampleItemContextForSeries(ctx context.Context, seriesID string) (*domain.GoaiAuditItemContext, error) {
+	title, _ := r.SampleItemTitleForSeries(ctx, seriesID)
+	return &domain.GoaiAuditItemContext{
+		Title:      title,
+		TorrentURL: "https://example.invalid/sample.torrent",
+		Released:   "2026-04-11T14:37:28Z",
+		Season:     1,
+		Episode:    38,
+		IsSpecial:  false,
+	}, nil
+}
+
+func (r *workerTestRepo) SampleItemContextForRelease(ctx context.Context, key domain.GoaiReleaseKey) (*domain.GoaiAuditItemContext, error) {
+	title, _ := r.SampleItemTitleForRelease(ctx, key)
+	return &domain.GoaiAuditItemContext{
+		Title:      title,
+		TorrentURL: "https://example.invalid/release.torrent",
+		Released:   "2026-04-11T14:37:28Z",
+		Season:     key.Season,
+		Episode:    key.Episode,
+		IsSpecial:  key.IsSpecial,
+	}, nil
+}
+
 func (r *workerTestRepo) ListSeriesAuditsForAdmin(ctx context.Context, params domain.GoaiAuditListParams) ([]domain.GoaiSeriesAuditListItem, error) {
 	panic("unexpected ListSeriesAuditsForAdmin")
 }

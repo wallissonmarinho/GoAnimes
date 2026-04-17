@@ -8,7 +8,7 @@ import (
 )
 
 // TVDBBackdropCandidatesForEnrichment loads TheTVDB fanart/backdrop URLs when TvdbSeriesID or IMDb id is known.
-func TVDBBackdropCandidatesForEnrichment(ctx context.Context, tc *thetvdb.Client, en domain.AniListSeriesEnrichment) ([]domain.BackgroundCandidate, error) {
+func TVDBBackdropCandidatesForEnrichment(ctx context.Context, tc *thetvdb.Client, en domain.SeriesEnrichment) ([]domain.BackgroundCandidate, error) {
 	if tc == nil {
 		return nil, nil
 	}

@@ -20,10 +20,15 @@ func TestNormalizeExternalAnimeSearchQuery(t *testing.T) {
 	require.Equal(t, "", domain.NormalizeExternalAnimeSearchQuery("   "))
 }
 
-func TestAniListSearchQueryCandidates(t *testing.T) {
+func TestExternalSearchQueryCandidates(t *testing.T) {
 	long := "Youkoso Jitsuryoku Shijou Shugi no Kyoushitsu e 4th Season: 2-nensei-hen 1 Gakki"
-	c := domain.AniListSearchQueryCandidates(long)
+	c := domain.ExternalSearchQueryCandidates(long)
 	require.GreaterOrEqual(t, len(c), 2)
 	require.Equal(t, long, c[0])
 	require.Equal(t, "Youkoso Jitsuryoku Shijou Shugi no Kyoushitsu e 4th Season", c[1])
+}
+
+func TestExternalMetadataScoringTokens(t *testing.T) {
+	require.Equal(t, []string{"dorohedoro"}, domain.ExternalMetadataScoringTokens("Dorohedoro Season 2"))
+	require.Equal(t, []string{"solo", "leveling"}, domain.ExternalMetadataScoringTokens("Solo Leveling Season 2"))
 }

@@ -83,16 +83,16 @@ func (s *CatalogAdminService) ItemByID(id string) (domain.CatalogItem, bool) {
 	return s.store.ItemByID(id)
 }
 
-func (s *CatalogAdminService) AniListEnrichment(seriesID string) domain.AniListSeriesEnrichment {
-	return s.store.AniListEnrichment(seriesID)
+func (s *CatalogAdminService) SeriesEnrichment(seriesID string) domain.SeriesEnrichment {
+	return s.store.SeriesEnrichment(seriesID)
 }
 
-func (s *CatalogAdminService) MergeAniListEnrichment(seriesID string, add domain.AniListSeriesEnrichment) {
-	s.store.MergeAniListEnrichment(seriesID, add)
+func (s *CatalogAdminService) MergeSeriesEnrichment(seriesID string, add domain.SeriesEnrichment) {
+	s.store.MergeSeriesEnrichment(seriesID, add)
 }
 
-func (s *CatalogAdminService) ReplaceAniListSynopsis(seriesID, description string) {
-	s.store.ReplaceAniListSynopsis(seriesID, description)
+func (s *CatalogAdminService) ReplaceSeriesSynopsis(seriesID, description string) {
+	s.store.ReplaceSeriesSynopsis(seriesID, description)
 }
 
 func (s *CatalogAdminService) ReplaceStremioHeroBackground(seriesID, backgroundURL string) {

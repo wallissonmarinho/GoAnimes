@@ -126,7 +126,7 @@ type catalogPayload struct {
 	Items            []domain.CatalogItem                          `json:"items"`
 	LastSyncErrors   []string                                      `json:"last_sync_errors,omitempty"`
 	AniListPosters   map[string]string                             `json:"anilist_posters,omitempty"` // legacy: poster URL only
-	AniListSeries    map[string]domain.AniListSeriesEnrichment     `json:"anilist_series,omitempty"`
+	AniListSeries    map[string]domain.SeriesEnrichment            `json:"anilist_series,omitempty"`
 	RSSMainFeedBuild map[string]domain.RssMainFeedBuildFingerprint `json:"rss_main_feed_build,omitempty"`
 }
 
@@ -137,7 +137,7 @@ func marshalCatalogPayload(snap domain.CatalogSnapshot, omitAniListSeries bool) 
 		RSSMainFeedBuild: snap.RSSMainFeedBuildByURL,
 	}
 	if !omitAniListSeries {
-		p.AniListSeries = snap.AniListBySeries
+		p.AniListSeries = snap.SeriesEnrichmentBySeriesID
 	}
 	if len(p.LastSyncErrors) == 0 {
 		p.LastSyncErrors = nil
@@ -161,7 +161,7 @@ func unmarshalCatalogPayload(raw []byte) (domain.CatalogSnapshot, error) {
 		if err := json.Unmarshal(raw, &snap.Items); err != nil {
 			return domain.CatalogSnapshot{}, err
 		}
-		snap.AniListBySeries = make(map[string]domain.AniListSeriesEnrichment)
+		snap.SeriesEnrichmentBySeriesID = make(map[string]domain.SeriesEnrichment)
 		snap.RSSMainFeedBuildByURL = make(map[string]domain.RssMainFeedBuildFingerprint)
 		return snap, nil
 	}
@@ -171,10 +171,10 @@ func unmarshalCatalogPayload(raw []byte) (domain.CatalogSnapshot, error) {
 	}
 	snap.Items = p.Items
 	snap.LastSyncErrors = append([]string(nil), p.LastSyncErrors...)
-	snap.AniListBySeries = p.AniListSeries
+	snap.SeriesEnrichmentBySeriesID = p.AniListSeries
 	snap.RSSMainFeedBuildByURL = p.RSSMainFeedBuild
-	if snap.AniListBySeries == nil {
-		snap.AniListBySeries = make(map[string]domain.AniListSeriesEnrichment)
+	if snap.SeriesEnrichmentBySeriesID == nil {
+		snap.SeriesEnrichmentBySeriesID = make(map[string]domain.SeriesEnrichment)
 	}
 	if snap.RSSMainFeedBuildByURL == nil {
 		snap.RSSMainFeedBuildByURL = make(map[string]domain.RssMainFeedBuildFingerprint)
@@ -185,11 +185,11 @@ func unmarshalCatalogPayload(raw []byte) (domain.CatalogSnapshot, error) {
 		if url == "" {
 			continue
 		}
-		e := snap.AniListBySeries[k]
+		e := snap.SeriesEnrichmentBySeriesID[k]
 		if e.PosterURL == "" {
 			e.PosterURL = url
 		}
-		snap.AniListBySeries[k] = e
+		snap.SeriesEnrichmentBySeriesID[k] = e
 	}
 	return snap, nil
 }

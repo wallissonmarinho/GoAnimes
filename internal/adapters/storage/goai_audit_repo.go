@@ -203,56 +203,90 @@ func (r *catalogRepo) ListUnauditedReleaseKeysForSeries(ctx context.Context, ser
 }
 
 func (r *catalogRepo) SampleItemTitleForSeries(ctx context.Context, seriesID string) (string, error) {
-	row := r.ex.QueryRowContext(ctx, `
-		SELECT name FROM catalog_item WHERE series_id = ? ORDER BY released DESC LIMIT 1`, seriesID)
-	if r.pg {
-		row = r.ex.QueryRowContext(ctx, `
-			SELECT name FROM catalog_item WHERE series_id = $1 ORDER BY released DESC NULLS LAST LIMIT 1`, seriesID)
-	}
-	var name string
-	if err := row.Scan(&name); err != nil {
-		if err == sql.ErrNoRows {
-			return "", nil
-		}
+	ctxItem, err := r.SampleItemContextForSeries(ctx, seriesID)
+	if err != nil || ctxItem == nil {
 		return "", err
 	}
-	return name, nil
+	return ctxItem.Title, nil
 }
 
 func (r *catalogRepo) SampleItemTitleForRelease(ctx context.Context, key domain.GoaiReleaseKey) (string, error) {
+	ctxItem, err := r.SampleItemContextForRelease(ctx, key)
+	if err != nil || ctxItem == nil {
+		return "", err
+	}
+	return ctxItem.Title, nil
+}
+
+func (r *catalogRepo) SampleItemContextForSeries(ctx context.Context, seriesID string) (*domain.GoaiAuditItemContext, error) {
+	if r.pg {
+		row := r.ex.QueryRowContext(ctx, `
+			SELECT name, torrent_url, released, season, episode, is_special
+			FROM catalog_item
+			WHERE series_id = $1
+			ORDER BY released DESC NULLS LAST LIMIT 1`, seriesID)
+		var out domain.GoaiAuditItemContext
+		if err := row.Scan(&out.Title, &out.TorrentURL, &out.Released, &out.Season, &out.Episode, &out.IsSpecial); err != nil {
+			if err == sql.ErrNoRows {
+				return nil, nil
+			}
+			return nil, err
+		}
+		return &out, nil
+	}
+	row := r.ex.QueryRowContext(ctx, `
+		SELECT name, torrent_url, released, season, episode, is_special
+		FROM catalog_item
+		WHERE series_id = ?
+		ORDER BY released DESC LIMIT 1`, seriesID)
+	var out domain.GoaiAuditItemContext
+	var isInt int
+	if err := row.Scan(&out.Title, &out.TorrentURL, &out.Released, &out.Season, &out.Episode, &isInt); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	out.IsSpecial = isInt != 0
+	return &out, nil
+}
+
+func (r *catalogRepo) SampleItemContextForRelease(ctx context.Context, key domain.GoaiReleaseKey) (*domain.GoaiAuditItemContext, error) {
 	if r.pg {
 		is := key.IsSpecial
 		row := r.ex.QueryRowContext(ctx, `
-			SELECT name FROM catalog_item
+			SELECT name, torrent_url, released, season, episode, is_special FROM catalog_item
 			WHERE series_id = $1 AND season = $2 AND episode = $3 AND is_special = $4
 			ORDER BY released DESC NULLS LAST LIMIT 1`,
 			key.SeriesID, key.Season, key.Episode, is)
-		var name string
-		if err := row.Scan(&name); err != nil {
+		var out domain.GoaiAuditItemContext
+		if err := row.Scan(&out.Title, &out.TorrentURL, &out.Released, &out.Season, &out.Episode, &out.IsSpecial); err != nil {
 			if err == sql.ErrNoRows {
-				return "", nil
+				return nil, nil
 			}
-			return "", err
+			return nil, err
 		}
-		return name, nil
+		return &out, nil
 	}
 	is := 0
 	if key.IsSpecial {
 		is = 1
 	}
 	row := r.ex.QueryRowContext(ctx, `
-		SELECT name FROM catalog_item
+		SELECT name, torrent_url, released, season, episode, is_special FROM catalog_item
 		WHERE series_id = ? AND season = ? AND episode = ? AND is_special = ?
 		ORDER BY released DESC LIMIT 1`,
 		key.SeriesID, key.Season, key.Episode, is)
-	var name string
-	if err := row.Scan(&name); err != nil {
+	var out domain.GoaiAuditItemContext
+	var isInt int
+	if err := row.Scan(&out.Title, &out.TorrentURL, &out.Released, &out.Season, &out.Episode, &isInt); err != nil {
 		if err == sql.ErrNoRows {
-			return "", nil
+			return nil, nil
 		}
-		return "", err
+		return nil, err
 	}
-	return name, nil
+	out.IsSpecial = isInt != 0
+	return &out, nil
 }
 
 func (r *catalogRepo) ListSeriesAuditsForAdmin(ctx context.Context, params domain.GoaiAuditListParams) ([]domain.GoaiSeriesAuditListItem, error) {

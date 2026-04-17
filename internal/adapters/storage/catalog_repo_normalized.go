@@ -174,8 +174,8 @@ func (r *catalogRepo) mergeNormalizedIntoSnapshot(ctx context.Context, snap doma
 		if err != nil {
 			return snap, err
 		}
-		snap.AniListBySeries = m
-	} else if len(snap.AniListBySeries) > 0 {
+		snap.SeriesEnrichmentBySeriesID = m
+	} else if len(snap.SeriesEnrichmentBySeriesID) > 0 {
 		if err := r.backfillSeriesEnrichmentFromSnapshot(ctx, &snap); err != nil {
 			return snap, err
 		}
@@ -183,7 +183,7 @@ func (r *catalogRepo) mergeNormalizedIntoSnapshot(ctx context.Context, snap doma
 		if err != nil {
 			return snap, err
 		}
-		snap.AniListBySeries = m
+		snap.SeriesEnrichmentBySeriesID = m
 	}
 	return snap, nil
 }

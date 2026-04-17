@@ -285,9 +285,9 @@ func FixPortugueseSynopsisTranslationGlitches(s string) string {
 	return s
 }
 
-// LocalizeAniListDescriptionPTBR keeps the AniList English blurb but normalizes the attribution line to Portuguese.
-// AniList’s public GraphQL API does not return descriptions in pt-BR; GoAnimes translates via gilang in-process.
-func LocalizeAniListDescriptionPTBR(s string) string {
+// LocalizeEnrichedDescriptionPTBR keeps the upstream English blurb but normalizes the attribution line to Portuguese.
+// External providers (e.g. Cinemeta) typically ship English; GoAnimes translates via gilang in-process when needed.
+func LocalizeEnrichedDescriptionPTBR(s string) string {
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return s

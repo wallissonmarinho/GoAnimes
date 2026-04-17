@@ -16,6 +16,8 @@ type GoAIAuditRepository interface {
 	ListUnauditedReleaseKeysForSeries(ctx context.Context, seriesID string) ([]domain.GoaiReleaseKey, error)
 	SampleItemTitleForSeries(ctx context.Context, seriesID string) (string, error)
 	SampleItemTitleForRelease(ctx context.Context, key domain.GoaiReleaseKey) (string, error)
+	SampleItemContextForSeries(ctx context.Context, seriesID string) (*domain.GoaiAuditItemContext, error)
+	SampleItemContextForRelease(ctx context.Context, key domain.GoaiReleaseKey) (*domain.GoaiAuditItemContext, error)
 	CountSeriesAuditsForAdmin(ctx context.Context, params domain.GoaiAuditListParams) (int, error)
 	ListSeriesAuditsForAdmin(ctx context.Context, params domain.GoaiAuditListParams) ([]domain.GoaiSeriesAuditListItem, error)
 	DeleteReleaseAuditsForSeries(ctx context.Context, seriesID string) error

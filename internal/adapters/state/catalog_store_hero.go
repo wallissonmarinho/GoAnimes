@@ -14,10 +14,10 @@ func (c *CatalogStore) ReplaceStremioHeroBackground(seriesID, backgroundURL stri
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.snap.AniListBySeries == nil {
-		c.snap.AniListBySeries = make(map[string]domain.AniListSeriesEnrichment)
+	if c.snap.SeriesEnrichmentBySeriesID == nil {
+		c.snap.SeriesEnrichmentBySeriesID = make(map[string]domain.SeriesEnrichment)
 	}
-	e := c.snap.AniListBySeries[seriesID]
+	e := c.snap.SeriesEnrichmentBySeriesID[seriesID]
 	e.StremioHeroBackgroundURL = backgroundURL
-	c.snap.AniListBySeries[seriesID] = e
+	c.snap.SeriesEnrichmentBySeriesID[seriesID] = e
 }

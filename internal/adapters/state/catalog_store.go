@@ -59,7 +59,7 @@ func (c *CatalogStore) SeriesByID(seriesID string) (domain.CatalogSeries, bool) 
 				Name:   it.SeriesName,
 				Poster: domain.SeriesPosterURL(it.SeriesName),
 			}
-			if en, ok := c.snap.AniListBySeries[seriesID]; ok {
+			if en, ok := c.snap.SeriesEnrichmentBySeriesID[seriesID]; ok {
 				domain.ApplyEnrichmentToCatalogSeries(&out, en)
 			}
 			return out, true
@@ -68,23 +68,23 @@ func (c *CatalogStore) SeriesByID(seriesID string) (domain.CatalogSeries, bool) 
 	return domain.CatalogSeries{}, false
 }
 
-// AniListEnrichment returns cached AniList metadata for a series id (may be empty struct).
-func (c *CatalogStore) AniListEnrichment(seriesID string) domain.AniListSeriesEnrichment {
+// SeriesEnrichment returns cached metadata for a series id (may be empty struct).
+func (c *CatalogStore) SeriesEnrichment(seriesID string) domain.SeriesEnrichment {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.snap.AniListBySeries[seriesID]
+	return c.snap.SeriesEnrichmentBySeriesID[seriesID]
 }
 
-// MergeAniListEnrichment merges add into the in-memory row for seriesID (e.g. lazy meta fetch).
-func (c *CatalogStore) MergeAniListEnrichment(seriesID string, add domain.AniListSeriesEnrichment) {
+// MergeSeriesEnrichment merges add into the in-memory row for seriesID (e.g. lazy meta fetch).
+func (c *CatalogStore) MergeSeriesEnrichment(seriesID string, add domain.SeriesEnrichment) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.snap.AniListBySeries == nil {
-		c.snap.AniListBySeries = make(map[string]domain.AniListSeriesEnrichment)
+	if c.snap.SeriesEnrichmentBySeriesID == nil {
+		c.snap.SeriesEnrichmentBySeriesID = make(map[string]domain.SeriesEnrichment)
 	}
-	cur := c.snap.AniListBySeries[seriesID]
-	merged := domain.MergeAniListEnrichment(cur, add)
-	c.snap.AniListBySeries[seriesID] = merged
+	cur := c.snap.SeriesEnrichmentBySeriesID[seriesID]
+	merged := domain.MergeSeriesEnrichment(cur, add)
+	c.snap.SeriesEnrichmentBySeriesID[seriesID] = merged
 	for i := range c.snap.Series {
 		if c.snap.Series[i].ID == seriesID {
 			domain.ApplyEnrichmentToCatalogSeries(&c.snap.Series[i], merged)
@@ -93,20 +93,20 @@ func (c *CatalogStore) MergeAniListEnrichment(seriesID string, add domain.AniLis
 	}
 }
 
-// ReplaceAniListSynopsis sets the cached synopsis and refreshes the catalog series row.
-func (c *CatalogStore) ReplaceAniListSynopsis(seriesID, description string) {
+// ReplaceSeriesSynopsis sets the cached synopsis and refreshes the catalog series row.
+func (c *CatalogStore) ReplaceSeriesSynopsis(seriesID, description string) {
 	description = strings.TrimSpace(description)
 	if seriesID == "" {
 		return
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.snap.AniListBySeries == nil {
-		c.snap.AniListBySeries = make(map[string]domain.AniListSeriesEnrichment)
+	if c.snap.SeriesEnrichmentBySeriesID == nil {
+		c.snap.SeriesEnrichmentBySeriesID = make(map[string]domain.SeriesEnrichment)
 	}
-	e := c.snap.AniListBySeries[seriesID]
+	e := c.snap.SeriesEnrichmentBySeriesID[seriesID]
 	e.Description = description
-	c.snap.AniListBySeries[seriesID] = e
+	c.snap.SeriesEnrichmentBySeriesID[seriesID] = e
 	for i := range c.snap.Series {
 		if c.snap.Series[i].ID == seriesID {
 			domain.ApplyEnrichmentToCatalogSeries(&c.snap.Series[i], e)
@@ -136,7 +136,7 @@ func (c *CatalogStore) SetAndPersist(ctx context.Context, repo ports.CatalogRepo
 	return repo.SaveCatalogSnapshot(ctx, snap)
 }
 
-// PersistSnapshot writes the current in-memory snapshot to the repository (e.g. after lazy AniList/Jikan merge in Stremio meta).
+// PersistSnapshot writes the current in-memory snapshot to the repository (e.g. after lazy enrichment in Stremio meta).
 func (c *CatalogStore) PersistSnapshot(ctx context.Context, repo ports.CatalogRepository) error {
 	if repo == nil {
 		return nil

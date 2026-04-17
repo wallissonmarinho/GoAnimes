@@ -18,7 +18,7 @@ flowchart TB
   subgraph adapters_out [Adaptadores de saída]
     ST[state CatalogStore]
     DB[storage Catalog]
-    RSS[rss / anilist / jikan / kitsu / tmdb / ...]
+    RSS[rss / cinemeta / tmdb / thetvdb / ...]
   end
   HTTP --> UC
   Sched --> UC
@@ -29,7 +29,7 @@ flowchart TB
   PORT --> RSS
 ```
 
-- Domain — entidades e regras puras (catálogo, merge, IDs Stremio, enriquecimento AniList, etc.); sem SQL, sem HTTP.
+- Domain — entidades e regras puras (catálogo, merge, IDs Stremio, enriquecimento de séries, etc.); sem SQL, sem HTTP.
 - Ports — contratos (`CatalogRepository`, `CatalogAdmin`, `SyncRunner`, `UnitOfWork`, `SynopsisTranslator`, …).
 - Casos de uso — pacotes `rsssync` (sync RSS + enriquecimento), `stremio` (resposta Stremio e lazy meta), `services` (admin de catálogo, tradução de sinopse, helpers TMDB partilhados).
 - Adapters — Gin, SQLite/Postgres, clientes RSS e APIs externas, estado em memória.
@@ -41,9 +41,9 @@ cmd/goanimes/          # bootstrap, wiring mínimo
 internal/
   app/                 # composição (OpenCatalog, HydrateCatalogStore, NewRSSSyncService, …)
   core/
-    domain/            # CatalogSnapshot, CatalogItem, AniListSeriesEnrichment, …
+    domain/            # CatalogSnapshot, CatalogItem, SeriesEnrichment, …
     ports/             # interfaces (um ficheiro por contrato quando possível)
-    rsssync/           # RSS sync + enriquecimento AniList/Jikan/Kitsu/…
+    rsssync/           # RSS sync + enriquecimento Cinemeta/TMDB/TheTVDB/…
     stremio/           # meta/stream Stremio (lazy enrich, helpers de resposta)
     services/          # catalog admin, tradução sinopse/títulos, TMDB hero helpers, …
   adapters/
@@ -51,7 +51,7 @@ internal/
     storage/           # Catalog, catalogRepo, persistência SQL + normalizado
     state/             # CatalogStore (snapshot em RAM)
     rss/               # parse feeds Erai, etc.
-    anilist/, jikan/, kitsu/, tmdb/, translate/, …
+    cinemeta/, tmdb/, thetvdb/, translate/, …
   persistence/migrate/ # Goose
 migrations/            # postgres/, sqlite/
 ```
@@ -68,7 +68,7 @@ Roadmap — curadoria por série via IA (revisão de título raiz, temporadas, s
 | `catalog_snapshot` | Linha única (`id=1`): `items_json` (payload JSON), flags de sync, contagens, timestamps |
 | `catalog_series` | Séries normalizadas (id estável Stremio, nome, poster, descrição, géneros, releaseInfo) |
 | `catalog_item` | Episódios/releases com `series_id` → `catalog_series` (FK, CASCADE) |
-| `series_enrichment` | Metadados AniList/Jikan/Kitsu por série (1:1 com `catalog_series`); mapas de episódio em `episode_maps_json` |
+| `series_enrichment` | Metadados de enriquecimento por série (1:1 com `catalog_series`); mapas de episódio em `episode_maps_json` |
 | `series_curation` | Estado de revisão IA por série (esquema preparado; use case e HTTP por implementar) |
 
 ### Payload JSON (`items_json`)
@@ -76,7 +76,7 @@ Roadmap — curadoria por série via IA (revisão de título raiz, temporadas, s
 Inclui tipicamente:
 
 - `items` — lista de `CatalogItem` (espelhada em `catalog_item` após sync).
-- `anilist_series` — legado: omitido no marshal quando existem linhas em `series_enrichment`; leitura antiga ainda aceita JSON se a tabela estiver vazia.
+- `anilist_series` — chave legada de payload (mantida por compatibilidade de leitura); omitida quando existem linhas em `series_enrichment`.
 - `rss_main_feed_build` — fingerprint por URL de feed principal (`sha256` do corpo + `etag` / `last_modified`) para o poll RSS.
 - `last_sync_errors` — notas do último sync.
 
@@ -88,7 +88,7 @@ Inclui tipicamente:
 ### Hidratação ao arranque
 
 1. `LoadCatalogSnapshot` lê a linha `catalog_snapshot` e faz unmarshal do JSON.
-2. Se existirem linhas em `catalog_item`, itens e séries vêm das tabelas normalizadas; enriquecimento AniList vem de `series_enrichment` quando a tabela tem dados, senão do JSON (`anilist_series`) com backfill automático para SQL quando aplicável.
+2. Se existirem linhas em `catalog_item`, itens e séries vêm das tabelas normalizadas; enriquecimento vem de `series_enrichment` quando a tabela tem dados, senão do JSON (`anilist_series`) com backfill automático para SQL quando aplicável.
 3. Se as tabelas normalizadas estiverem vazias mas o JSON tiver itens, corre backfill do catálogo normalizado numa transação.
 
 ```mermaid
@@ -105,7 +105,7 @@ sequenceDiagram
 
 ### Sync RSS
 
-1. `SyncRunner.Run` (implementação em `rsssync`) lista `rss_sources`, obtém feeds, merge com catálogo anterior, enriquecimento opcional (AniList, Jikan, Kitsu, TMDB, AniDB, traduções).
+1. `SyncRunner.Run` (implementação em `rsssync`) lista `rss_sources`, obtém feeds, merge com catálogo anterior, enriquecimento opcional (Cinemeta, TMDB, TheTVDB, traduções).
 2. Atualiza `CatalogStore` em memória e persiste via `CatalogRepository.SaveCatalogSnapshot` (transação com SQL normalizado + JSON).
 
 ### Stremio (catálogo / meta / streams)
@@ -127,7 +127,7 @@ sequenceDiagram
 ## Referências no repositório
 
 - Ports: [`internal/core/ports/`](../internal/core/ports/)
-- Snapshot e tipos: [`internal/core/domain/catalog_snapshot.go`](../internal/core/domain/catalog_snapshot.go), [`anilist_enrichment.go`](../internal/core/domain/anilist_enrichment.go)
+- Snapshot e tipos: [`internal/core/domain/catalog_snapshot.go`](../internal/core/domain/catalog_snapshot.go), [`series_enrichment.go`](../internal/core/domain/series_enrichment.go)
 - Persistência: [`internal/adapters/storage/catalog.go`](../internal/adapters/storage/catalog.go), [`catalog_repo.go`](../internal/adapters/storage/catalog_repo.go), [`catalog_repo_normalized.go`](../internal/adapters/storage/catalog_repo_normalized.go), [`catalog_repo_enrichment.go`](../internal/adapters/storage/catalog_repo_enrichment.go)
 - Wiring: [`internal/app/wiring.go`](../internal/app/wiring.go)
 

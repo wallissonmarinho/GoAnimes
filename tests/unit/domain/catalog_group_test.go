@@ -50,12 +50,29 @@ func TestEraiSeasonFromSeriesName(t *testing.T) {
 	require.Equal(t, 2, domain.EraiSeasonFromSeriesName("Baz Part 2"))
 }
 
-func TestApplyAniListEnrichmentToSeries(t *testing.T) {
+func TestIsBatchReleaseTitle(t *testing.T) {
+	require.True(t, domain.IsBatchReleaseTitle("[Torrent] Meitantei Precure - 01 ~ 10 [1080p][Batch]"))
+	require.True(t, domain.IsBatchReleaseTitle("[Magnet] Foo - 01 ~ 03 [720p]"))
+	require.False(t, domain.IsBatchReleaseTitle("[Torrent] Foo - 11 [1080p][Airing]"))
+}
+
+func TestDropBatchCatalogItems(t *testing.T) {
+	items := []domain.CatalogItem{
+		{Name: "[Torrent] Foo - 01 ~ 10 [Batch]"},
+		{Name: "[Torrent] Foo - 11 [Airing]"},
+	}
+	out, dropped := domain.DropBatchCatalogItems(items)
+	require.Equal(t, 1, dropped)
+	require.Len(t, out, 1)
+	require.Equal(t, "[Torrent] Foo - 11 [Airing]", out[0].Name)
+}
+
+func TestApplySeriesEnrichmentToSeries(t *testing.T) {
 	snap := &domain.CatalogSnapshot{
 		Series: []domain.CatalogSeries{
 			{ID: "goanimes:series:aa", Name: "A", Poster: "http://placeholder"},
 		},
-		AniListBySeries: map[string]domain.AniListSeriesEnrichment{
+		SeriesEnrichmentBySeriesID: map[string]domain.SeriesEnrichment{
 			"goanimes:series:aa": {
 				PosterURL:      "https://cdn.anilist/1.jpg",
 				Description:    "Synopsis",
@@ -66,7 +83,7 @@ func TestApplyAniListEnrichmentToSeries(t *testing.T) {
 			},
 		},
 	}
-	domain.ApplyAniListEnrichmentToSeries(snap)
+	domain.ApplySeriesEnrichmentToSeries(snap)
 	require.Equal(t, "https://cdn.anilist/1.jpg", snap.Series[0].Poster)
 	require.Equal(t, "A Latin", snap.Series[0].Name)
 	require.Equal(t, "Synopsis", snap.Series[0].Description)
@@ -74,14 +91,14 @@ func TestApplyAniListEnrichmentToSeries(t *testing.T) {
 	require.Equal(t, "2024-", snap.Series[0].ReleaseInfo)
 }
 
-func TestAniListSearchQueryFromItems(t *testing.T) {
+func TestExternalSearchQueryFromItems(t *testing.T) {
 	sid := domain.SeriesStremioID("RSS Title Here")
 	items := []domain.CatalogItem{
 		{SeriesID: "other", SeriesName: "ignore"},
 		{SeriesID: sid, SeriesName: "RSS Title Here"},
 	}
-	require.Equal(t, "RSS Title Here", domain.AniListSearchQueryFromItems(items, sid))
-	require.Equal(t, "", domain.AniListSearchQueryFromItems(items, "missing"))
+	require.Equal(t, "RSS Title Here", domain.ExternalSearchQueryFromItems(items, sid))
+	require.Equal(t, "", domain.ExternalSearchQueryFromItems(items, "missing"))
 }
 
 func TestEnsureSnapshotGrouped(t *testing.T) {

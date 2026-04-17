@@ -22,10 +22,10 @@ func TestEpisodeTitleWorthTranslating(t *testing.T) {
 	require.False(t, domain.EpisodeTitleWorthTranslating("O primeiro episódio da temporada"))
 }
 
-func TestLocalizeAniListDescriptionPTBR(t *testing.T) {
+func TestLocalizeEnrichedDescriptionPTBR(t *testing.T) {
 	in := "Hello world. (Source: Crunchyroll)"
-	require.Equal(t, "Hello world. (Fonte: Crunchyroll)", domain.LocalizeAniListDescriptionPTBR(in))
-	require.Equal(t, "", domain.LocalizeAniListDescriptionPTBR("  "))
+	require.Equal(t, "Hello world. (Fonte: Crunchyroll)", domain.LocalizeEnrichedDescriptionPTBR(in))
+	require.Equal(t, "", domain.LocalizeEnrichedDescriptionPTBR("  "))
 }
 
 func TestPrepareEnglishSynopsisBodyForPTTranslate_courToSeason(t *testing.T) {
@@ -41,7 +41,7 @@ func TestFixPortugueseSynopsisTranslationGlitches_tribunalToTemporada(t *testing
 	in := "O segundo tribunal de Enen no Shouboutai. (Fonte: Crunchyroll News)"
 	want := "A segunda temporada de Enen no Shouboutai. (Fonte: Crunchyroll News)"
 	require.Equal(t, want, domain.FixPortugueseSynopsisTranslationGlitches(in))
-	require.Equal(t, want, domain.LocalizeAniListDescriptionPTBR(in))
+	require.Equal(t, want, domain.LocalizeEnrichedDescriptionPTBR(in))
 }
 
 func TestFixPortugueseSynopsisTranslationGlitches_terceiroEUltimoTribunal(t *testing.T) {

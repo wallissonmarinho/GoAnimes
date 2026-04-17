@@ -14,7 +14,7 @@ func TestMergeSnapshotSeriesBySharedMalID_noop_singleMalPerSeries(t *testing.T) 
 			{ID: "a:1", SeriesID: "goanimes:series:aaaaaaaa", SeriesName: "X", Season: 1, Episode: 1, Name: "x1"},
 			{ID: "a:2", SeriesID: "goanimes:series:bbbbbbbb", SeriesName: "Y", Season: 1, Episode: 1, Name: "y1"},
 		},
-		AniListBySeries: map[string]domain.AniListSeriesEnrichment{
+		SeriesEnrichmentBySeriesID: map[string]domain.SeriesEnrichment{
 			"goanimes:series:aaaaaaaa": {MalID: 1, TitlePreferred: "A"},
 			"goanimes:series:bbbbbbbb": {MalID: 2, TitlePreferred: "B"},
 		},
@@ -35,7 +35,7 @@ func TestMergeSnapshotSeriesBySharedMalID_mergesSameMalID(t *testing.T) {
 			{ID: "x:2", SeriesID: idA, SeriesName: "Show", Season: 1, Episode: 2, Name: "e2"},
 			{ID: "x:3", SeriesID: idB, SeriesName: "Show", Season: 1, Episode: 3, Name: "e3"},
 		},
-		AniListBySeries: map[string]domain.AniListSeriesEnrichment{
+		SeriesEnrichmentBySeriesID: map[string]domain.SeriesEnrichment{
 			idA: {MalID: 99, TitlePreferred: "United", Description: "from A"},
 			idB: {MalID: 99, TitlePreferred: "United", PosterURL: "https://p"},
 		},
@@ -49,11 +49,11 @@ func TestMergeSnapshotSeriesBySharedMalID_mergesSameMalID(t *testing.T) {
 	require.Len(t, snap.Series, 1)
 	require.Equal(t, idA, snap.Series[0].ID)
 
-	en := snap.AniListBySeries[idA]
+	en := snap.SeriesEnrichmentBySeriesID[idA]
 	require.Equal(t, 99, en.MalID)
 	require.Contains(t, en.Description, "from A")
 	require.Contains(t, en.PosterURL, "https://p")
-	_, hasB := snap.AniListBySeries[idB]
+	_, hasB := snap.SeriesEnrichmentBySeriesID[idB]
 	require.False(t, hasB)
 }
 
@@ -65,7 +65,7 @@ func TestMergeSnapshotSeriesBySharedMalID_tieBreakLexicographic(t *testing.T) {
 			{ID: "x:1", SeriesID: idLo, SeriesName: "S", Season: 1, Episode: 1, Name: "e1"},
 			{ID: "x:2", SeriesID: idHi, SeriesName: "S", Season: 1, Episode: 2, Name: "e2"},
 		},
-		AniListBySeries: map[string]domain.AniListSeriesEnrichment{
+		SeriesEnrichmentBySeriesID: map[string]domain.SeriesEnrichment{
 			idLo: {MalID: 5},
 			idHi: {MalID: 5},
 		},
@@ -85,7 +85,7 @@ func TestMergeSnapshotSeriesBySharedMalID_skipsZeroMalID(t *testing.T) {
 			{ID: "x:1", SeriesID: idA, SeriesName: "S1", Season: 1, Episode: 1, Name: "e1"},
 			{ID: "x:2", SeriesID: idB, SeriesName: "S2", Season: 1, Episode: 2, Name: "e2"},
 		},
-		AniListBySeries: map[string]domain.AniListSeriesEnrichment{
+		SeriesEnrichmentBySeriesID: map[string]domain.SeriesEnrichment{
 			idA: {MalID: 0, TitlePreferred: "A"},
 			idB: {MalID: 0, TitlePreferred: "B"},
 		},
