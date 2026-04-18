@@ -97,11 +97,13 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Ampere (k3s) é **arm64**; o runner Actions é **amd64**. Sem arm64 no manifest → ImagePullBackOff "no match for platform".
       - uses: docker/build-push-action@v7
         with:
           context: .
           file: ./Dockerfile
           push: true
+          platforms: linux/amd64,linux/arm64
           tags: |
             ghcr.io/${{ steps.ghcr.outputs.owner }}/goanimes:${{ env.GOANIMES_IMAGE_TAG }}
             ghcr.io/${{ steps.ghcr.outputs.owner }}/goanimes:${{ github.sha }}
