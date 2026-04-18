@@ -1,13 +1,13 @@
-# Deploy na VM Oracle (k3s): push em main/master — build/push GHCR + SSH aplica **Pod** (Deployment)
-# em `namespace/goanimes`, Secret `goanimes-env` a partir de `deploy/oracle/.env.goanimes.deploy`, e
-# `kubectl rollout status`. **OCI_VM_HOST** deve ser um nó com **kubectl** válido (ex.: Ampere com k3s server).
+# Deploy na VM Oracle (**k3s**): push em main/master — build/push GHCR + SSH aplica **Pod** (Deployment)
+# no cluster k3s (`namespace/goanimes`), Secret `goanimes-env` a partir de `deploy/oracle/.env.goanimes.deploy`, e
+# `kubectl rollout status`. **OCI_VM_HOST** = máquina onde o **k3s** expõe `kubectl` (ex.: Ampere como server).
 #
 # Postgres no cluster (repo **www**): `deploy/k8s/postgres/` — base `goanimes`. No GitHub ambiente **prd**
 # **Variable** `DATABASE_URL` (in-cluster), ex.:
 #   postgresql://postgres:SENHA@postgres.postgres.svc.cluster.local:5432/goanimes?sslmode=disable
 # **SENHA** = mesma que `POSTGRES_PASSWORD` em `postgres-secret` (ver `deploy/k8s/postgres/apply.sh`).
 #
-# Job deploy: environment **prd** — **Variables** (`vars.*`) → ficheiro `.env` na VM + Secret k8s `goanimes-env`.
+# Job deploy: environment **prd** — **Variables** (`vars.*`) → ficheiro `.env` na VM + Secret no k3s `goanimes-env`.
 #   Chaves API, `DATABASE_URL`, `GOANIMES_ENV_B64`, etc. ficam **visíveis na UI** GitHub a quem gere o ambiente
 #   **prd** (útil para não esquecer valores); evita Secrets de ambiente para essa config. **Repository secrets**
 #   mantêm-se só para SSH (e `GITHUB_TOKEN` no build).
@@ -116,15 +116,21 @@ jobs:
         id: ghcr
         run: echo "owner=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
 
-      - name: Stamp container image in k8s Deployment
+      - name: Stamp container image in k3s manifest (Deployment)
         run: |
           set -euo pipefail
           OWNER=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')
           IMG="ghcr.io/${OWNER}/goanimes:${{ github.sha }}"
           sed -i "s|__GOANIMES_CONTAINER_IMAGE__|${IMG}|g" deploy/k8s/goanimes/deployment.yaml
 
+      # Tar no workspace (caminho relativo): appleboy/scp-action usa paths relativos a $GITHUB_WORKSPACE;
+      # `source: /tmp/...` resulta em "tar: empty archive" no runner.
       - name: Pack k8s manifests
-        run: tar czf /tmp/goanimes-k8s.tgz -C deploy/k8s goanimes
+        run: |
+          set -euo pipefail
+          test -d deploy/k8s/goanimes
+          tar czf goanimes-k8s.tgz -C deploy/k8s goanimes
+          ls -la goanimes-k8s.tgz
 
       - name: Copy k8s bundle to VM
         uses: appleboy/scp-action@v0.1.7
@@ -132,7 +138,7 @@ jobs:
           host: ${{ secrets.OCI_VM_HOST }}
           username: ${{ secrets.OCI_VM_USER }}
           key: ${{ secrets.OCI_SSH_PRIVATE_KEY }}
-          source: /tmp/goanimes-k8s.tgz
+          source: goanimes-k8s.tgz
           target: /tmp/
 
       - name: Deploy GoAnimes on Oracle VM
@@ -214,7 +220,7 @@ jobs:
             tar xzf "${K8S_TAR}" -C "${ROOT}/deploy/k8s"
             rm -f "${K8S_TAR}"
             K8S_DIR="${ROOT}/deploy/k8s/goanimes"
-            command -v kubectl >/dev/null 2>&1 || { echo "kubectl não está no PATH nesta VM." >&2; exit 1; }
+            command -v kubectl >/dev/null 2>&1 || { echo "kubectl não está no PATH nesta VM (precisas do kubeconfig do k3s)." >&2; exit 1; }
             umask 077
             : > "${DEPLOY_ENV}"
             write_kv() {
@@ -284,4 +290,4 @@ jobs:
             CONFIG_HASH=$(sha256sum "${DEPLOY_ENV}" | awk '{print $1}')
             kubectl -n goanimes patch deployment goanimes --type strategic -p "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"goanimes.github/config-sha\":\"${CONFIG_HASH}\"}}}}}"
             kubectl -n goanimes rollout status deployment/goanimes --timeout=360s
-            echo "OK: Deployment goanimes (namespace goanimes). Ficheiro local ${DEPLOY_ENV}. Imagem ghcr.io/${GOANIMES_GHCR_OWNER}/goanimes:${GOANIMES_IMAGE_TAG:-main} + digest do commit no manifest enviado pelo CI."
+            echo "OK: k3s — Deployment goanimes (namespace goanimes). Ficheiro local ${DEPLOY_ENV}. Imagem ghcr.io/${GOANIMES_GHCR_OWNER}/goanimes:${GOANIMES_IMAGE_TAG:-main} + digest do commit no manifest enviado pelo CI."

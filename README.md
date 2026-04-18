@@ -102,20 +102,20 @@ docker build -t goanimes .
 docker run -p 8080:8080 -v "$(pwd)/data:/app/data" goanimes
 ```
 
-## Deploy (Oracle / k3s)
+## Deploy (Oracle / **k3s**)
 
-O workflow **`oracle-deploy`** faz build/push da imagem para **GHCR**, envia **`deploy/k8s/goanimes/`** para a VM (tarball + SCP) e, por SSH, grava **`deploy/oracle/.env.goanimes.deploy`**, sincroniza o Secret **`goanimes-env`** (`namespace` **`goanimes`**), aplica **`kubectl apply -k`** e espera **`kubectl rollout status`** no nó onde corre **`kubectl`** (tipicamente **Ampere** — `OCI_VM_HOST`).
+O workflow **`oracle-deploy`** faz build/push da imagem para **GHCR**, envia **`deploy/k8s/goanimes/`** para a VM (**k3s**; tarball + SCP) e, por SSH, grava **`deploy/oracle/.env.goanimes.deploy`**, sincroniza o Secret **`goanimes-env`** (`namespace` **`goanimes`**), aplica **`kubectl apply -k`** e espera **`kubectl rollout status`** no nó onde tens o **kubeconfig do k3s** (tipicamente **Ampere** — `OCI_VM_HOST`).
 
-Manifests: **`deploy/k8s/goanimes/`** (Deployment, Service, Namespace). A imagem do contentor é carimbada no CI com **`ghcr.io/<owner>/goanimes:<commit_sha>`**.
+Manifests: **`deploy/k8s/goanimes/`** (API Kubernetes; cluster alvo é **k3s**). A imagem do contentor é carimbada no CI com **`ghcr.io/<owner>/goanimes:<commit_sha>`**.
 
-**Postgres no cluster** (repo `www`, `deploy/k8s/postgres/`): define no ambiente GitHub **prd** a **Variable** **`DATABASE_URL`** (DSN **in-cluster**), por exemplo  
+**Postgres no k3s** (repo `www`, `deploy/k8s/postgres/`): define no ambiente GitHub **prd** a **Variable** **`DATABASE_URL`** (DSN **in-cluster**), por exemplo  
 `postgresql://postgres:<POSTGRES_PASSWORD>@postgres.postgres.svc.cluster.local:5432/goanimes?sslmode=disable`  
-(a password deve coincidir com o Secret `postgres/postgres-secret` aplicado no cluster). Ver também `deploy/oracle/README.md` e **`deploy/oracle/CONTEXT.md`**.
+(a password deve coincidir com o Secret `postgres/postgres-secret` aplicado no **k3s**). Ver também `deploy/oracle/README.md` e **`deploy/oracle/CONTEXT.md`**.
 
 ## GitHub Actions
 
 - **`ci`** — `go vet`, **golangci-lint**, `go test`, build em **PRs** para `main`/`master` e em **push** para outras branches. **Não** corre em push direto em `main`/`master` (evita duplicar testes com o oracle-deploy).
-- **`oracle-deploy`** — `go vet`, **golangci-lint**, `go test`, imagem Docker, SCP dos manifests k8s e deploy por **SSH** (`kubectl apply` + rollout no namespace `goanimes`) em push para `main`/`master` ou manual.
+- **`oracle-deploy`** — `go vet`, **golangci-lint**, `go test`, imagem Docker, SCP dos manifests e deploy por **SSH** no **k3s** (`kubectl apply` + rollout no namespace `goanimes`) em push para `main`/`master` ou manual.
 - **`release`** (tags `v*`) — mesmo gate de lint + testes antes de publicar o binário.
 
 O job **deploy** usa **`environment: prd`**. **Repository secrets** (só estes no workflow): **`OCI_VM_HOST`**, **`OCI_VM_USER`**, **`OCI_SSH_PRIVATE_KEY`** (SSH para a VM). No ambiente **`prd`**, a config da app vem de **Variables** (`vars` — visíveis na UI; inclui chaves API e **`DATABASE_URL`**) e é gravada em **`deploy/oracle/.env.goanimes.deploy`** + Secret **`goanimes-env`**. Opcional **`GOANIMES_ENV_B64`** como Variable: base64 de linhas extra (ex. `base64 -i snippet.env | tr -d '\n'`) acrescentadas ao fim do ficheiro. Outras chaves que cries só no GitHub e não estiverem no `oracle-deploy.yml` não vão para o Pod até acrescentares `write_kv`/`env` lá ou as incluíres nesse base64. **`ACME_EMAIL`** (Caddy) continua no **`.env`** na VM.
