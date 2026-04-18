@@ -30,9 +30,20 @@ spec:
           envFrom:
             - secretRef:
                 name: goanimes-env
+          # Prefer PORT from secret for VM/systemd; in-cluster probes use containerPort 8080.
+          env:
+            - name: PORT
+              value: "8080"
           volumeMounts:
             - name: data
               mountPath: /app/data
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+            failureThreshold: 60
+            timeoutSeconds: 3
           readinessProbe:
             httpGet:
               path: /health
