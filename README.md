@@ -106,7 +106,7 @@ docker run -p 8080:8080 -v "$(pwd)/data:/app/data" goanimes
 
 O workflow **`oracle-deploy`** faz build/push da imagem para **GHCR**, envia **`deploy/k8s/goanimes/`** para a VM (**k3s**; tarball + SCP) e, por SSH, grava **`deploy/oracle/.env.goanimes.deploy`**, sincroniza o Secret **`goanimes-env`** (`namespace` **`goanimes`**), aplica **`kubectl apply -k`** e espera **`kubectl rollout status`** no nó onde tens o **kubeconfig do k3s** (tipicamente **Ampere** — `OCI_VM_HOST`).
 
-Manifests: **`deploy/k8s/goanimes/`** (API Kubernetes; cluster alvo é **k3s**). A imagem do contentor é carimbada no CI com **`ghcr.io/<owner>/goanimes:<commit_sha>`**.
+Manifests: **`deploy/k8s/goanimes/`** (API Kubernetes; cluster alvo é **k3s**). A imagem do contentor é carimbada no CI com **`ghcr.io/<owner>/goanimes:<commit_sha>`**. Na VM, o user de SSH precisa de **`kubectl` com kubeconfig** (ex. `~/.kube/config` copiado de `/etc/rancher/k3s/k3s.yaml`, ou `KUBECONFIG` apontando para um ficheiro legível); senão o `kubectl` tenta `localhost:8080` e falha.
 
 **Postgres no k3s** (repo `www`, `deploy/k8s/postgres/`): define no ambiente GitHub **prd** a **Variable** **`DATABASE_URL`** (DSN **in-cluster**), por exemplo  
 `postgresql://postgres:<POSTGRES_PASSWORD>@postgres.postgres.svc.cluster.local:5432/goanimes?sslmode=disable`  

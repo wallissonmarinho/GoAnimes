@@ -15,6 +15,9 @@
 # Repository secrets: OCI_VM_HOST, OCI_VM_USER, OCI_SSH_PRIVATE_KEY; opcional OCI_DEPLOY_ROOT (legado —
 #   preferir Variable `OCI_DEPLOY_ROOT`)
 #
+# Na VM: o user SSH precisa de **kubeconfig do k3s** (senão kubectl fala com `localhost:8080` e falha OpenAPI).
+#   Típico: `export KUBECONFIG=/etc/rancher/k3s/k3s.yaml` no `.profile` (ficheiro legível pelo user) ou cópia em `~/.kube/config`.
+#
 # Environment **prd** ou repo **Variables** (`vars.` — ver README):
 #   GOANIMES_ADMIN_API_KEY, ADMIN_API_KEY, DATABASE_URL, GOANIMES_SQLITE_DSN,
 #   GOANIMES_TMDB_API_KEY, GOANIMES_TVDB_API_KEY, GOANIMES_TVDB_PIN, GOANIMES_GOAI_ADMIN_API_KEY,
@@ -221,6 +224,20 @@ jobs:
             rm -f "${K8S_TAR}"
             K8S_DIR="${ROOT}/deploy/k8s/goanimes"
             command -v kubectl >/dev/null 2>&1 || { echo "kubectl não está no PATH nesta VM (precisas do kubeconfig do k3s)." >&2; exit 1; }
+            if [ -z "${KUBECONFIG:-}" ]; then
+              for f in /etc/rancher/k3s/k3s.yaml "${HOME}/.kube/config"; do
+                if [ -r "$f" ]; then
+                  export KUBECONFIG="$f"
+                  break
+                fi
+              done
+            fi
+            if [ -z "${KUBECONFIG:-}" ] || ! kubectl cluster-info --request-timeout=10s >/dev/null 2>&1; then
+              echo "kubectl sem API do k3s (KUBECONFIG vazio ou inválido → default localhost:8080 / OpenAPI falha)." >&2
+              echo "Na VM: sudo cp /etc/rancher/k3s/k3s.yaml ~/.kube/config && sudo chown ubuntu:ubuntu ~/.kube/config  # ajusta user:grupo ao teu login SSH" >&2
+              echo "Ou: export KUBECONFIG=/etc/rancher/k3s/k3s.yaml no .profile se esse ficheiro for legível pelo user de deploy." >&2
+              exit 1
+            fi
             umask 077
             : > "${DEPLOY_ENV}"
             write_kv() {
