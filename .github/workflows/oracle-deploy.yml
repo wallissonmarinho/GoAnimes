@@ -1,22 +1,29 @@
-# Deploy na VM Oracle (Docker Compose) após push na branch principal.
+# Deploy na VM Oracle (k3s): push em main/master — build/push GHCR + SSH aplica **Pod** (Deployment)
+# em `namespace/goanimes`, Secret `goanimes-env` a partir de `deploy/oracle/.env.goanimes.deploy`, e
+# `kubectl rollout status`. **OCI_VM_HOST** deve ser um nó com **kubectl** válido (ex.: Ampere com k3s server).
 #
-# Job deploy: environment: prd → tudo o que definires em Secrets/Variables do ambiente **prd**
-# (e Repository secrets OCI/GHCR) é passado por SSH e gravado em deploy/oracle/.env.goanimes.deploy
-# na VM — não precisas de editar à mão na Oracle para estas chaves.
+# Postgres no cluster (repo **www**): `deploy/k8s/postgres/` — base `goanimes`. No GitHub ambiente **prd**
+# **Variable** `DATABASE_URL` (in-cluster), ex.:
+#   postgresql://postgres:SENHA@postgres.postgres.svc.cluster.local:5432/goanimes?sslmode=disable
+# **SENHA** = mesma que `POSTGRES_PASSWORD` em `postgres-secret` (ver `deploy/k8s/postgres/apply.sh`).
 #
-# Repository secrets: OCI_VM_HOST, OCI_VM_USER, OCI_SSH_PRIVATE_KEY; opcional OCI_DEPLOY_ROOT, GHCR_*
+# Job deploy: environment **prd** — **Variables** (`vars.*`) → ficheiro `.env` na VM + Secret k8s `goanimes-env`.
+#   Chaves API, `DATABASE_URL`, `GOANIMES_ENV_B64`, etc. ficam **visíveis na UI** GitHub a quem gere o ambiente
+#   **prd** (útil para não esquecer valores); evita Secrets de ambiente para essa config. **Repository secrets**
+#   mantêm-se só para SSH (e `GITHUB_TOKEN` no build).
 #
-# Environment **prd** — Secrets (sensível): GOANIMES_ADMIN_API_KEY, ADMIN_API_KEY, DATABASE_URL,
-#   GOANIMES_SQLITE_DSN, GOANIMES_TMDB_API_KEY, GOANIMES_TVDB_API_KEY, GOANIMES_TVDB_PIN (opcional),
-#   GOANIMES_GOAI_ADMIN_API_KEY (opcional: Bearer para o serviço GoAI em auditoria),
-#   GOANIMES_ENV_B64 (opcional: .env extra em base64, ver README)
+# Repository secrets: OCI_VM_HOST, OCI_VM_USER, OCI_SSH_PRIVATE_KEY; opcional OCI_DEPLOY_ROOT (legado —
+#   preferir Variable `OCI_DEPLOY_ROOT`)
 #
-# Environment **prd** — Variables (tuning):
-#   GOANIMES_SYNC_INTERVAL, GOANIMES_RSS_POLL_INTERVAL, GOANIMES_HTTP_TIMEOUT, GOANIMES_ERAI_MAX_PER_ANIME_FEEDS,
-#   GOANIMES_ERAI_PER_ANIME_DELAY, GOANIMES_ERAI_PER_ANIME_MAX_ATTEMPTS, GOANIMES_ERAI_PER_ANIME_RETRY_BACKOFF,
+# Environment **prd** ou repo **Variables** (`vars.` — ver README):
+#   GOANIMES_ADMIN_API_KEY, ADMIN_API_KEY, DATABASE_URL, GOANIMES_SQLITE_DSN,
+#   GOANIMES_TMDB_API_KEY, GOANIMES_TVDB_API_KEY, GOANIMES_TVDB_PIN, GOANIMES_GOAI_ADMIN_API_KEY,
+#   GOANIMES_ENV_B64, OCI_DEPLOY_ROOT,
+#   GOANIMES_SYNC_INTERVAL, GOANIMES_SYNC_RUN_TIMEOUT, GOANIMES_RSS_POLL_INTERVAL, GOANIMES_HTTP_TIMEOUT,
+#   GOANIMES_ERAI_MAX_PER_ANIME_FEEDS, GOANIMES_ERAI_PER_ANIME_DELAY, GOANIMES_ERAI_PER_ANIME_MAX_ATTEMPTS,
+#   GOANIMES_ERAI_PER_ANIME_RETRY_BACKOFF, GOANIMES_CINEMETA_BASE_URL, GOANIMES_CINEMETA_MIN_DELAY, GOANIMES_CINEMETA_DISABLED,
 #   GOANIMES_ANILIST_DISABLED, GOANIMES_JIKAN_DISABLED, GOANIMES_KITSU_DISABLED, GOANIMES_TMDB_DISABLED, GOANIMES_TVDB_DISABLED,
 #   GOANIMES_ANILIST_MIN_DELAY, GOANIMES_JIKAN_MIN_DELAY, GOANIMES_KITSU_MIN_DELAY, GOANIMES_TMDB_MIN_DELAY, GOANIMES_TVDB_MIN_DELAY,
-#   GOANIMES_TMDB_API_KEY (também em Secret prd; ou só em GOANIMES_ENV_B64),
 #   GOANIMES_ANIDB_CLIENT, GOANIMES_ANIDB_CLIENTVER, GOANIMES_ANIDB_MIN_DELAY, GOANIMES_ANIDB_DISABLED,
 #   GOANIMES_MAX_BODY_BYTES, GOANIMES_USER_AGENT, GOANIMES_SYNC_STATUS_TZ, PORT, GOANIMES_ADDR, GOANIMES_DATA_DIR, GIN_MODE,
 #   GOANIMES_GOAI_AUDIT_ENABLED, GOANIMES_GOAI_AUDIT_INTERVAL, GOANIMES_GOAI_HTTP_TIMEOUT, GOANIMES_GOAI_BASE_URL,
@@ -100,35 +107,60 @@ jobs:
     needs: image
     runs-on: ubuntu-latest
     environment: prd
+    permissions:
+      contents: read
     steps:
-      - name: GHCR owner for VM compose
+      - uses: actions/checkout@v6
+
+      - name: GHCR owner (lowercase)
         id: ghcr
         run: echo "owner=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
+      - name: Stamp container image in k8s Deployment
+        run: |
+          set -euo pipefail
+          OWNER=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')
+          IMG="ghcr.io/${OWNER}/goanimes:${{ github.sha }}"
+          sed -i "s|__GOANIMES_CONTAINER_IMAGE__|${IMG}|g" deploy/k8s/goanimes/deployment.yaml
+
+      - name: Pack k8s manifests
+        run: tar czf /tmp/goanimes-k8s.tgz -C deploy/k8s goanimes
+
+      - name: Copy k8s bundle to VM
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.OCI_VM_HOST }}
+          username: ${{ secrets.OCI_VM_USER }}
+          key: ${{ secrets.OCI_SSH_PRIVATE_KEY }}
+          source: /tmp/goanimes-k8s.tgz
+          target: /tmp/
 
       - name: Deploy GoAnimes on Oracle VM
         uses: appleboy/ssh-action@v1.2.0
         env:
-          OCI_DEPLOY_ROOT: ${{ secrets.OCI_DEPLOY_ROOT }}
-          GHCR_PULL_TOKEN: ${{ secrets.GHCR_PULL_TOKEN }}
-          GHCR_USER: ${{ secrets.GHCR_USER }}
+          OCI_DEPLOY_ROOT: ${{ vars.OCI_DEPLOY_ROOT || secrets.OCI_DEPLOY_ROOT }}
           GOANIMES_GHCR_OWNER: ${{ steps.ghcr.outputs.owner }}
           GOANIMES_IMAGE_TAG: main
-          GOANIMES_ADMIN_API_KEY: ${{ secrets.GOANIMES_ADMIN_API_KEY }}
-          ADMIN_API_KEY: ${{ secrets.ADMIN_API_KEY }}
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          GOANIMES_SQLITE_DSN: ${{ secrets.GOANIMES_SQLITE_DSN }}
-          GOANIMES_TMDB_API_KEY: ${{ secrets.GOANIMES_TMDB_API_KEY }}
-          GOANIMES_TVDB_API_KEY: ${{ secrets.GOANIMES_TVDB_API_KEY }}
-          GOANIMES_TVDB_PIN: ${{ secrets.GOANIMES_TVDB_PIN }}
-          GOANIMES_ENV_B64: ${{ secrets.GOANIMES_ENV_B64 }}
-          GOANIMES_GOAI_ADMIN_API_KEY: ${{ secrets.GOANIMES_GOAI_ADMIN_API_KEY }}
+          GOANIMES_ADMIN_API_KEY: ${{ vars.GOANIMES_ADMIN_API_KEY }}
+          ADMIN_API_KEY: ${{ vars.ADMIN_API_KEY }}
+          DATABASE_URL: ${{ vars.DATABASE_URL }}
+          GOANIMES_SQLITE_DSN: ${{ vars.GOANIMES_SQLITE_DSN }}
+          GOANIMES_TMDB_API_KEY: ${{ vars.GOANIMES_TMDB_API_KEY }}
+          GOANIMES_TVDB_API_KEY: ${{ vars.GOANIMES_TVDB_API_KEY }}
+          GOANIMES_TVDB_PIN: ${{ vars.GOANIMES_TVDB_PIN }}
+          GOANIMES_ENV_B64: ${{ vars.GOANIMES_ENV_B64 }}
+          GOANIMES_GOAI_ADMIN_API_KEY: ${{ vars.GOANIMES_GOAI_ADMIN_API_KEY }}
           GOANIMES_GOAI_AUDIT_ENABLED: ${{ vars.GOANIMES_GOAI_AUDIT_ENABLED }}
           GOANIMES_GOAI_AUDIT_INTERVAL: ${{ vars.GOANIMES_GOAI_AUDIT_INTERVAL }}
           GOANIMES_GOAI_HTTP_TIMEOUT: ${{ vars.GOANIMES_GOAI_HTTP_TIMEOUT }}
           GOANIMES_GOAI_BASE_URL: ${{ vars.GOANIMES_GOAI_BASE_URL }}
           GOANIMES_SYNC_INTERVAL: ${{ vars.GOANIMES_SYNC_INTERVAL }}
+          GOANIMES_SYNC_RUN_TIMEOUT: ${{ vars.GOANIMES_SYNC_RUN_TIMEOUT }}
           GOANIMES_RSS_POLL_INTERVAL: ${{ vars.GOANIMES_RSS_POLL_INTERVAL }}
           GOANIMES_HTTP_TIMEOUT: ${{ vars.GOANIMES_HTTP_TIMEOUT }}
+          GOANIMES_CINEMETA_BASE_URL: ${{ vars.GOANIMES_CINEMETA_BASE_URL }}
+          GOANIMES_CINEMETA_MIN_DELAY: ${{ vars.GOANIMES_CINEMETA_MIN_DELAY }}
+          GOANIMES_CINEMETA_DISABLED: ${{ vars.GOANIMES_CINEMETA_DISABLED }}
           GOANIMES_ERAI_MAX_PER_ANIME_FEEDS: ${{ vars.GOANIMES_ERAI_MAX_PER_ANIME_FEEDS }}
           GOANIMES_ERAI_PER_ANIME_DELAY: ${{ vars.GOANIMES_ERAI_PER_ANIME_DELAY }}
           GOANIMES_ERAI_PER_ANIME_MAX_ATTEMPTS: ${{ vars.GOANIMES_ERAI_PER_ANIME_MAX_ATTEMPTS }}
@@ -163,7 +195,7 @@ jobs:
           username: ${{ secrets.OCI_VM_USER }}
           key: ${{ secrets.OCI_SSH_PRIVATE_KEY }}
           command_timeout: 30m
-          envs: OCI_DEPLOY_ROOT,GHCR_PULL_TOKEN,GHCR_USER,GOANIMES_GHCR_OWNER,GOANIMES_IMAGE_TAG,GOANIMES_ADMIN_API_KEY,ADMIN_API_KEY,DATABASE_URL,GOANIMES_SQLITE_DSN,GOANIMES_TMDB_API_KEY,GOANIMES_TVDB_API_KEY,GOANIMES_TVDB_PIN,GOANIMES_ENV_B64,GOANIMES_GOAI_ADMIN_API_KEY,GOANIMES_GOAI_AUDIT_ENABLED,GOANIMES_GOAI_AUDIT_INTERVAL,GOANIMES_GOAI_HTTP_TIMEOUT,GOANIMES_GOAI_BASE_URL,GOANIMES_SYNC_INTERVAL,GOANIMES_RSS_POLL_INTERVAL,GOANIMES_HTTP_TIMEOUT,GOANIMES_ERAI_MAX_PER_ANIME_FEEDS,GOANIMES_ERAI_PER_ANIME_DELAY,GOANIMES_ERAI_PER_ANIME_MAX_ATTEMPTS,GOANIMES_ERAI_PER_ANIME_RETRY_BACKOFF,GOANIMES_ANILIST_DISABLED,GOANIMES_JIKAN_DISABLED,GOANIMES_KITSU_DISABLED,GOANIMES_TMDB_DISABLED,GOANIMES_TVDB_DISABLED,GOANIMES_ANILIST_MIN_DELAY,GOANIMES_JIKAN_MIN_DELAY,GOANIMES_KITSU_MIN_DELAY,GOANIMES_TMDB_MIN_DELAY,GOANIMES_TVDB_MIN_DELAY,GOANIMES_ANIDB_CLIENT,GOANIMES_ANIDB_CLIENTVER,GOANIMES_ANIDB_MIN_DELAY,GOANIMES_ANIDB_DISABLED,GOANIMES_MAX_BODY_BYTES,GOANIMES_USER_AGENT,GOANIMES_SYNC_STATUS_TZ,PORT,GOANIMES_ADDR,GOANIMES_DATA_DIR,GIN_MODE,OTEL_SERVICE_NAME,OTEL_SDK_DISABLED,OTEL_EXPORTER_OTLP_ENDPOINT,OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
+          envs: OCI_DEPLOY_ROOT,GOANIMES_GHCR_OWNER,GOANIMES_IMAGE_TAG,GOANIMES_ADMIN_API_KEY,ADMIN_API_KEY,DATABASE_URL,GOANIMES_SQLITE_DSN,GOANIMES_TMDB_API_KEY,GOANIMES_TVDB_API_KEY,GOANIMES_TVDB_PIN,GOANIMES_ENV_B64,GOANIMES_GOAI_ADMIN_API_KEY,GOANIMES_GOAI_AUDIT_ENABLED,GOANIMES_GOAI_AUDIT_INTERVAL,GOANIMES_GOAI_HTTP_TIMEOUT,GOANIMES_GOAI_BASE_URL,GOANIMES_SYNC_INTERVAL,GOANIMES_SYNC_RUN_TIMEOUT,GOANIMES_RSS_POLL_INTERVAL,GOANIMES_HTTP_TIMEOUT,GOANIMES_CINEMETA_BASE_URL,GOANIMES_CINEMETA_MIN_DELAY,GOANIMES_CINEMETA_DISABLED,GOANIMES_ERAI_MAX_PER_ANIME_FEEDS,GOANIMES_ERAI_PER_ANIME_DELAY,GOANIMES_ERAI_PER_ANIME_MAX_ATTEMPTS,GOANIMES_ERAI_PER_ANIME_RETRY_BACKOFF,GOANIMES_ANILIST_DISABLED,GOANIMES_JIKAN_DISABLED,GOANIMES_KITSU_DISABLED,GOANIMES_TMDB_DISABLED,GOANIMES_TVDB_DISABLED,GOANIMES_ANILIST_MIN_DELAY,GOANIMES_JIKAN_MIN_DELAY,GOANIMES_KITSU_MIN_DELAY,GOANIMES_TMDB_MIN_DELAY,GOANIMES_TVDB_MIN_DELAY,GOANIMES_ANIDB_CLIENT,GOANIMES_ANIDB_CLIENTVER,GOANIMES_ANIDB_MIN_DELAY,GOANIMES_ANIDB_DISABLED,GOANIMES_MAX_BODY_BYTES,GOANIMES_USER_AGENT,GOANIMES_SYNC_STATUS_TZ,PORT,GOANIMES_ADDR,GOANIMES_DATA_DIR,GIN_MODE,OTEL_SERVICE_NAME,OTEL_SDK_DISABLED,OTEL_EXPORTER_OTLP_ENDPOINT,OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
           script_stop: true
           script: |
             set -euo pipefail
@@ -172,6 +204,17 @@ jobs:
             export GOANIMES_IMAGE_TAG="${GOANIMES_IMAGE_TAG:-main}"
             ORACLE_DIR="${ROOT}/deploy/oracle"
             DEPLOY_ENV="${ORACLE_DIR}/.env.goanimes.deploy"
+            mkdir -p "${ORACLE_DIR}"
+            K8S_TAR="${GOANIMES_K8S_TARBALL:-/tmp/goanimes-k8s.tgz}"
+            if [ ! -f "${K8S_TAR}" ]; then
+              echo "Falta ${K8S_TAR} (passo SCP do workflow). Sem tarball não há manifests para kubectl." >&2
+              exit 1
+            fi
+            mkdir -p "${ROOT}/deploy/k8s"
+            tar xzf "${K8S_TAR}" -C "${ROOT}/deploy/k8s"
+            rm -f "${K8S_TAR}"
+            K8S_DIR="${ROOT}/deploy/k8s/goanimes"
+            command -v kubectl >/dev/null 2>&1 || { echo "kubectl não está no PATH nesta VM." >&2; exit 1; }
             umask 077
             : > "${DEPLOY_ENV}"
             write_kv() {
@@ -193,8 +236,12 @@ jobs:
             write_kv GOANIMES_GOAI_HTTP_TIMEOUT "${GOANIMES_GOAI_HTTP_TIMEOUT:-}"
             write_kv GOANIMES_GOAI_BASE_URL "${GOANIMES_GOAI_BASE_URL:-}"
             write_kv GOANIMES_SYNC_INTERVAL "${GOANIMES_SYNC_INTERVAL:-}"
+            write_kv GOANIMES_SYNC_RUN_TIMEOUT "${GOANIMES_SYNC_RUN_TIMEOUT:-}"
             write_kv GOANIMES_RSS_POLL_INTERVAL "${GOANIMES_RSS_POLL_INTERVAL:-}"
             write_kv GOANIMES_HTTP_TIMEOUT "${GOANIMES_HTTP_TIMEOUT:-}"
+            write_kv GOANIMES_CINEMETA_BASE_URL "${GOANIMES_CINEMETA_BASE_URL:-}"
+            write_kv GOANIMES_CINEMETA_MIN_DELAY "${GOANIMES_CINEMETA_MIN_DELAY:-}"
+            write_kv GOANIMES_CINEMETA_DISABLED "${GOANIMES_CINEMETA_DISABLED:-}"
             write_kv GOANIMES_ERAI_MAX_PER_ANIME_FEEDS "${GOANIMES_ERAI_MAX_PER_ANIME_FEEDS:-}"
             write_kv GOANIMES_ERAI_PER_ANIME_DELAY "${GOANIMES_ERAI_PER_ANIME_DELAY:-}"
             write_kv GOANIMES_ERAI_PER_ANIME_MAX_ATTEMPTS "${GOANIMES_ERAI_PER_ANIME_MAX_ATTEMPTS:-}"
@@ -229,10 +276,12 @@ jobs:
               printf '\n' >> "${DEPLOY_ENV}"
             fi
             chmod 600 "${DEPLOY_ENV}" || true
-            if [ -n "${GHCR_PULL_TOKEN:-}" ]; then
-              echo "$GHCR_PULL_TOKEN" | docker login ghcr.io -u "${GHCR_USER:-${GOANIMES_GHCR_OWNER}}" --password-stdin
-            fi
-            cd "${ORACLE_DIR}"
-            docker compose -f docker-compose.goanimes.yml pull goanimes
-            # Recria o contentor para aplicar .env.goanimes.deploy (Compose nem sempre recria só com env alterado).
-            docker compose -f docker-compose.goanimes.yml up -d --force-recreate goanimes
+            kubectl apply -f "${K8S_DIR}/namespace.yaml"
+            kubectl -n goanimes create secret generic goanimes-env \
+              --from-env-file="${DEPLOY_ENV}" \
+              --dry-run=client -o yaml | kubectl apply -f -
+            kubectl apply -k "${K8S_DIR}"
+            CONFIG_HASH=$(sha256sum "${DEPLOY_ENV}" | awk '{print $1}')
+            kubectl -n goanimes patch deployment goanimes --type strategic -p "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"goanimes.github/config-sha\":\"${CONFIG_HASH}\"}}}}}"
+            kubectl -n goanimes rollout status deployment/goanimes --timeout=360s
+            echo "OK: Deployment goanimes (namespace goanimes). Ficheiro local ${DEPLOY_ENV}. Imagem ghcr.io/${GOANIMES_GHCR_OWNER}/goanimes:${GOANIMES_IMAGE_TAG:-main} + digest do commit no manifest enviado pelo CI."

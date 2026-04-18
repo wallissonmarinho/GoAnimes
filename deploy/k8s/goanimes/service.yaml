@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: goanimes
+  labels:
+    app.kubernetes.io/name: goanimes
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: goanimes
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
