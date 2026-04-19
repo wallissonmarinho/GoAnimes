@@ -310,5 +310,6 @@ jobs:
             kubectl apply -k "${K8S_DIR}"
             CONFIG_HASH=$(sha256sum "${DEPLOY_ENV}" | awk '{print $1}')
             kubectl -n goanimes patch deployment goanimes --type strategic -p "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"goanimes.github/config-sha\":\"${CONFIG_HASH}\"}}}}}"
-            kubectl -n goanimes rollout status deployment/goanimes --timeout=360s
+            # E2.Micro: o pod antigo pode demorar a sair de Terminating (CPU/CNI); 360s falhou em rollouts lentos.
+            kubectl -n goanimes rollout status deployment/goanimes --timeout=900s
             echo "OK: k3s — Deployment goanimes (namespace goanimes). Ficheiro local ${DEPLOY_ENV}. Imagem ghcr.io/${GOANIMES_GHCR_OWNER}/goanimes:${GOANIMES_IMAGE_TAG:-main} + digest do commit no manifest enviado pelo CI."

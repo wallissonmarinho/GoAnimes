@@ -19,9 +19,10 @@ spec:
       labels:
         app.kubernetes.io/name: goanimes
     spec:
-      # Mesmo nó que Postgres (`deploy/k8s/postgres/statefulset.yaml`). Sem isto, pods no
-      # Ampere (10.42.0.x) não alcançam o endpoint em SP (10.42.2.x) se o pod network
-      # multiregion (Flannel/WireGuard) não estiver a encaminhar — timeout em DATABASE_URL.
+      # Mesmo nó que Postgres (`deploy/k8s/postgres/statefulset.yaml`).
+      # Se pods noutro nó não alcançarem `kube-dns` (10.43.0.x:53), vês falha de *lookup* no
+      # DATABASE_URL — vê deploy/wireguard/K3S-VMs-novas-malha-WG.md (Cluster DNS) e
+      # deploy/k8s/postgres/README.md (DNS a partir de workers remotos).
       nodeSelector:
         kubernetes.io/hostname: oci-prd-saopaulo-e2-micro-1
       containers:
