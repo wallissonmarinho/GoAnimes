@@ -1,0 +1,24 @@
+# Traefik (k3s) — expõe o Service `goanimes` no hostname público.
+# Requisitos fora do cluster:
+#   1) DuckDNS: A record = IP público de um nó onde a Security List da OCI aceita **443** (e **80** se usares HTTP-01 / redirect).
+#   2) Esse IP não tem de ser o Ampere — é o IP do nó onde o tráfego da Internet chega ao Traefik (svclb-traefik nos nós).
+# HTTPS: sem `tls` abaixo tens só HTTP na entrada web. Para TLS, configura ACME no Traefik (HelmChartConfig k3s),
+# cert-manager, ou preenche `spec.tls` + Secret com certificado.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: goanimes
+  namespace: goanimes
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: goanimes.duckdns.org
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: goanimes
+                port:
+                  number: 8080
