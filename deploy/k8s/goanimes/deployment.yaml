@@ -19,6 +19,11 @@ spec:
       labels:
         app.kubernetes.io/name: goanimes
     spec:
+      # Mesmo nó que Postgres (`deploy/k8s/postgres/statefulset.yaml`). Sem isto, pods no
+      # Ampere (10.42.0.x) não alcançam o endpoint em SP (10.42.2.x) se o pod network
+      # multiregion (Flannel/WireGuard) não estiver a encaminhar — timeout em DATABASE_URL.
+      nodeSelector:
+        kubernetes.io/hostname: oci-prd-saopaulo-e2-micro-1
       containers:
         - name: goanimes
           # Substituído no CI antes do tar (oracle-deploy.yml — passo "Stamp container image").
@@ -30,20 +35,9 @@ spec:
           envFrom:
             - secretRef:
                 name: goanimes-env
-          # Prefer PORT from secret for VM/systemd; in-cluster probes use containerPort 8080.
-          env:
-            - name: PORT
-              value: "8080"
           volumeMounts:
             - name: data
               mountPath: /app/data
-          startupProbe:
-            httpGet:
-              path: /health
-              port: http
-            periodSeconds: 5
-            failureThreshold: 60
-            timeoutSeconds: 3
           readinessProbe:
             httpGet:
               path: /health

@@ -5,7 +5,7 @@
 # Postgres no cluster (repo **www**): `deploy/k8s/postgres/` — base `goanimes`. No GitHub ambiente **prd**
 # **Variable** `DATABASE_URL` (in-cluster), ex.:
 #   postgresql://postgres:SENHA@postgres.postgres.svc.cluster.local:5432/goanimes?sslmode=disable
-# **SENHA** = mesma que `POSTGRES_PASSWORD` em `postgres-secret` (ver `deploy/k8s/postgres/apply.sh`).
+# **SENHA** = mesma que `POSTGRES_PASSWORD` em `postgres-secret` (ver `deploy/k8s/postgres/README.md`).
 #
 # Job deploy: environment **prd** — **Variables** (`vars.*`) → ficheiro `.env` na VM + Secret no k3s `goanimes-env`.
 #   Chaves API, `DATABASE_URL`, `GOANIMES_ENV_B64`, etc. ficam **visíveis na UI** GitHub a quem gere o ambiente
