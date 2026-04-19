@@ -173,10 +173,23 @@ func main() {
 }
 
 func listenAddr() string {
-	if p := os.Getenv("PORT"); p != "" {
+	if p := strings.TrimSpace(os.Getenv("PORT")); p != "" {
+		p = strings.TrimPrefix(p, ":")
 		return ":" + p
 	}
-	return getenv("GOANIMES_ADDR", ":8080")
+	addr := strings.TrimSpace(os.Getenv("GOANIMES_ADDR"))
+	if addr == "" {
+		addr = ":8080"
+	}
+	// kubelet readiness/liveness use the pod IP, not loopback — 127.0.0.1 / localhost → connection refused.
+	low := strings.ToLower(addr)
+	if strings.HasPrefix(addr, "127.") || strings.Contains(low, "localhost") ||
+		strings.Contains(addr, "[::1]") || strings.HasPrefix(addr, "::1:") {
+		slog.Warn("GOANIMES_ADDR binds to loopback; not reachable from Kubernetes probes — using :8080",
+			slog.String("GOANIMES_ADDR", addr))
+		return ":8080"
+	}
+	return addr
 }
 
 func getenv(k, def string) string {

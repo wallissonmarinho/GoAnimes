@@ -71,7 +71,7 @@ Autenticação: `Authorization: Bearer <chave>` ou `X-Admin-API-Key: <chave>`.
 
 | Variável | Descrição |
 |----------|-----------|
-| `PORT` / `GOANIMES_ADDR` | Porta (ex. `:8080`) |
+| `PORT` / `GOANIMES_ADDR` | Porta (ex. `:8080`). **Em Kubernetes** não uses `127.0.0.1` nem `localhost` — as probes do kubelet usam o IP do pod; o binário força `:8080` se detectar loopback e regista um aviso no log. |
 | `GOANIMES_DATA_DIR` | Diretório dos dados (default `./data`) |
 | `GOANIMES_ADMIN_API_KEY` / `ADMIN_API_KEY` | Chave admin |
 | `GOANIMES_SYNC_STATUS_TZ` | Fuso IANA só para `started_at` / `finished_at` em `GET /api/v1/sync-status`. **Brasília:** `America/Sao_Paulo`. Vazio = **UTC** (`Z`). O servidor continua a gravar sync em UTC na base. |
@@ -111,6 +111,9 @@ Manifests: **`deploy/k8s/goanimes/`** (API Kubernetes; cluster alvo é **k3s**).
 **Postgres no k3s** (repo `www`, `deploy/k8s/postgres/`): define no ambiente GitHub **prd** a **Variable** **`DATABASE_URL`** (DSN **in-cluster**), por exemplo  
 `postgresql://postgres:<POSTGRES_PASSWORD>@postgres.postgres.svc.cluster.local:5432/goanimes?sslmode=disable`  
 (a password deve coincidir com o Secret `postgres/postgres-secret` aplicado no **k3s**). Ver também `deploy/oracle/README.md` e **`deploy/oracle/CONTEXT.md`**.
+
+O **Deployment** inclui **`hostAliases`** com placeholder **`__POSTGRES_SVC_CLUSTER_IP__`**: o job **`oracle-deploy`** na VM substitui-o pelo **`ClusterIP`** do Service `postgres/postgres` antes do `kubectl apply` (contorno a *timeouts* de DNS ao `10.43.0.10`). **Apply manual** a partir do repo:  
+`PGIP=$(kubectl get svc -n postgres postgres -o jsonpath='{.spec.clusterIP}')` e `sed -i.bak "s|__POSTGRES_SVC_CLUSTER_IP__|${PGIP}|g" deploy/k8s/goanimes/deployment.yaml` (macOS: `sed -i '' …`), depois `kubectl apply -k deploy/k8s/goanimes`.
 
 **Nome público (`https://goanimes.duckdns.org`):** o manifest **`ingress.yaml`** (host `goanimes.duckdns.org`) encaminha o **Traefik** do k3s para o **Service** `goanimes:8080`. **DuckDNS:** o registo `A` deve ser o **IP público de um nó** onde a **Security List** (e NSG, se existir) permite **443** (e **80** se precisares de redirect ou desafio ACME). **Não** é obrigatoriamente o Ampere — é o IP da VM que na prática recebe tráfego **80/443** da Internet até ao Traefik (`kubectl get svc -n kube-system traefik`; nos nós vês `svclb-traefik-*`). **HTTPS** exige TLS na entrada (ACME no HelmChartConfig do Traefik, **cert-manager**, ou `spec.tls` + Secret); sem isso o Ingress continua a servir **HTTP** na porta **80** do nó.
 

@@ -242,6 +242,12 @@ jobs:
               echo "Ou: export KUBECONFIG=/etc/rancher/k3s/k3s.yaml no .profile se esse ficheiro for legível pelo user de deploy." >&2
               exit 1
             fi
+            PGIP="$(kubectl get svc -n postgres postgres -o jsonpath='{.spec.clusterIP}' 2>/dev/null || true)"
+            if [ -z "${PGIP}" ]; then
+              echo "ERRO: Service postgres/postgres não encontrado no cluster; não dá para preencher hostAliases no Deployment." >&2
+              exit 1
+            fi
+            sed -i "s|__POSTGRES_SVC_CLUSTER_IP__|${PGIP}|g" "${K8S_DIR}/deployment.yaml"
             umask 077
             : > "${DEPLOY_ENV}"
             write_kv() {
