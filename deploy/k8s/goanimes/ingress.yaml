@@ -11,11 +11,16 @@ metadata:
   name: goanimes
   namespace: goanimes
   annotations:
+    kubernetes.io/ingress.class: traefik
     traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
     # Router TLS em websecure com cert por defeito do Traefik (browser pode avisar até haver ACME/LE).
     traefik.ingress.kubernetes.io/router.tls: "true"
 spec:
   ingressClassName: traefik
+  # `tls.hosts` sem Secret faz o Traefik usar o cert por defeito e regista o router em **websecure** (443).
+  tls:
+    - hosts:
+        - goanimes.duckdns.org
   rules:
     - host: goanimes.duckdns.org
       http:
