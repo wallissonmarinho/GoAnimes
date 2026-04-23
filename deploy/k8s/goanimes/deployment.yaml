@@ -19,12 +19,8 @@ spec:
       labels:
         app.kubernetes.io/name: goanimes
     spec:
-      # Sem nodeSelector: o scheduler pode colocar o pod em qualquer worker. O Postgres continua
-      # no SP micro-1 (PVC local); ligação à BD é via Service + `hostAliases` (ClusterIP) e rede k3s.
-      # Se `kube-dns` (10.43.0.x:53) falhar noutro nó, vê deploy/wireguard/K3S-VMs-novas-malha-WG.md
-      # e deploy/k8s/postgres/README.md (CoreDNS / DNS entre regiões).
-      # Evita depender de UDP ao kube-dns para este nome (timeouts SP ↔ CoreDNS em Ashburn).
-      # Substituído no deploy SSH: `kubectl get svc -n postgres postgres -o jsonpath='{.spec.clusterIP}'` → oracle-deploy.yml.
+      nodeSelector:
+        kubernetes.io/arch: arm64
       hostAliases:
         - ip: __POSTGRES_SVC_CLUSTER_IP__
           hostnames:
@@ -48,7 +44,8 @@ spec:
             httpGet:
               path: /health
               port: http
-            failureThreshold: 36
+            # OpenCatalog (Postgres remoto / migrations) pode exceder 3m antes de ListenAndServe.
+            failureThreshold: 72
             periodSeconds: 5
             timeoutSeconds: 3
           readinessProbe:

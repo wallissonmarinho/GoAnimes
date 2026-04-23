@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"strings"
+	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 	_ "modernc.org/sqlite"
@@ -36,7 +37,9 @@ func OpenDB(dsn string) (*sql.DB, bool, error) {
 	if err != nil {
 		return nil, false, err
 	}
-	if err := db.Ping(); err != nil {
+	pingCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	if err := db.PingContext(pingCtx); err != nil {
 		_ = db.Close()
 		return nil, false, err
 	}
@@ -49,7 +52,9 @@ func Open(dsn string) (*Catalog, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := persistmigrate.RunMigrations(context.Background(), db, pg); err != nil {
+	migrateCtx, migrateCancel := context.WithTimeout(context.Background(), 15*time.Minute)
+	defer migrateCancel()
+	if err := persistmigrate.RunMigrations(migrateCtx, db, pg); err != nil {
 		_ = db.Close()
 		return nil, err
 	}
