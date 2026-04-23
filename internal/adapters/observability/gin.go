@@ -2,6 +2,7 @@ package observability
 
 import (
 	"log/slog"
+	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -10,7 +11,10 @@ import (
 
 // RegisterGin adds OpenTelemetry tracing and structured access logs (slog).
 func RegisterGin(engine *gin.Engine, serviceName string) {
-	engine.Use(otelgin.Middleware(serviceName))
+	engine.Use(otelgin.Middleware(serviceName, otelgin.WithFilter(func(r *http.Request) bool {
+		// Liveness/readiness: não criar span (evita poluir Jaeger).
+		return r.URL.Path != "/health"
+	})))
 	engine.Use(accessLogMiddleware())
 }
 
