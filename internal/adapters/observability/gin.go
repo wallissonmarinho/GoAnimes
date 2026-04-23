@@ -16,6 +16,10 @@ func RegisterGin(engine *gin.Engine, serviceName string) {
 
 func accessLogMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if c.Request.URL.Path == "/health" {
+			c.Next()
+			return
+		}
 		start := time.Now()
 		c.Next()
 		lg := slog.Default()
