@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/wallissonmarinho/GoAnimes/internal/adapters/observability"
 	"github.com/wallissonmarinho/GoAnimes/internal/core/domain"
 )
 
@@ -70,7 +71,9 @@ func (h *handlers) postRebuild(c *gin.Context) {
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
-		res := h.deps.Sync.Run(ctx)
+		runCtx, span := observability.StartSyncSpan(ctx, "sync.rebuild")
+		defer span.End()
+		res := h.deps.Sync.Run(runCtx)
 		if h.deps.Log != nil && len(res.Errors) > 0 {
 			h.deps.Log.Warn("rebuild warnings", "errors", res.Errors)
 		}
