@@ -2,24 +2,19 @@
   "info": {
     "_postman_id": "a1b2c3d4-goanimes-api",
     "name": "GoAnimes",
-    "description": "GoAnimes — admin API + URLs do addon Stremio.\n\n**Variáveis de coleção:** `baseUrl`, `adminApiKey`, `rssSourceId`, `sampleRssUrl`, `seriesId`, `videoId`, `goaiAuditLimit`, `goaiAuditOffset`, `goaiAuditConfidenceMin`, `goaiAuditConfidenceMax`, `goaiSeriesId`\n\n- **Meta / Stream (path):** coloca em `seriesId` e `videoId` o id **já com encoding URL** (ex. `goanimes%3Aseries%3A…`, `goanimes%3Avid%3A…`), ou edita o path manualmente no Postman.\n- **Inspect series:** usa `seriesId` **sem** encoding no query param; o Postman codifica no `?id=`.\n- **GoAI audit:** `goaiSeriesId` é o `series_id` do catálogo (igual ao retornado em **List series audits**). O script desse GET pode preencher `goaiSeriesId` automaticamente a partir do primeiro item.\n\nSe **não** usares `GOANIMES_ADMIN_API_KEY`, na pasta **Admin** → **Authorization** → **No Auth**.\n\n**Create RSS source** grava `rssSourceId` para o **Delete**.",
+    "description": "GoAnimes — admin API + URLs do addon Stremio.\n\n**Variaveis de colecao:** `baseUrl`, `adminApiKey`, `feedId`, `sampleFeedUrl`, `seriesId`, `videoId`.\n\n- **Meta / Stream:** use `seriesId` e `videoId` com URL encoding (ex. `tmdb%3A123%3A1`, `tmdb%3A123%3A1%3A5`).\n- **Admin:** se nao usar chave, ajuste Authorization para **No Auth** na pasta Admin.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
     { "key": "baseUrl", "value": "http://127.0.0.1:8080" },
     { "key": "adminApiKey", "value": "" },
-    { "key": "rssSourceId", "value": "" },
+    { "key": "feedId", "value": "" },
     {
-      "key": "sampleRssUrl",
+      "key": "sampleFeedUrl",
       "value": "https://www.erai-raws.info/feed/?type=torrent&token=SEU_TOKEN_AQUI"
     },
     { "key": "seriesId", "value": "" },
-    { "key": "videoId", "value": "" },
-    { "key": "goaiAuditLimit", "value": "50" },
-    { "key": "goaiAuditOffset", "value": "0" },
-    { "key": "goaiAuditConfidenceMin", "value": "" },
-    { "key": "goaiAuditConfidenceMax", "value": "" },
-    { "key": "goaiSeriesId", "value": "" }
+    { "key": "videoId", "value": "" }
   ],
   "item": [
     {
@@ -50,12 +45,11 @@
           }
         },
         {
-          "name": "Catalog · Últimos 7 dias",
+          "name": "Catalog · Ultimos 7 dias",
           "request": {
             "method": "GET",
             "header": [],
-            "url": "{{baseUrl}}/catalog/anime/goanimes-week.json",
-            "description": "Só séries com pelo menos um episódio com data Released nos últimos 7 dias (UTC)."
+            "url": "{{baseUrl}}/catalog/anime/goanimes-week.json"
           }
         },
         {
@@ -63,8 +57,7 @@
           "request": {
             "method": "GET",
             "header": [],
-            "url": "{{baseUrl}}/catalog/anime/goanimes/genre=Fantasia.json",
-            "description": "Igual ao Stremio com filtro de género (labels em pt-BR do manifest)."
+            "url": "{{baseUrl}}/catalog/anime/goanimes/genre=Fantasia.json"
           }
         },
         {
@@ -72,17 +65,7 @@
           "request": {
             "method": "GET",
             "header": [],
-            "url": "{{baseUrl}}/meta/anime/{{seriesId}}.json",
-            "description": "Define `seriesId` com id path-encoded (`:` → `%3A`), ou substitui no URL."
-          }
-        },
-        {
-          "name": "Meta (series / series id)",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{baseUrl}}/meta/series/{{seriesId}}.json",
-            "description": "Mesmo conteúdo que anime em muitos clientes; útil para testar o tipo `series`."
+            "url": "{{baseUrl}}/meta/anime/{{seriesId}}.json"
           }
         },
         {
@@ -90,17 +73,7 @@
           "request": {
             "method": "GET",
             "header": [],
-            "url": "{{baseUrl}}/stream/anime/{{videoId}}.json",
-            "description": "`videoId` = id `goanimes:vid:…` (encoded no path)."
-          }
-        },
-        {
-          "name": "Stream (series / video id)",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{baseUrl}}/stream/series/{{videoId}}.json",
-            "description": "Alternativa com tipo `series` no path."
+            "url": "{{baseUrl}}/stream/anime/{{videoId}}.json"
           }
         }
       ]
@@ -119,18 +92,18 @@
       },
       "item": [
         {
-          "name": "RSS sources",
+          "name": "Feeds",
           "item": [
             {
-              "name": "Create RSS source",
+              "name": "Create feed",
               "event": [
                 {
                   "listen": "test",
                   "script": {
                     "exec": [
-                      "if (pm.response.code === 201) {",
+                      "if (pm.response.code === 200) {",
                       "  const j = pm.response.json();",
-                      "  if (j && j.id) pm.collectionVariables.set('rssSourceId', j.id);",
+                      "  if (j && j.feed && j.feed.id) pm.collectionVariables.set('feedId', j.feed.id);",
                       "}"
                     ],
                     "type": "text/javascript"
@@ -147,25 +120,42 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"url\": \"{{sampleRssUrl}}\",\n  \"label\": \"Erai\"\n}"
+                  "raw": "{\n  \"name\": \"Erai\",\n  \"url\": \"{{sampleFeedUrl}}\",\n  \"type\": \"rss\",\n  \"enabled\": true\n}"
                 },
-                "url": "{{baseUrl}}/api/v1/rss-sources"
+                "url": "{{baseUrl}}/admin/feeds"
               }
             },
             {
-              "name": "List RSS sources",
+              "name": "Update feed",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"Erai\",\n  \"url\": \"{{sampleFeedUrl}}\",\n  \"type\": \"rss\",\n  \"enabled\": false\n}"
+                },
+                "url": "{{baseUrl}}/admin/feeds/{{feedId}}"
+              }
+            },
+            {
+              "name": "List feeds",
               "request": {
                 "method": "GET",
                 "header": [],
-                "url": "{{baseUrl}}/api/v1/rss-sources"
+                "url": "{{baseUrl}}/admin/feeds"
               }
             },
             {
-              "name": "Delete RSS source",
+              "name": "Delete feed",
               "request": {
                 "method": "DELETE",
                 "header": [],
-                "url": "{{baseUrl}}/api/v1/rss-sources/{{rssSourceId}}"
+                "url": "{{baseUrl}}/admin/feeds/{{feedId}}"
               }
             }
           ]
@@ -174,86 +164,28 @@
           "name": "Sync",
           "item": [
             {
-              "name": "Rebuild (sync now)",
+              "name": "Sync now",
               "request": {
                 "method": "POST",
                 "header": [],
-                "url": "{{baseUrl}}/api/v1/rebuild"
-              }
-            },
-            {
-              "name": "Sync status",
-              "request": {
-                "method": "GET",
-                "header": [],
-                "url": "{{baseUrl}}/api/v1/sync-status",
-                "description": "Inclui `errors`: linhas de falha do último sync (RSS, save, AniList, Jikan), persistidas no snapshot."
+                "url": "{{baseUrl}}/admin/sync"
               }
             }
           ]
         },
         {
-          "name": "Inspect",
+          "name": "Mapping overrides",
           "item": [
             {
-              "name": "Inspect catalog",
+              "name": "List overrides",
               "request": {
                 "method": "GET",
                 "header": [],
-                "url": "{{baseUrl}}/api/v1/inspect/catalog",
-                "description": "Resumo de todas as séries + enrichment (validação / QA)."
+                "url": "{{baseUrl}}/admin/mapping-overrides"
               }
             },
             {
-              "name": "Inspect series",
-              "request": {
-                "method": "GET",
-                "header": [],
-                "url": "{{baseUrl}}/api/v1/inspect/series?id={{seriesId}}",
-                "description": "Query `id` = série Stremio (ex. goanimes:series:…). Podes colar com `:`; o cliente codifica no query string."
-              }
-            }
-          ]
-        },
-        {
-          "name": "GoAI audit",
-          "item": [
-            {
-              "name": "List series audits",
-              "event": [
-                {
-                  "listen": "test",
-                  "script": {
-                    "exec": [
-                      "if (pm.response.code === 200) {",
-                      "  const j = pm.response.json();",
-                      "  if (j && Array.isArray(j.items) && j.items.length > 0 && j.items[0].series_id) {",
-                      "    pm.collectionVariables.set('goaiSeriesId', j.items[0].series_id);",
-                      "  }",
-                      "}"
-                    ],
-                    "type": "text/javascript"
-                  }
-                }
-              ],
-              "request": {
-                "method": "GET",
-                "header": [],
-                "url": "{{baseUrl}}/api/v1/goai-audit/series?limit={{goaiAuditLimit}}&offset={{goaiAuditOffset}}&confidence_min={{goaiAuditConfidenceMin}}&confidence_max={{goaiAuditConfidenceMax}}",
-                "description": "Lista séries com linha em `goai_series_audit` (paginação `limit` / `offset`). Filtros opcionais: `confidence_min` e `confidence_max` (0..1).\n\n**503** se o repositório GoAI não estiver configurado. Após **200**, o teste grava `goaiSeriesId` com o primeiro `series_id` da página (útil para **Re-audit**)."
-              }
-            },
-            {
-              "name": "Re-audit series (full — apaga release audits)",
-              "request": {
-                "method": "POST",
-                "header": [],
-                "url": "{{baseUrl}}/api/v1/goai-audit/series/{{goaiSeriesId}}/reaudit",
-                "description": "Corpo vazio ou `scope` omitido / `full` / `default`: apaga `goai_release_audit` desta série e marca `needs_reaudit`.\n\n**404** se ainda não existir linha em `goai_series_audit` para esse id."
-              }
-            },
-            {
-              "name": "Re-audit series (series_only — só flag)",
+              "name": "Upsert override",
               "request": {
                 "method": "POST",
                 "header": [
@@ -264,10 +196,22 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"scope\": \"series_only\"\n}"
+                  "raw": "{\n  \"rss_name_key\": \"Honzuki no Gekokujou: Ryushu no Youjo\",\n  \"tmdb_id\": 91768,\n  \"season\": 4,\n  \"locked\": true\n}"
                 },
-                "url": "{{baseUrl}}/api/v1/goai-audit/series/{{goaiSeriesId}}/reaudit",
-                "description": "`scope`: `series_only` ou `flag_only` — só `SetSeriesNeedsReaudit`, mantém linhas em `goai_release_audit`."
+                "url": "{{baseUrl}}/admin/mapping-overrides"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Unmatched",
+          "item": [
+            {
+              "name": "List unmatched",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/admin/unmatched?limit=100"
               }
             }
           ]

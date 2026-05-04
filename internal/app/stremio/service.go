@@ -1,0 +1,233 @@
+package stremio
+
+import (
+	"context"
+	"net/url"
+	"strings"
+	"time"
+
+	"github.com/wallissonmarinho/GoAnimes/internal/domain"
+	"github.com/wallissonmarinho/GoAnimes/internal/ports"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+)
+
+const (
+	CatalogIDMain   = "goanimes"
+	CatalogIDWeek   = "goanimes-week"
+	StremioType     = "anime"
+	ManifestID      = "org.goanimes"
+	ManifestName    = "GoAnimes"
+	ManifestVersion = "2.0.0"
+)
+
+type Service struct {
+	Repo ports.CatalogRepository
+}
+
+var tracer = otel.Tracer("goanimes/stremio")
+
+func (s *Service) Manifest(ctx context.Context) (map[string]any, error) {
+	ctx, span := tracer.Start(ctx, "stremio.manifest")
+	defer span.End()
+	genres, err := s.Repo.ListGenres(ctx)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		genres = []string{}
+	}
+	genreExtra := []map[string]any{{
+		"name":       "genre",
+		"isRequired": false,
+		"options":    genres,
+	}}
+	return map[string]any{
+		"id":          ManifestID,
+		"version":     ManifestVersion,
+		"name":        ManifestName,
+		"description": "RSS anime torrents with curated mapping.",
+		"types":       []string{StremioType},
+		"genres":      genres,
+		"catalogs": []map[string]any{
+			{"type": StremioType, "id": CatalogIDMain, "name": "GoAnimes", "extra": genreExtra},
+			{"type": StremioType, "id": CatalogIDWeek, "name": "GoAnimes · Últimos 7 dias", "extra": genreExtra},
+		},
+		"resources":  []any{"catalog", "meta", "stream"},
+		"idPrefixes": []string{domain.StremioIDPrefix},
+	}, nil
+}
+
+func (s *Service) Catalog(ctx context.Context, catalogID string, extras map[string]string, limit, skip int) ([]map[string]any, error) {
+	ctx, span := tracer.Start(ctx, "stremio.catalog")
+	span.SetAttributes(
+		attribute.String("catalog.id", catalogID),
+		attribute.Int("catalog.limit", limit),
+		attribute.Int("catalog.skip", skip),
+	)
+	defer span.End()
+	var animes []domain.Anime
+	var err error
+	if catalogID == CatalogIDWeek {
+		animes, err = s.Repo.ListRecent(ctx, 7, limit, skip)
+	} else if g := strings.TrimSpace(extras["genre"]); g != "" {
+		animes, err = s.Repo.ListByGenre(ctx, g, limit, skip)
+	} else {
+		animes, err = s.Repo.ListAll(ctx, limit, skip)
+	}
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return nil, err
+	}
+	metas := make([]map[string]any, 0, len(animes))
+	for _, anime := range animes {
+		metas = append(metas, map[string]any{
+			"id":     domain.SeriesStremioID(anime.TMDBID, anime.SeasonNumber),
+			"type":   StremioType,
+			"name":   anime.Title,
+			"poster": anime.PosterPath,
+			"genres": anime.Genres,
+		})
+	}
+	return metas, nil
+}
+
+func (s *Service) Meta(ctx context.Context, id string) (map[string]any, bool, error) {
+	ctx, span := tracer.Start(ctx, "stremio.meta")
+	span.SetAttributes(attribute.String("meta.id", id))
+	defer span.End()
+	tmdbID, season, ok := domain.ParseSeriesID(id)
+	if !ok {
+		return nil, false, nil
+	}
+	anime, found, err := s.Repo.GetByTMDBSeason(ctx, tmdbID, season)
+	if err != nil || !found {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+		}
+		return nil, false, err
+	}
+	videos := make([]map[string]any, 0, len(anime.Episodes))
+	for _, ep := range anime.Episodes {
+		videos = append(videos, map[string]any{
+			"id":       domain.EpisodeStremioID(anime.TMDBID, anime.SeasonNumber, ep.Number),
+			"title":    episodeTitle(ep.Number),
+			"released": ep.AddedAt.Format(time.RFC3339),
+			"season":   anime.SeasonNumber,
+			"episode":  ep.Number,
+		})
+	}
+	meta := map[string]any{
+		"id":          domain.SeriesStremioID(anime.TMDBID, anime.SeasonNumber),
+		"type":        StremioType,
+		"name":        anime.Title,
+		"poster":      anime.PosterPath,
+		"genres":      anime.Genres,
+		"description": "Torrent releases with curated mapping.",
+		"videos":      videos,
+	}
+	return meta, true, nil
+}
+
+func (s *Service) Streams(ctx context.Context, id string) ([]map[string]any, error) {
+	ctx, span := tracer.Start(ctx, "stremio.streams")
+	span.SetAttributes(attribute.String("stream.id", id))
+	defer span.End()
+	tmdbID, season, episode, ok := domain.ParseEpisodeID(id)
+	if !ok {
+		return []map[string]any{}, nil
+	}
+	anime, found, err := s.Repo.GetByTMDBSeason(ctx, tmdbID, season)
+	if err != nil || !found {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+		}
+		return []map[string]any{}, err
+	}
+	for _, ep := range anime.Episodes {
+		if ep.Number != episode {
+			continue
+		}
+		streams := make([]map[string]any, 0, len(ep.Sources))
+		for _, src := range ep.Sources {
+			streams = append(streams, map[string]any{
+				"name":  src.Provider,
+				"title": streamTitle(episode, src.Quality),
+				"url":   sanitizeMagnet(src.MagnetLink),
+			})
+		}
+		return streams, nil
+	}
+	return []map[string]any{}, nil
+}
+
+func parseCatalogExtras(catalogPath string) (string, map[string]string, bool) {
+	p := strings.TrimPrefix(strings.TrimSpace(catalogPath), "/")
+	if p == "" {
+		return "", nil, false
+	}
+	p = strings.TrimSuffix(p, ".json")
+	parts := strings.Split(p, "/")
+	if len(parts) == 0 || parts[0] == "" {
+		return "", nil, false
+	}
+	extras := make(map[string]string)
+	for _, seg := range parts[1:] {
+		k, v, has := strings.Cut(seg, "=")
+		if !has {
+			continue
+		}
+		key, errK := url.PathUnescape(strings.TrimSpace(k))
+		val, errV := url.PathUnescape(strings.TrimSpace(v))
+		if errK != nil || errV != nil || key == "" {
+			continue
+		}
+		extras[key] = val
+	}
+	return parts[0], extras, true
+}
+
+func episodeTitle(ep int) string {
+	return "Episodio " + itoa(ep)
+}
+
+func streamTitle(ep int, quality string) string {
+	title := "Episodio " + itoa(ep)
+	if quality != "" {
+		title += " · " + quality
+	}
+	return title
+}
+
+func itoa(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	neg := n < 0
+	if neg {
+		n = -n
+	}
+	buf := make([]byte, 0, 12)
+	for n > 0 {
+		buf = append(buf, byte('0'+n%10))
+		n /= 10
+	}
+	if neg {
+		buf = append(buf, '-')
+	}
+	for i, j := 0, len(buf)-1; i < j; i, j = i+1, j-1 {
+		buf[i], buf[j] = buf[j], buf[i]
+	}
+	return string(buf)
+}
+
+func sanitizeMagnet(magnet string) string {
+	return strings.TrimSpace(magnet)
+}
+
+func ParseCatalogPath(path string) (string, map[string]string, bool) {
+	return parseCatalogExtras(path)
+}

@@ -7,7 +7,7 @@ on:
       - main
       - master
   pull_request:
-    branches: [main, master]
+    branches: [main, master, clean-rewrite]
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}

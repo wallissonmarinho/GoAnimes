@@ -2,190 +2,56 @@ package app
 
 import (
 	"context"
-	"os"
-	"strconv"
-	"strings"
 	"time"
 
-	"github.com/wallissonmarinho/GoAnimes/internal/adapters/anidb"
-	"github.com/wallissonmarinho/GoAnimes/internal/adapters/anilist"
-	"github.com/wallissonmarinho/GoAnimes/internal/adapters/httpclient"
-	"github.com/wallissonmarinho/GoAnimes/internal/adapters/jikan"
-	"github.com/wallissonmarinho/GoAnimes/internal/adapters/kitsu"
-	"github.com/wallissonmarinho/GoAnimes/internal/adapters/state"
-	"github.com/wallissonmarinho/GoAnimes/internal/adapters/storage"
-	"github.com/wallissonmarinho/GoAnimes/internal/adapters/thetvdb"
-	"github.com/wallissonmarinho/GoAnimes/internal/adapters/tmdb"
-	"github.com/wallissonmarinho/GoAnimes/internal/adapters/translate"
-	"github.com/wallissonmarinho/GoAnimes/internal/core/domain"
-	"github.com/wallissonmarinho/GoAnimes/internal/core/ports"
-	"github.com/wallissonmarinho/GoAnimes/internal/core/rsssync"
-	"github.com/wallissonmarinho/GoAnimes/internal/core/services"
+	"github.com/wallissonmarinho/GoAnimes/internal/adapters/rss"
+	"github.com/wallissonmarinho/GoAnimes/internal/adapters/storage/mongo"
+	"github.com/wallissonmarinho/GoAnimes/internal/adapters/tmdbapi"
+	"github.com/wallissonmarinho/GoAnimes/internal/app/admin"
+	"github.com/wallissonmarinho/GoAnimes/internal/app/config"
+	"github.com/wallissonmarinho/GoAnimes/internal/app/stremio"
+	syncsvc "github.com/wallissonmarinho/GoAnimes/internal/app/sync"
 )
 
-// OpenCatalog opens the catalog database.
-func OpenCatalog(dsn string) (*storage.Catalog, error) {
-	return storage.Open(dsn)
+type App struct {
+	Store   *mongo.Store
+	Sync    *syncsvc.Service
+	Stremio *stremio.Service
+	Admin   *admin.Service
 }
 
-// HydrateCatalogStore loads the last snapshot from DB into memory.
-func HydrateCatalogStore(ctx context.Context, repo ports.CatalogRepository, mem *state.CatalogStore) {
-	snap, err := repo.LoadCatalogSnapshot(ctx)
-	if err != nil || len(snap.Items) == 0 {
-		return
+func Build(ctx context.Context, cfg config.Config) (*App, error) {
+	store, err := mongo.Connect(ctx, cfg.MongoURI, cfg.MongoDB)
+	if err != nil {
+		return nil, err
 	}
-	domain.EnsureSnapshotGrouped(&snap)
-	domain.ApplyAniListEnrichmentToSeries(&snap)
-	mem.Set(snap)
-}
-
-// NewCatalogAdmin wires admin + Stremio catalog façade (repo + in-memory store).
-func NewCatalogAdmin(repo *storage.Catalog, store *state.CatalogStore) *services.CatalogAdminService {
-	return services.NewCatalogAdminService(repo, store)
-}
-
-// NewGoaiAuditAdmin wires GoAI audit admin service (HTTP handlers use this, not repo directly).
-func NewGoaiAuditAdmin(repo ports.GoAIAuditRepository) *services.GoaiAuditAdminService {
-	return services.NewGoaiAuditAdminService(repo)
-}
-
-// NewSynopsisTranslator wires gilang Google Translate for AniList synopsis en→pt (always on; no env toggle).
-func NewSynopsisTranslator(httpTimeout time.Duration, userAgent string, maxBody int64) ports.SynopsisTranslator {
-	if httpTimeout <= 0 {
-		httpTimeout = 45 * time.Second
+	catalogRepo := mongo.NewCatalogRepository(store)
+	feedRepo := mongo.NewFeedRepository(store)
+	mappingRepo := mongo.NewMappingRepository(store)
+	reader := rss.NewReader()
+	var tmdbClient *tmdbapi.Client
+	if cfg.TMDBAPIKey != "" {
+		tmdbClient = tmdbapi.NewClient(cfg.TMDBAPIKey, cfg.HTTPTimeout)
 	}
-	if maxBody <= 0 {
-		maxBody = 50 << 20
+	guard := &syncsvc.Guard{}
+	syncService := &syncsvc.Service{
+		Feeds:   feedRepo,
+		Mapping: mappingRepo,
+		Catalog: catalogRepo,
+		Reader:  reader,
+		TMDB:    tmdbClient,
+		Guard:   guard,
 	}
-	g := httpclient.NewGetter(httpTimeout, userAgent, maxBody)
-	return translate.NewSynopsisTranslator(g)
+	stremioService := &stremio.Service{Repo: catalogRepo}
+	adminService := &admin.Service{Feeds: feedRepo, Mapping: mappingRepo}
+	return &App{Store: store, Sync: syncService, Stremio: stremioService, Admin: adminService}, nil
 }
 
-// NewRSSSyncService builds sync with concrete deps and returns optional API clients for HTTP handlers.
-func NewRSSSyncService(repo *storage.Catalog, mem *state.CatalogStore, o rsssync.RSSSyncRuntimeOptions) (*rsssync.RSSSyncService, *anilist.Client, *jikan.Client, *kitsu.Client, *tmdb.Client, *thetvdb.Client) {
-	var al *anilist.Client
-	if !anilistDisabled() {
-		// Smaller cap for JSON POST bodies; AniList responses are tiny.
-		g := httpclient.NewGetter(o.HTTPTimeout, o.UserAgent, 2<<20)
-		al = anilist.NewClient(g)
-		o.AniList = al
-		if o.AniListMinDelay <= 0 {
-			if d, err := time.ParseDuration(getenv("GOANIMES_ANILIST_MIN_DELAY", "0")); err == nil {
-				o.AniListMinDelay = d
-			}
-		}
+func Shutdown(ctx context.Context, app *App) error {
+	if app == nil {
+		return nil
 	}
-	var jk *jikan.Client
-	if !jikanDisabled() {
-		g := httpclient.NewGetter(o.HTTPTimeout, o.UserAgent, 2<<20)
-		jk = jikan.NewClient(g)
-		o.Jikan = jk
-		if o.JikanMinDelay <= 0 {
-			if d, err := time.ParseDuration(getenv("GOANIMES_JIKAN_MIN_DELAY", "900ms")); err == nil {
-				o.JikanMinDelay = d
-			}
-		}
-	}
-	var ks *kitsu.Client
-	if !kitsuDisabled() {
-		g := httpclient.NewGetter(o.HTTPTimeout, o.UserAgent, 2<<20)
-		ks = kitsu.NewClient(g)
-		o.Kitsu = ks
-		if o.KitsuMinDelay <= 0 {
-			if d, err := time.ParseDuration(getenv("GOANIMES_KITSU_MIN_DELAY", "400ms")); err == nil {
-				o.KitsuMinDelay = d
-			}
-		}
-	}
-	var tmdbCl *tmdb.Client
-	if !tmdbDisabled() {
-		key := strings.TrimSpace(os.Getenv("GOANIMES_TMDB_API_KEY"))
-		if key != "" {
-			g := httpclient.NewGetter(o.HTTPTimeout, o.UserAgent, 2<<20)
-			tmdbCl = tmdb.NewClient(g, key)
-			o.TMDB = tmdbCl
-			if o.TMDBMinDelay <= 0 {
-				if d, err := time.ParseDuration(getenv("GOANIMES_TMDB_MIN_DELAY", "250ms")); err == nil {
-					o.TMDBMinDelay = d
-				}
-			}
-		}
-	}
-	var tvdbCl *thetvdb.Client
-	if !tvdbDisabled() {
-		key := strings.TrimSpace(os.Getenv("GOANIMES_TVDB_API_KEY"))
-		if key != "" {
-			g := httpclient.NewGetter(o.HTTPTimeout, o.UserAgent, 8<<20)
-			pin := strings.TrimSpace(os.Getenv("GOANIMES_TVDB_PIN"))
-			tvdbCl = thetvdb.NewClient(g, key, pin)
-			o.TheTVDB = tvdbCl
-			if o.TVDBMinDelay <= 0 {
-				if d, err := time.ParseDuration(getenv("GOANIMES_TVDB_MIN_DELAY", "400ms")); err == nil {
-					o.TVDBMinDelay = d
-				}
-			}
-		}
-	}
-	if !anidbDisabled() {
-		cname := strings.TrimSpace(os.Getenv("GOANIMES_ANIDB_CLIENT"))
-		if verStr := strings.TrimSpace(os.Getenv("GOANIMES_ANIDB_CLIENTVER")); cname != "" && verStr != "" {
-			if ver, err := strconv.Atoi(verStr); err == nil && ver >= 1 {
-				g := httpclient.NewGetter(o.HTTPTimeout, o.UserAgent, 8<<20)
-				if adb := anidb.NewClient(g, cname, ver); adb != nil {
-					o.AniDB = adb
-					if o.AniDBMinDelay <= 0 {
-						if d, err := time.ParseDuration(getenv("GOANIMES_ANIDB_MIN_DELAY", "0")); err == nil {
-							o.AniDBMinDelay = d
-						}
-					}
-				}
-			}
-		}
-	}
-	return rsssync.NewRSSSyncService(repo, mem, o, nil), al, jk, ks, tmdbCl, tvdbCl
-}
-
-func anilistDisabled() bool {
-	v := strings.ToLower(strings.TrimSpace(os.Getenv("GOANIMES_ANILIST_DISABLED")))
-	return v == "1" || v == "true" || v == "yes"
-}
-
-func jikanDisabled() bool {
-	v := strings.ToLower(strings.TrimSpace(os.Getenv("GOANIMES_JIKAN_DISABLED")))
-	return v == "1" || v == "true" || v == "yes"
-}
-
-func kitsuDisabled() bool {
-	v := strings.ToLower(strings.TrimSpace(os.Getenv("GOANIMES_KITSU_DISABLED")))
-	return v == "1" || v == "true" || v == "yes"
-}
-
-func tmdbDisabled() bool {
-	v := strings.ToLower(strings.TrimSpace(os.Getenv("GOANIMES_TMDB_DISABLED")))
-	return v == "1" || v == "true" || v == "yes"
-}
-
-func tvdbDisabled() bool {
-	v := strings.ToLower(strings.TrimSpace(os.Getenv("GOANIMES_TVDB_DISABLED")))
-	return v == "1" || v == "true" || v == "yes"
-}
-
-func anidbDisabled() bool {
-	v := strings.ToLower(strings.TrimSpace(os.Getenv("GOANIMES_ANIDB_DISABLED")))
-	return v == "1" || v == "true" || v == "yes"
-}
-
-func getenv(k, def string) string {
-	if v := os.Getenv(k); v != "" {
-		return v
-	}
-	return def
-}
-
-// AdminAPIKey returns GOANIMES_ADMIN_API_KEY or ADMIN_API_KEY.
-func AdminAPIKey() string {
-	if v := os.Getenv("GOANIMES_ADMIN_API_KEY"); v != "" {
-		return v
-	}
-	return os.Getenv("ADMIN_API_KEY")
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	return mongo.Disconnect(ctx, app.Store)
 }

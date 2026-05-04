@@ -1,0 +1,47 @@
+package sync
+
+import (
+	"regexp"
+	"strings"
+)
+
+var (
+	spaceRe   = regexp.MustCompile(`\s+`)
+	tagRe     = regexp.MustCompile(`\[[^\]]+\]`)
+	parenRe   = regexp.MustCompile(`\([^\)]+\)`)
+	epRe      = regexp.MustCompile(`(?i)\b(?:ep|e)\s?(\d{1,3})\b`)
+	numDashRe = regexp.MustCompile(`\s-\s(\d{1,3})\b`)
+	qualityRe = regexp.MustCompile(`\b(480p|720p|1080p|2160p)\b`)
+)
+
+func NormalizeTitle(raw string) (nameKey string, episode int, quality string) {
+	clean := strings.TrimSpace(raw)
+	clean = tagRe.ReplaceAllString(clean, " ")
+	clean = parenRe.ReplaceAllString(clean, " ")
+	if match := qualityRe.FindStringSubmatch(clean); len(match) > 0 {
+		quality = strings.ToLower(match[1])
+	}
+	if match := epRe.FindStringSubmatch(clean); len(match) > 0 {
+		episode = atoi(match[1])
+	} else if match := numDashRe.FindStringSubmatch(clean); len(match) > 0 {
+		episode = atoi(match[1])
+	}
+	clean = qualityRe.ReplaceAllString(clean, " ")
+	clean = epRe.ReplaceAllString(clean, " ")
+	clean = numDashRe.ReplaceAllString(clean, " ")
+	clean = strings.ToLower(spaceRe.ReplaceAllString(clean, " "))
+	clean = strings.TrimSpace(clean)
+	nameKey = clean
+	return nameKey, episode, quality
+}
+
+func atoi(s string) int {
+	n := 0
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return 0
+		}
+		n = n*10 + int(r-'0')
+	}
+	return n
+}
