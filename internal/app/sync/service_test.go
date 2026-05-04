@@ -94,7 +94,6 @@ func (f *fakeCatalogRepo) AddEpisodeSource(ctx context.Context, tmdbID, season, 
 	}
 	ep := anime.EnsureEpisode(episode)
 	added := ep.AddSource(src)
-	anime.Episodes = anime.Episodes
 	f.items[key] = anime
 	return added, nil
 }
