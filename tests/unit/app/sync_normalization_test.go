@@ -128,12 +128,12 @@ func TestNormalizeTitle_handlesEdgeCases(t *testing.T) {
 	require.Equal(t, "", quality)
 
 	// No episode number
-	name, ep, quality = sync.NormalizeTitle("Show Title 1080p")
+	name, ep, _ = sync.NormalizeTitle("Show Title 1080p")
 	require.Equal(t, "show title", name)
 	require.Equal(t, 0, ep)
 
 	// Malformed
-	name, ep, quality = sync.NormalizeTitle("Random Torrent Title")
+	name, ep, _ = sync.NormalizeTitle("Random Torrent Title")
 	require.NotEmpty(t, name)
 	require.Equal(t, 0, ep)
 }
