@@ -6,6 +6,7 @@ on:
     branches-ignore:
       - main
       - master
+      - clean-rewrite
   pull_request:
     branches: [main, master, clean-rewrite]
 
