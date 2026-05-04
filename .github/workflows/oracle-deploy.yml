@@ -26,7 +26,7 @@ name: oracle-deploy
 
 on:
   push:
-    branches: [main, master]
+    branches: [main, master, clean-rewrite]
   workflow_dispatch:
 
 concurrency:

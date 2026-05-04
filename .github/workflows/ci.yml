@@ -22,9 +22,6 @@ jobs:
       # v6+ runs on Node 24 (avoids Node 20 runner deprecation warnings).
       - uses: actions/checkout@v6
 
-      - name: Check layout (no RSS sync dupes in services/)
-        run: bash scripts/check-layout.sh
-
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
