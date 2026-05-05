@@ -35,6 +35,7 @@ func Register(engine *gin.Engine, deps Deps) {
 	adminGroup := engine.Group("/admin")
 	adminGroup.Use(h.requireAdminKey)
 	adminGroup.POST("/sync", h.sync)
+	adminGroup.DELETE("/clean/:feedId", h.cleanFeedSources)
 	adminGroup.GET("/feeds", h.listFeeds)
 	adminGroup.POST("/feeds", h.createFeed)
 	adminGroup.PUT("/feeds/:id", h.updateFeed)
@@ -133,6 +134,24 @@ func (h *handlers) sync(c *gin.Context) {
 			}
 			return "sync scheduled"
 		}(),
+	})
+}
+
+func (h *handlers) cleanFeedSources(c *gin.Context) {
+	feedID := strings.TrimSpace(c.Param("feedId"))
+	if feedID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "feed ID required"})
+		return
+	}
+	removed, feedName, err := h.deps.Admin.CleanFeedSources(c.Request.Context(), feedID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"removed":   removed,
+		"feed_id":   feedID,
+		"feed_name": feedName,
 	})
 }
 

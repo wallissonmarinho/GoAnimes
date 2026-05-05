@@ -54,6 +54,10 @@ func (m *mockCatalogRepository) ListGenres(ctx context.Context) ([]string, error
 	return m.genres, nil
 }
 
+func (m *mockCatalogRepository) RemoveSourcesByProvider(ctx context.Context, provider string) (int, error) {
+	return 0, nil
+}
+
 // mockFeedRepository implements ports.FeedRepository for testing
 type mockFeedRepository struct {
 	feeds []*domain.Feed
@@ -143,7 +147,7 @@ func TestHealthEndpoint(t *testing.T) {
 	deps := api.Deps{
 		Stremio:  &stremio.Service{Repo: &mockCatalogRepository{}},
 		Sync:     &syncsvc.Service{},
-		Admin:    &admin.Service{Feeds: &mockFeedRepository{}, Mapping: &mockMappingRepository{}},
+		Admin:    &admin.Service{Feeds: &mockFeedRepository{}, Mapping: &mockMappingRepository{}, Catalog: &mockCatalogRepository{}},
 		AdminKey: "test-key",
 	}
 
@@ -163,7 +167,7 @@ func TestManifestEndpoint(t *testing.T) {
 	deps := api.Deps{
 		Stremio:  &stremio.Service{Repo: &mockCatalogRepository{}},
 		Sync:     &syncsvc.Service{},
-		Admin:    &admin.Service{Feeds: &mockFeedRepository{}, Mapping: &mockMappingRepository{}},
+		Admin:    &admin.Service{Feeds: &mockFeedRepository{}, Mapping: &mockMappingRepository{}, Catalog: &mockCatalogRepository{}},
 		AdminKey: "test-key",
 	}
 
@@ -198,7 +202,7 @@ func TestCatalogEndpoint(t *testing.T) {
 	deps := api.Deps{
 		Stremio:  &stremio.Service{Repo: catalogRepo},
 		Sync:     &syncsvc.Service{},
-		Admin:    &admin.Service{Feeds: &mockFeedRepository{}, Mapping: &mockMappingRepository{}},
+		Admin:    &admin.Service{Feeds: &mockFeedRepository{}, Mapping: &mockMappingRepository{}, Catalog: &mockCatalogRepository{}},
 		AdminKey: "test-key",
 	}
 
@@ -225,7 +229,7 @@ func TestSyncEndpoint_Accepted(t *testing.T) {
 			Reader:  &mockFeedReader{},
 			TMDB:    &mockTMDBClient{},
 		},
-		Admin:    &admin.Service{Feeds: &mockFeedRepository{}, Mapping: &mockMappingRepository{}},
+		Admin:    &admin.Service{Feeds: &mockFeedRepository{}, Mapping: &mockMappingRepository{}, Catalog: &mockCatalogRepository{}},
 		AdminKey: "test-key",
 	}
 

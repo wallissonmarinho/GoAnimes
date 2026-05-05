@@ -171,6 +171,15 @@
                 "description": "Agenda sync em background. Resposta rapida: HTTP 202 + accepted:true, ou HTTP 200 + accepted:false + reason se ja ha sync a correr.",
                 "url": "{{baseUrl}}/admin/sync"
               }
+            },
+            {
+              "name": "Clean feed sources",
+              "request": {
+                "method": "DELETE",
+                "header": [],
+                "description": "Remove todas as fontes de um feed específico do banco de dados. Use o ID do feed (ex: faddf736-7aa2-460c-ad95-7909c02c2032). Útil para limpar dados antigos ou incorretos de um feed.",
+                "url": "{{baseUrl}}/admin/clean/{{feedId}}"
+              }
             }
           ]
         },

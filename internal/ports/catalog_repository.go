@@ -14,4 +14,5 @@ type CatalogRepository interface {
 	ListRecent(ctx context.Context, days, limit, skip int) ([]domain.Anime, error)
 	ListAll(ctx context.Context, limit, skip int) ([]domain.Anime, error)
 	ListGenres(ctx context.Context) ([]string, error)
+	RemoveSourcesByProvider(ctx context.Context, provider string) (removedCount int, err error)
 }

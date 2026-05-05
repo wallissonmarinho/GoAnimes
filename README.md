@@ -35,6 +35,7 @@ Autenticacao: `Authorization: Bearer <chave>` ou `X-Admin-Key: <chave>`.
 | Metodo | Caminho | Descricao |
 |--------|---------|-----------|
 | POST | `/admin/sync` | Agenda o sync em background (mutex: ignora se ja a correr) |
+| DELETE | `/admin/clean/:feedId` | Remove todas as fontes de um feed específico do banco de dados |
 | GET | `/admin/feeds` | Lista feeds |
 | POST | `/admin/feeds` | Cria feed |
 | PUT | `/admin/feeds/:id` | Atualiza feed |

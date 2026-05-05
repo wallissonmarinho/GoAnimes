@@ -2,6 +2,7 @@ package admin
 
 import (
 	"context"
+	"errors"
 
 	"github.com/wallissonmarinho/GoAnimes/internal/domain"
 	"github.com/wallissonmarinho/GoAnimes/internal/ports"
@@ -12,6 +13,7 @@ import (
 type Service struct {
 	Feeds   ports.FeedRepository
 	Mapping ports.MappingRepository
+	Catalog ports.CatalogRepository
 }
 
 var tracer = otel.Tracer("goanimes/admin")
@@ -57,4 +59,53 @@ func (s *Service) ListUnmatched(ctx context.Context, limit int) ([]domain.Unmatc
 	span.SetAttributes(attribute.Int("unmatched.limit", limit))
 	defer span.End()
 	return s.Mapping.ListUnmatched(ctx, limit)
+}
+
+func (s *Service) RemoveSourcesByProvider(ctx context.Context, provider string) (int, error) {
+	ctx, span := tracer.Start(ctx, "admin.remove_sources_by_provider")
+	span.SetAttributes(attribute.String("provider", provider))
+	defer span.End()
+	if s.Catalog == nil {
+		return 0, context.Canceled
+	}
+	return s.Catalog.RemoveSourcesByProvider(ctx, provider)
+}
+
+func (s *Service) CleanFeedSources(ctx context.Context, feedID string) (removed int, feedName string, err error) {
+	ctx, span := tracer.Start(ctx, "admin.clean_feed_sources")
+	span.SetAttributes(attribute.String("feed.id", feedID))
+	defer span.End()
+
+	if feedID == "" {
+		return 0, "", errors.New("feed ID required")
+	}
+	if s.Feeds == nil || s.Catalog == nil {
+		return 0, "", errors.New("services not configured")
+	}
+
+	// Busca o feed pelo ID
+	feeds, err := s.Feeds.ListAll(ctx)
+	if err != nil {
+		return 0, "", err
+	}
+
+	var feed *domain.Feed
+	for i := range feeds {
+		if feeds[i].ID == feedID {
+			feed = &feeds[i]
+			break
+		}
+	}
+
+	if feed == nil {
+		return 0, "", errors.New("feed not found")
+	}
+
+	// Remove as fontes do provider deste feed
+	removed, err = s.Catalog.RemoveSourcesByProvider(ctx, feed.Name)
+	if err != nil {
+		return 0, "", err
+	}
+
+	return removed, feed.Name, nil
 }

@@ -37,6 +37,9 @@ func (f *fakeCatalogRepo) ListAll(ctx context.Context, limit, skip int) ([]domai
 	return nil, nil
 }
 func (f *fakeCatalogRepo) ListGenres(ctx context.Context) ([]string, error) { return nil, nil }
+func (f *fakeCatalogRepo) RemoveSourcesByProvider(ctx context.Context, provider string) (int, error) {
+	return 0, nil
+}
 
 func bencodeString(value string) string {
 	return fmt.Sprintf("%d:%s", len(value), value)
@@ -71,7 +74,7 @@ func TestStreamsConvertsTorrentURLToMagnet(t *testing.T) {
 	streams, err := service.Streams(context.Background(), "tmdb:288551:1:5")
 	require.NoError(t, err)
 	require.Len(t, streams, 1)
-	require.Equal(t, "Erai", streams[0]["name"])
+	require.Equal(t, "Erai 1080p", streams[0]["name"])
 	require.Equal(t, "1080p CR WEBRip HEVC AAC", streams[0]["title"])
 	require.True(t, strings.HasPrefix(streams[0]["url"].(string), "magnet:?xt=urn:btih:"))
 	require.Contains(t, streams[0]["url"].(string), expectedHash)
@@ -95,6 +98,7 @@ func TestStreamsUsesQualityFromMagnetDnWhenMissing(t *testing.T) {
 	streams, err := service.Streams(context.Background(), "tmdb:300126:1:4")
 	require.NoError(t, err)
 	require.Len(t, streams, 1)
+	require.Equal(t, "Erai 1080p", streams[0]["name"])
 	require.Equal(t, "1080p CR WEBRip HEVC AAC", streams[0]["title"])
 }
 

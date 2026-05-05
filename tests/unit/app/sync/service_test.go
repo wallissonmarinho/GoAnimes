@@ -124,6 +124,10 @@ func (f *fakeCatalogRepo) ListGenres(ctx context.Context) ([]string, error) {
 	return []string{}, nil
 }
 
+func (f *fakeCatalogRepo) RemoveSourcesByProvider(ctx context.Context, provider string) (int, error) {
+	return 0, nil
+}
+
 type fakeFeedReader struct {
 	items []ports.ReleaseItem
 	err   error

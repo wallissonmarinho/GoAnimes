@@ -193,7 +193,7 @@ func (s *Service) Streams(ctx context.Context, id string) ([]map[string]any, err
 				continue
 			}
 			streams = append(streams, map[string]any{
-				"name":  src.Provider,
+				"name":  buildStreamName(src.Provider, src.Quality, src.MagnetLink),
 				"title": streamTitle(episode, src.Quality, src.MagnetLink),
 				"url":   playbackURL,
 			})
@@ -231,6 +231,32 @@ func parseCatalogExtras(catalogPath string) (string, map[string]string, bool) {
 
 func episodeTitle(ep int) string {
 	return "Episodio " + itoa(ep)
+}
+
+func buildStreamName(provider, quality string, magnet string) string {
+	name := provider
+	if resolution := extractResolution(quality, magnet); strings.TrimSpace(resolution) != "" {
+		name = provider + " " + strings.TrimSpace(resolution)
+	}
+	return name
+}
+
+func extractResolution(quality string, magnet string) string {
+	fullQuality := ""
+	if q := normalizedStreamQuality(quality); q != "" {
+		fullQuality = q
+	} else if q := qualityFromLink(magnet); q != "" {
+		fullQuality = q
+	}
+	if fullQuality == "" {
+		return ""
+	}
+	// Extract just the resolution (first word usually contains it)
+	parts := strings.Fields(fullQuality)
+	if len(parts) > 0 {
+		return parts[0]
+	}
+	return ""
 }
 
 func streamTitle(ep int, quality, rawLink string) string {

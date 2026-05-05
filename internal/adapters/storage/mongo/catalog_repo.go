@@ -139,6 +139,23 @@ func (r *CatalogRepository) ListGenres(ctx context.Context) ([]string, error) {
 	return genres, cursor.Err()
 }
 
+func (r *CatalogRepository) RemoveSourcesByProvider(ctx context.Context, provider string) (int, error) {
+	if provider == "" {
+		return 0, errors.New("provider cannot be empty")
+	}
+	result, err := r.store.Animes.UpdateMany(ctx, bson.M{}, bson.M{
+		"$pull": bson.M{
+			"episodes.$[].sources": bson.M{
+				"provider": provider,
+			},
+		},
+	})
+	if err != nil {
+		return 0, err
+	}
+	return int(result.ModifiedCount), nil
+}
+
 func (r *CatalogRepository) list(ctx context.Context, filter bson.M, limit, skip int) ([]domain.Anime, error) {
 	if limit <= 0 || limit > 200 {
 		limit = 80

@@ -43,7 +43,7 @@ func Build(ctx context.Context, cfg config.Config) (*App, error) {
 		Guard:   guard,
 	}
 	stremioService := &stremio.Service{Repo: catalogRepo, TMDB: tmdbClient}
-	adminService := &admin.Service{Feeds: feedRepo, Mapping: mappingRepo}
+	adminService := &admin.Service{Feeds: feedRepo, Mapping: mappingRepo, Catalog: catalogRepo}
 	return &App{Store: store, Sync: syncService, Stremio: stremioService, Admin: adminService}, nil
 }
 
