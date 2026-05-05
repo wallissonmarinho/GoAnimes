@@ -110,6 +110,31 @@ func TestNormalizeTitle_extractsQuality(t *testing.T) {
 	require.Equal(t, "", quality)
 }
 
+func TestNormalizeTitle_seasonEpisodeFormat(t *testing.T) {
+	// s01e05 format (common in anime torrents)
+	name, ep, _ := sync.NormalizeTitle("Even A Replica Can Fall In Love s01e05 CR WEB-DL AAC2.0 H.264")
+	require.Equal(t, "even a replica can fall in love cr web-dl aac2.0 h.264", name)
+	require.Equal(t, 5, ep)
+
+	// s01e05 with mixed case
+	name, ep, _ = sync.NormalizeTitle("Liar Game S01E05 CR WEB-DL AAC2.0 H.264")
+	require.NotEmpty(t, name)
+	require.Equal(t, 5, ep)
+
+	// s##e## in middle of long title with codecs
+	name, ep, _ = sync.NormalizeTitle("[ToonsHub] LIAR GAME S01E05 1080p CR WEB-DL AAC2.0 H.264 (Multi-Subs)")
+	require.NotEmpty(t, name)
+	require.Equal(t, 5, ep)
+
+	// Different season
+	_, ep, _ = sync.NormalizeTitle("Anime Title s02e12 1080p")
+	require.Equal(t, 12, ep)
+
+	// Single digit season and episode
+	_, ep, _ = sync.NormalizeTitle("Show s1e3 720p")
+	require.Equal(t, 3, ep)
+}
+
 func TestNormalizeTitle_stripsSourceTags(t *testing.T) {
 	// Should strip source info in brackets
 	name, _, _ := sync.NormalizeTitle("Show [us] [br] - 01 1080p")

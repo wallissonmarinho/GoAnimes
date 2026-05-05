@@ -1,4 +1,4 @@
-package rss
+package rss_test
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/wallissonmarinho/GoAnimes/internal/adapters/rss"
 	"github.com/wallissonmarinho/GoAnimes/internal/domain"
 )
 
@@ -42,7 +43,7 @@ func TestFetchKeepsOnlyPortugueseSubtitleItems(t *testing.T) {
 	}))
 	defer server.Close()
 
-	reader := NewReader()
+	reader := rss.NewReader()
 	items, err := reader.Fetch(context.Background(), domain.Feed{
 		Name: "Erai",
 		URL:  server.URL,

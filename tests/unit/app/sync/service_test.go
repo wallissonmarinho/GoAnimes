@@ -1,4 +1,4 @@
-package sync
+package sync_test
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/wallissonmarinho/GoAnimes/internal/app/sync"
 	"github.com/wallissonmarinho/GoAnimes/internal/domain"
 	"github.com/wallissonmarinho/GoAnimes/internal/ports"
 )
@@ -159,13 +160,13 @@ func TestSyncRunWithOverride(t *testing.T) {
 		"honzuki no gekokujou": {TMDBID: 91768, Season: 4},
 	}}
 	catalog := &fakeCatalogRepo{}
-	service := &Service{
+	service := &sync.Service{
 		Feeds:   &fakeFeedRepo{feeds: feeds},
 		Mapping: mapping,
 		Catalog: catalog,
 		Reader:  reader,
 		TMDB:    nil,
-		Guard:   &Guard{},
+		Guard:   &sync.Guard{},
 	}
 
 	res := service.Run(context.Background())
@@ -195,13 +196,13 @@ func TestSyncRunAddsUnmatchedWhenNoTMDB(t *testing.T) {
 		Published: time.Now(),
 	}}}
 	mapping := &fakeMappingRepo{overrides: map[string]domain.MappingOverride{}}
-	service := &Service{
+	service := &sync.Service{
 		Feeds:   &fakeFeedRepo{feeds: []domain.Feed{{ID: "f1", Name: "Erai", URL: "http://example", Type: domain.FeedTypeRSS, Enabled: true}}},
 		Mapping: mapping,
 		Catalog: &fakeCatalogRepo{},
 		Reader:  reader,
 		TMDB:    nil,
-		Guard:   &Guard{},
+		Guard:   &sync.Guard{},
 	}
 
 	res := service.Run(context.Background())
@@ -215,13 +216,13 @@ func TestSyncRunAddsUnmatchedWhenNoTMDB(t *testing.T) {
 
 func TestSyncRunReportsFetchError(t *testing.T) {
 	reader := &fakeFeedReader{err: errors.New("fetch failed")}
-	service := &Service{
+	service := &sync.Service{
 		Feeds:   &fakeFeedRepo{feeds: []domain.Feed{{ID: "f1", Name: "Erai", URL: "http://example", Type: domain.FeedTypeRSS, Enabled: true}}},
 		Mapping: &fakeMappingRepo{},
 		Catalog: &fakeCatalogRepo{},
 		Reader:  reader,
 		TMDB:    &fakeTMDBClient{},
-		Guard:   &Guard{},
+		Guard:   &sync.Guard{},
 	}
 
 	res := service.Run(context.Background())

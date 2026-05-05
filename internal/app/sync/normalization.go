@@ -9,7 +9,7 @@ var (
 	spaceRe   = regexp.MustCompile(`\s+`)
 	tagRe     = regexp.MustCompile(`\[[^\]]+\]`)
 	parenRe   = regexp.MustCompile(`\([^\)]+\)`)
-	epRe      = regexp.MustCompile(`(?i)\b(?:ep|e)\s?(\d{1,3})\b`)
+	epRe      = regexp.MustCompile(`(?i)(?:s\d{1,2})?e(\d{1,3})\b|(?:ep|e)\s?(\d{1,3})\b`)
 	numDashRe = regexp.MustCompile(`\s-\s(\d{1,3})\b`)
 	qualityRe = regexp.MustCompile(`\b(480p|720p|1080p|2160p)\b`)
 )
@@ -22,7 +22,12 @@ func NormalizeTitle(raw string) (nameKey string, episode int, quality string) {
 		quality = strings.ToLower(match[1])
 	}
 	if match := epRe.FindStringSubmatch(clean); len(match) > 0 {
-		episode = atoi(match[1])
+		// Group 1: s##e## pattern, Group 2: e## or ep## pattern
+		if match[1] != "" {
+			episode = atoi(match[1])
+		} else if len(match) > 2 && match[2] != "" {
+			episode = atoi(match[2])
+		}
 	} else if match := numDashRe.FindStringSubmatch(clean); len(match) > 0 {
 		episode = atoi(match[1])
 	}
