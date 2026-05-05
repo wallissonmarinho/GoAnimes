@@ -280,16 +280,3 @@ func atoi(s string) int {
 	}
 	return n
 }
-
-func errorsToStrings(errs []error) []string {
-	if len(errs) == 0 {
-		return []string{}
-	}
-	out := make([]string, 0, len(errs))
-	for _, err := range errs {
-		if err != nil {
-			out = append(out, err.Error())
-		}
-	}
-	return out
-}
