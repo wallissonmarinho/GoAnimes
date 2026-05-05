@@ -18,7 +18,7 @@ export GOANIMES_MONGO_DB="goanimes"
 ```
 
 - Escuta em `GOANIMES_ADDR` (default `:8080`) ou `PORT`.
-- O sync e acionado externamente via `POST /admin/sync` (cron externo).
+- O sync e solicitado via `POST /admin/sync` (cron externo): resposta imediata (202); o trabalho corre em background; se ja houver sync ativo devolve `accepted: false`.
 
 ## Stremio
 
@@ -34,7 +34,7 @@ Autenticacao: `Authorization: Bearer <chave>` ou `X-Admin-Key: <chave>`.
 
 | Metodo | Caminho | Descricao |
 |--------|---------|-----------|
-| POST | `/admin/sync` | Dispara o sync agora (usa mutex interno) |
+| POST | `/admin/sync` | Agenda o sync em background (mutex: ignora se ja a correr) |
 | GET | `/admin/feeds` | Lista feeds |
 | POST | `/admin/feeds` | Cria feed |
 | PUT | `/admin/feeds/:id` | Atualiza feed |

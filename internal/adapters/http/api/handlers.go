@@ -117,12 +117,16 @@ func (h *handlers) stream(c *gin.Context) {
 }
 
 func (h *handlers) sync(c *gin.Context) {
-	res := h.deps.Sync.Run(c.Request.Context())
-	c.JSON(http.StatusOK, gin.H{
-		"started_at":  res.StartedAt,
-		"finished_at": res.FinishedAt,
-		"processed":   res.Processed,
-		"errors":      errorsToStrings(res.Errors),
+	if !h.deps.Sync.RequestAsync() {
+		c.JSON(http.StatusOK, gin.H{
+			"accepted": false,
+			"reason":   "sync already running",
+		})
+		return
+	}
+	c.JSON(http.StatusAccepted, gin.H{
+		"accepted": true,
+		"message":  "sync scheduled",
 	})
 }
 

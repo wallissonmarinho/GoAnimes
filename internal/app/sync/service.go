@@ -24,10 +24,10 @@ type Service struct {
 var tracer = otel.Tracer("goanimes/sync")
 
 func (s *Service) Run(ctx context.Context) Result {
-	ctx, span := tracer.Start(ctx, "sync.run")
-	defer span.End()
 	res := s.startResult()
 	if s.Guard != nil && !s.Guard.TryStart() {
+		_, span := tracer.Start(ctx, "sync.run")
+		defer span.End()
 		err := errors.New("sync already running")
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
@@ -37,6 +37,16 @@ func (s *Service) Run(ctx context.Context) Result {
 		if s.Guard != nil {
 			s.Guard.Finish()
 		}
+	}()
+	return s.runInner(ctx)
+}
+
+// runInner executes one sync run; Run and RequestAsync hold the Guard when used.
+func (s *Service) runInner(ctx context.Context) Result {
+	ctx, span := tracer.Start(ctx, "sync.run")
+	defer span.End()
+	res := s.startResult()
+	defer func() {
 		res.FinishedAt = time.Now().UTC()
 	}()
 
@@ -51,6 +61,24 @@ func (s *Service) Run(ctx context.Context) Result {
 		res = s.processFeed(ctx, res, feed)
 	}
 	return res
+}
+
+// RequestAsync runs a sync in the background if none is running (same mutex as Run).
+// Returns false if a sync is already in progress. Uses context.Background so work is not
+// cancelled when the HTTP client disconnects.
+func (s *Service) RequestAsync() bool {
+	if s.Guard == nil {
+		go func() { _ = s.runInner(context.Background()) }()
+		return true
+	}
+	if !s.Guard.TryStart() {
+		return false
+	}
+	go func() {
+		defer s.Guard.Finish()
+		_ = s.runInner(context.Background())
+	}()
+	return true
 }
 
 func (s *Service) startResult() Result {

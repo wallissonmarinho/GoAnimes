@@ -112,9 +112,29 @@ func (m *mockMappingRepository) ListUnmatched(ctx context.Context, limit int) ([
 	return nil, nil
 }
 
+// mockFeedReader implements ports.FeedReader for testing
+type mockFeedReader struct{}
+
+func (m *mockFeedReader) Fetch(ctx context.Context, feed domain.Feed) ([]ports.ReleaseItem, error) {
+	return []ports.ReleaseItem{}, nil
+}
+
+// mockTMDBClient implements ports.TMDBClient for testing
+type mockTMDBClient struct{}
+
+func (m *mockTMDBClient) SearchSeries(ctx context.Context, query string) (ports.TMDBSearchResult, bool, error) {
+	return ports.TMDBSearchResult{}, false, nil
+}
+
+func (m *mockTMDBClient) GetSeasonDetails(ctx context.Context, tmdbID, season int) (ports.TMDBSeasonDetails, error) {
+	return ports.TMDBSeasonDetails{}, nil
+}
+
 var _ ports.CatalogRepository = (*mockCatalogRepository)(nil)
 var _ ports.FeedRepository = (*mockFeedRepository)(nil)
 var _ ports.MappingRepository = (*mockMappingRepository)(nil)
+var _ ports.FeedReader = (*mockFeedReader)(nil)
+var _ ports.TMDBClient = (*mockTMDBClient)(nil)
 
 func TestHealthEndpoint(t *testing.T) {
 	gin.SetMode(gin.TestMode)
@@ -190,4 +210,37 @@ func TestCatalogEndpoint(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, w.Code)
 	require.Contains(t, w.Body.String(), "metas")
+}
+
+func TestSyncEndpoint_Accepted(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+
+	deps := api.Deps{
+		Stremio: &stremio.Service{Repo: &mockCatalogRepository{}},
+		Sync: &syncsvc.Service{
+			Feeds:   &mockFeedRepository{},
+			Mapping: &mockMappingRepository{},
+			Catalog: &mockCatalogRepository{},
+			Reader:  &mockFeedReader{},
+			TMDB:    &mockTMDBClient{},
+		},
+		Admin:    &admin.Service{Feeds: &mockFeedRepository{}, Mapping: &mockMappingRepository{}},
+		AdminKey: "test-key",
+	}
+
+	api.Register(engine, deps)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/admin/sync", nil)
+	req.Header.Set("X-Admin-Key", "test-key")
+	engine.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusAccepted, w.Code)
+
+	var response map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	require.NoError(t, err)
+	require.True(t, response["accepted"].(bool))
+	require.Equal(t, "sync scheduled", response["message"])
 }
