@@ -220,27 +220,54 @@ func (s *Service) addEpisodeSource(ctx context.Context, tmdbID, season int, norm
 }
 
 func (s *Service) ensureSeason(ctx context.Context, tmdbID, season int, norm NormalizedRelease) error {
-	if _, found, _ := s.Catalog.GetByTMDBSeason(ctx, tmdbID, season); found {
-		return nil
+	existing, found, _ := s.Catalog.GetByTMDBSeason(ctx, tmdbID, season)
+
+	anime := existing
+	if !found {
+		anime = domain.Anime{
+			TMDBID:        tmdbID,
+			SeasonNumber:  season,
+			Title:         norm.RSSNameKey,
+			MappingStatus: domain.MappingStatusMapped,
+			UpdatedAt:     time.Now().UTC(),
+		}
 	}
-	anime := domain.Anime{
-		TMDBID:        tmdbID,
-		SeasonNumber:  season,
-		Title:         norm.RSSNameKey,
-		MappingStatus: domain.MappingStatusMapped,
-		UpdatedAt:     time.Now().UTC(),
-	}
+
+	// Fetch TMDB details if available and fill in empty fields
+	needsUpdate := !found
 	if s.TMDB != nil {
 		details, detErr := s.TMDB.GetSeasonDetails(ctx, tmdbID, season)
 		if detErr != nil {
-			return detErr
+			// If anime doesn't exist yet, return the error; if it exists, continue
+			if !found {
+				return detErr
+			}
+		} else {
+			// Fill empty fields with TMDB details
+			if anime.Title == "" || anime.Title == norm.RSSNameKey {
+				anime.Title = details.Title
+				needsUpdate = true
+			}
+			if len(anime.Genres) == 0 && len(details.Genres) > 0 {
+				anime.Genres = details.Genres
+				needsUpdate = true
+			}
+			if anime.Rating == 0 && details.Rating > 0 {
+				anime.Rating = details.Rating
+				needsUpdate = true
+			}
+			if anime.PosterPath == "" && details.PosterPath != "" {
+				anime.PosterPath = details.PosterPath
+				needsUpdate = true
+			}
 		}
-		anime.Title = details.Title
-		anime.Genres = details.Genres
-		anime.Rating = details.Rating
-		anime.PosterPath = details.PosterPath
 	}
-	return s.Catalog.UpsertSeason(ctx, anime)
+
+	if needsUpdate {
+		anime.UpdatedAt = time.Now().UTC()
+		return s.Catalog.UpsertSeason(ctx, anime)
+	}
+	return nil
 }
 
 func normalizeItem(item ports.ReleaseItem) NormalizedRelease {
