@@ -3,6 +3,7 @@ package sync
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/wallissonmarinho/GoAnimes/internal/domain"
@@ -63,10 +64,21 @@ func (s *Service) runInner(ctx context.Context) Result {
 	return res
 }
 
+func (s *Service) ForceRun(ctx context.Context) Result {
+	res := s.runInner(ctx)
+	if s.TMDB == nil || s.Catalog == nil {
+		return res
+	}
+	if err := s.backfillCatalog(ctx); err != nil {
+		res.Errors = append(res.Errors, err)
+	}
+	return res
+}
+
 // RequestAsync runs a sync in the background if none is running (same mutex as Run).
 // Returns false if a sync is already in progress. Uses context.Background so work is not
 // cancelled when the HTTP client disconnects.
-func (s *Service) RequestAsync() bool {
+func (s *Service) RequestAsync(force bool) bool {
 	// Note: this method intentionally starts background work using
 	// `context.Background()` so the started sync is not cancelled when the
 	// originating HTTP request context is finished. This means the background
@@ -77,7 +89,13 @@ func (s *Service) RequestAsync() bool {
 	// change the API to accept a `context.Context` and propagate it into the
 	// goroutine (e.g. `go func(ctx context.Context) { _ = s.runInner(ctx) }(ctx)`).
 	if s.Guard == nil {
-		go func() { _ = s.runInner(context.Background()) }()
+		go func() {
+			if force {
+				_ = s.ForceRun(context.Background())
+				return
+			}
+			_ = s.runInner(context.Background())
+		}()
 		return true
 	}
 	if !s.Guard.TryStart() {
@@ -85,6 +103,10 @@ func (s *Service) RequestAsync() bool {
 	}
 	go func() {
 		defer s.Guard.Finish()
+		if force {
+			_ = s.ForceRun(context.Background())
+			return
+		}
 		_ = s.runInner(context.Background())
 	}()
 	return true
@@ -276,6 +298,76 @@ func (s *Service) ensureSeason(ctx context.Context, tmdbID, season int, norm Nor
 		return s.Catalog.UpsertSeason(ctx, anime)
 	}
 	return nil
+}
+
+func (s *Service) backfillCatalog(ctx context.Context) error {
+	const pageSize = 200
+	for skip := 0; ; skip += pageSize {
+		animes, err := s.Catalog.ListAll(ctx, pageSize, skip)
+		if err != nil {
+			return err
+		}
+		for _, anime := range animes {
+			updated, changed, err := s.fillMissingAnimeDetails(ctx, anime)
+			if err != nil {
+				return err
+			}
+			if changed {
+				if err := s.Catalog.UpsertSeason(ctx, updated); err != nil {
+					return err
+				}
+			}
+		}
+		if len(animes) < pageSize {
+			return nil
+		}
+	}
+}
+
+func (s *Service) fillMissingAnimeDetails(ctx context.Context, anime domain.Anime) (domain.Anime, bool, error) {
+	if s.TMDB == nil {
+		return anime, false, nil
+	}
+	if !needsAnimeDetails(anime) {
+		return anime, false, nil
+	}
+	details, err := s.TMDB.GetSeasonDetails(ctx, anime.TMDBID, anime.SeasonNumber)
+	if err != nil {
+		return anime, false, err
+	}
+	changed := false
+	if strings.TrimSpace(anime.Title) == "" {
+		anime.Title = details.Title
+		changed = true
+	}
+	if strings.TrimSpace(anime.Overview) == "" && strings.TrimSpace(details.Overview) != "" {
+		anime.Overview = details.Overview
+		changed = true
+	}
+	if len(anime.Genres) == 0 && len(details.Genres) > 0 {
+		anime.Genres = details.Genres
+		changed = true
+	}
+	if anime.Rating == 0 && details.Rating > 0 {
+		anime.Rating = details.Rating
+		changed = true
+	}
+	if strings.TrimSpace(anime.PosterPath) == "" && strings.TrimSpace(details.PosterPath) != "" {
+		anime.PosterPath = details.PosterPath
+		changed = true
+	}
+	if strings.TrimSpace(anime.BackdropPath) == "" && strings.TrimSpace(details.BackdropPath) != "" {
+		anime.BackdropPath = details.BackdropPath
+		changed = true
+	}
+	if changed {
+		anime.UpdatedAt = time.Now().UTC()
+	}
+	return anime, changed, nil
+}
+
+func needsAnimeDetails(anime domain.Anime) bool {
+	return strings.TrimSpace(anime.Overview) == "" || strings.TrimSpace(anime.BackdropPath) == "" || strings.TrimSpace(anime.PosterPath) == "" || strings.TrimSpace(anime.Title) == "" || len(anime.Genres) == 0 || anime.Rating == 0
 }
 
 func normalizeItem(item ports.ReleaseItem) NormalizedRelease {

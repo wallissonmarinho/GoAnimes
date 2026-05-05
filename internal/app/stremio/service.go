@@ -3,6 +3,7 @@ package stremio
 import (
 	"context"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -24,9 +25,12 @@ const (
 
 type Service struct {
 	Repo ports.CatalogRepository
+	TMDB ports.TMDBClient
 }
 
 var tracer = otel.Tracer("goanimes/stremio")
+
+var streamQualityBlockRe = regexp.MustCompile(`(?i)\[([^\]]*\b(?:480p|720p|1080p|2160p)\b[^\]]*)\]`)
 
 func (s *Service) Manifest(ctx context.Context) (map[string]any, error) {
 	ctx, span := tracer.Start(ctx, "stremio.manifest")
@@ -109,6 +113,27 @@ func (s *Service) Meta(ctx context.Context, id string) (map[string]any, bool, er
 		}
 		return nil, false, err
 	}
+	if needsMetaDetails(anime) && s.TMDB != nil {
+		if details, detErr := s.TMDB.GetSeasonDetails(ctx, tmdbID, season); detErr == nil {
+			if strings.TrimSpace(anime.Title) == "" {
+				anime.Title = details.Title
+			}
+			if strings.TrimSpace(anime.Overview) == "" {
+				anime.Overview = details.Overview
+			}
+			if strings.TrimSpace(anime.PosterPath) == "" {
+				anime.PosterPath = details.PosterPath
+			}
+			if strings.TrimSpace(anime.BackdropPath) == "" {
+				anime.BackdropPath = details.BackdropPath
+			}
+			if len(anime.Genres) == 0 && len(details.Genres) > 0 {
+				anime.Genres = details.Genres
+			}
+		} else {
+			span.RecordError(detErr)
+		}
+	}
 	videos := make([]map[string]any, 0, len(anime.Episodes))
 	for _, ep := range anime.Episodes {
 		videos = append(videos, map[string]any{
@@ -135,6 +160,10 @@ func (s *Service) Meta(ctx context.Context, id string) (map[string]any, bool, er
 		"videos":     videos,
 	}
 	return meta, true, nil
+}
+
+func needsMetaDetails(anime domain.Anime) bool {
+	return strings.TrimSpace(anime.Overview) == "" || strings.TrimSpace(anime.BackdropPath) == "" || strings.TrimSpace(anime.PosterPath) == "" || strings.TrimSpace(anime.Title) == "" || len(anime.Genres) == 0
 }
 
 func (s *Service) Streams(ctx context.Context, id string) ([]map[string]any, error) {
@@ -165,7 +194,7 @@ func (s *Service) Streams(ctx context.Context, id string) ([]map[string]any, err
 			}
 			streams = append(streams, map[string]any{
 				"name":  src.Provider,
-				"title": streamTitle(episode, src.Quality),
+				"title": streamTitle(episode, src.Quality, src.MagnetLink),
 				"url":   playbackURL,
 			})
 		}
@@ -204,12 +233,51 @@ func episodeTitle(ep int) string {
 	return "Episodio " + itoa(ep)
 }
 
-func streamTitle(ep int, quality string) string {
-	quality = strings.TrimSpace(quality)
-	if quality != "" {
-		return quality
+func streamTitle(ep int, quality, rawLink string) string {
+	if title := normalizedStreamQuality(quality); title != "" {
+		return title
+	}
+	if title := qualityFromLink(rawLink); title != "" {
+		return title
 	}
 	return "Episodio " + itoa(ep)
+}
+
+func normalizedStreamQuality(quality string) string {
+	quality = strings.TrimSpace(quality)
+	if quality == "" {
+		return ""
+	}
+	return quality
+}
+
+func qualityFromLink(rawLink string) string {
+	rawLink = strings.TrimSpace(rawLink)
+	if rawLink == "" {
+		return ""
+	}
+	decoded := rawLink
+	if parsed, err := url.Parse(rawLink); err == nil {
+		if strings.EqualFold(parsed.Scheme, "magnet") {
+			if dn := strings.TrimSpace(parsed.Query().Get("dn")); dn != "" {
+				if unescaped, err := url.QueryUnescape(dn); err == nil {
+					decoded = unescaped
+				} else {
+					decoded = dn
+				}
+			}
+		} else if parsed.Path != "" {
+			if unescaped, err := url.PathUnescape(parsed.Path); err == nil {
+				decoded = unescaped
+			} else {
+				decoded = parsed.Path
+			}
+		}
+	}
+	if match := streamQualityBlockRe.FindStringSubmatch(decoded); len(match) > 1 {
+		return strings.TrimSpace(match[1])
+	}
+	return ""
 }
 
 func itoa(n int) string {

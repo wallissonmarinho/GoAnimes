@@ -79,4 +79,23 @@ func TestStreamsConvertsTorrentURLToMagnet(t *testing.T) {
 	require.Contains(t, streams[0]["url"].(string), "tr=http%3A%2F%2Ft%2Fann")
 }
 
+func TestStreamsUsesQualityFromMagnetDnWhenMissing(t *testing.T) {
+	service := &stremio.Service{Repo: &fakeCatalogRepo{anime: domain.Anime{
+		TMDBID:       300126,
+		SeasonNumber: 1,
+		Episodes: []domain.Episode{{
+			Number: 4,
+			Sources: []domain.Source{{
+				Provider:   "Erai",
+				MagnetLink: "magnet:?xt=urn:btih:94d6baed7ccd6f422dc23a6639b0d3e003696a8b&dn=%5BErai-raws%5D+Liar+Game+-+04+%5B1080p+CR+WEBRip+HEVC+AAC%5D%5BMultiSub%5D%5B73D39D91%5D.mkv",
+			}},
+		}},
+	}}}
+
+	streams, err := service.Streams(context.Background(), "tmdb:300126:1:4")
+	require.NoError(t, err)
+	require.Len(t, streams, 1)
+	require.Equal(t, "1080p CR WEBRip HEVC AAC", streams[0]["title"])
+}
+
 var _ ports.CatalogRepository = (*fakeCatalogRepo)(nil)

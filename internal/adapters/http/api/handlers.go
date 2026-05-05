@@ -117,7 +117,8 @@ func (h *handlers) stream(c *gin.Context) {
 }
 
 func (h *handlers) sync(c *gin.Context) {
-	if !h.deps.Sync.RequestAsync() {
+	force := strings.EqualFold(strings.TrimSpace(c.Query("force")), "true") || c.Query("force") == "1"
+	if !h.deps.Sync.RequestAsync(force) {
 		c.JSON(http.StatusOK, gin.H{
 			"accepted": false,
 			"reason":   "sync already running",
@@ -126,7 +127,12 @@ func (h *handlers) sync(c *gin.Context) {
 	}
 	c.JSON(http.StatusAccepted, gin.H{
 		"accepted": true,
-		"message":  "sync scheduled",
+		"message": func() string {
+			if force {
+				return "force sync scheduled"
+			}
+			return "sync scheduled"
+		}(),
 	})
 }
 

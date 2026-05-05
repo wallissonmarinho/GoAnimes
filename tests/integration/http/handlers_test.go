@@ -232,7 +232,7 @@ func TestSyncEndpoint_Accepted(t *testing.T) {
 	api.Register(engine, deps)
 
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/admin/sync", nil)
+	req := httptest.NewRequest(http.MethodPost, "/admin/sync?force=true", nil)
 	req.Header.Set("X-Admin-Key", "test-key")
 	engine.ServeHTTP(w, req)
 
@@ -242,5 +242,5 @@ func TestSyncEndpoint_Accepted(t *testing.T) {
 	err := json.Unmarshal(w.Body.Bytes(), &response)
 	require.NoError(t, err)
 	require.True(t, response["accepted"].(bool))
-	require.Equal(t, "sync scheduled", response["message"])
+	require.Equal(t, "force sync scheduled", response["message"])
 }

@@ -69,7 +69,8 @@ func (f *fakeMappingRepo) ListUnmatched(ctx context.Context, limit int) ([]domai
 }
 
 type fakeCatalogRepo struct {
-	items map[string]domain.Anime
+	items   map[string]domain.Anime
+	listAll []domain.Anime
 }
 
 func (f *fakeCatalogRepo) UpsertSeason(ctx context.Context, anime domain.Anime) error {
@@ -116,7 +117,7 @@ func (f *fakeCatalogRepo) ListRecent(ctx context.Context, days, limit, skip int)
 }
 
 func (f *fakeCatalogRepo) ListAll(ctx context.Context, limit, skip int) ([]domain.Anime, error) {
-	return nil, nil
+	return f.listAll, nil
 }
 
 func (f *fakeCatalogRepo) ListGenres(ctx context.Context) ([]string, error) {
@@ -228,6 +229,68 @@ func TestSyncRunReportsFetchError(t *testing.T) {
 	res := service.Run(context.Background())
 	if len(res.Errors) != 1 {
 		t.Fatalf("expected 1 error, got %d", len(res.Errors))
+	}
+}
+
+func TestSyncForceBackfillsMissingAnimeDetails(t *testing.T) {
+	catalog := &fakeCatalogRepo{
+		listAll: []domain.Anime{{
+			TMDBID:       300126,
+			SeasonNumber: 1,
+			Title:        "Liar Game",
+		}},
+		items: map[string]domain.Anime{
+			catalogKey(300126, 1): {
+				TMDBID:       300126,
+				SeasonNumber: 1,
+				Title:        "",
+			},
+		},
+	}
+	service := &sync.Service{
+		Feeds:   &fakeFeedRepo{feeds: []domain.Feed{}},
+		Mapping: &fakeMappingRepo{},
+		Catalog: catalog,
+		Reader:  &fakeFeedReader{},
+		TMDB: &fakeTMDBClient{details: ports.TMDBSeasonDetails{
+			Title:        "Liar Game",
+			Overview:     "Sinopse preenchida",
+			PosterPath:   "/poster.jpg",
+			BackdropPath: "/backdrop.jpg",
+			Genres:       []string{"Drama"},
+			Rating:       8.7,
+		}},
+		Guard: &sync.Guard{},
+	}
+
+	res := service.Run(context.Background())
+	if len(res.Errors) != 0 {
+		t.Fatalf("unexpected errors: %v", res.Errors)
+	}
+	anime, found, _ := catalog.GetByTMDBSeason(context.Background(), 300126, 1)
+	if !found {
+		t.Fatal("expected anime to be present")
+	}
+	if anime.Overview != "" {
+		t.Fatal("expected normal sync to keep missing details untouched")
+	}
+	if anime.PosterPath != "" || anime.BackdropPath != "" {
+		t.Fatal("expected normal sync to keep missing details untouched")
+	}
+
+	forceRes := service.ForceRun(context.Background())
+	if len(forceRes.Errors) != 0 {
+		t.Fatalf("unexpected force sync errors: %v", forceRes.Errors)
+	}
+	anime, found, _ = catalog.GetByTMDBSeason(context.Background(), 300126, 1)
+	if !found {
+		t.Fatal("expected anime to remain present after force sync")
+	}
+	if anime.Overview != "Sinopse preenchida" {
+		t.Fatalf("expected overview to be backfilled, got %q", anime.Overview)
+	}
+	if anime.PosterPath != "/poster.jpg" || anime.BackdropPath != "/backdrop.jpg" {
+		t.Fatal("expected poster and backdrop to be backfilled")
 	}
 }
 
