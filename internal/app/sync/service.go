@@ -248,6 +248,10 @@ func (s *Service) ensureSeason(ctx context.Context, tmdbID, season int, norm Nor
 				anime.Title = details.Title
 				needsUpdate = true
 			}
+			if anime.Overview == "" && details.Overview != "" {
+				anime.Overview = details.Overview
+				needsUpdate = true
+			}
 			if len(anime.Genres) == 0 && len(details.Genres) > 0 {
 				anime.Genres = details.Genres
 				needsUpdate = true
@@ -258,6 +262,10 @@ func (s *Service) ensureSeason(ctx context.Context, tmdbID, season int, norm Nor
 			}
 			if anime.PosterPath == "" && details.PosterPath != "" {
 				anime.PosterPath = details.PosterPath
+				needsUpdate = true
+			}
+			if anime.BackdropPath == "" && details.BackdropPath != "" {
+				anime.BackdropPath = details.BackdropPath
 				needsUpdate = true
 			}
 		}

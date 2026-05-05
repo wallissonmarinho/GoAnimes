@@ -8,10 +8,12 @@ type TMDBSearchResult struct {
 }
 
 type TMDBSeasonDetails struct {
-	Title      string
-	PosterPath string
-	Genres     []string
-	Rating     float64
+	Title        string
+	Overview     string
+	PosterPath   string
+	BackdropPath string
+	Genres       []string
+	Rating       float64
 }
 
 type TMDBClient interface {

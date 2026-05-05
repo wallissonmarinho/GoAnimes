@@ -18,9 +18,11 @@ type Anime struct {
 	TMDBID        int
 	SeasonNumber  int
 	Title         string
+	Overview      string
 	Genres        []string
 	Rating        float64
 	PosterPath    string
+	BackdropPath  string
 	Episodes      []Episode
 	MappingStatus MappingStatus
 	UpdatedAt     time.Time

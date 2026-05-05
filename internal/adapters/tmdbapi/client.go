@@ -85,9 +85,11 @@ func (c *Client) GetSeasonDetails(ctx context.Context, tmdbID, season int) (port
 		return ports.TMDBSeasonDetails{}, fmt.Errorf("tmdb details failed: %s", resp.Status)
 	}
 	var payload struct {
-		Name   string `json:"name"`
-		Poster string `json:"poster_path"`
-		Genres []struct {
+		Name     string `json:"name"`
+		Overview string `json:"overview"`
+		Poster   string `json:"poster_path"`
+		Backdrop string `json:"backdrop_path"`
+		Genres   []struct {
 			Name string `json:"name"`
 		} `json:"genres"`
 		Rating float64 `json:"vote_average"`
@@ -106,9 +108,22 @@ func (c *Client) GetSeasonDetails(ctx context.Context, tmdbID, season int) (port
 		poster = "https://image.tmdb.org/t/p/w500" + poster
 	}
 	return ports.TMDBSeasonDetails{
-		Title:      payload.Name,
-		PosterPath: poster,
-		Genres:     genres,
-		Rating:     payload.Rating,
+		Title:        payload.Name,
+		Overview:     strings.TrimSpace(payload.Overview),
+		PosterPath:   poster,
+		BackdropPath: imageURL(payload.Backdrop),
+		Genres:       genres,
+		Rating:       payload.Rating,
 	}, nil
+}
+
+func imageURL(path string) string {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return ""
+	}
+	if strings.HasPrefix(path, "http") {
+		return path
+	}
+	return "https://image.tmdb.org/t/p/w780" + path
 }

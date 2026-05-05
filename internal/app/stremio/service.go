@@ -120,13 +120,19 @@ func (s *Service) Meta(ctx context.Context, id string) (map[string]any, bool, er
 		})
 	}
 	meta := map[string]any{
-		"id":          domain.SeriesStremioID(anime.TMDBID, anime.SeasonNumber),
-		"type":        StremioType,
-		"name":        anime.Title,
-		"poster":      anime.PosterPath,
-		"genres":      anime.Genres,
-		"description": "Torrent releases with curated mapping.",
-		"videos":      videos,
+		"id":     domain.SeriesStremioID(anime.TMDBID, anime.SeasonNumber),
+		"type":   StremioType,
+		"name":   anime.Title,
+		"poster": anime.PosterPath,
+		"genres": anime.Genres,
+		"description": func() string {
+			if strings.TrimSpace(anime.Overview) != "" {
+				return anime.Overview
+			}
+			return "Torrent releases with curated mapping."
+		}(),
+		"background": anime.BackdropPath,
+		"videos":     videos,
 	}
 	return meta, true, nil
 }
@@ -153,10 +159,14 @@ func (s *Service) Streams(ctx context.Context, id string) ([]map[string]any, err
 		}
 		streams := make([]map[string]any, 0, len(ep.Sources))
 		for _, src := range ep.Sources {
+			playbackURL, err := resolvePlaybackURL(ctx, src.MagnetLink)
+			if err != nil || strings.TrimSpace(playbackURL) == "" {
+				continue
+			}
 			streams = append(streams, map[string]any{
 				"name":  src.Provider,
 				"title": streamTitle(episode, src.Quality),
-				"url":   sanitizeMagnet(src.MagnetLink),
+				"url":   playbackURL,
 			})
 		}
 		return streams, nil
@@ -195,11 +205,11 @@ func episodeTitle(ep int) string {
 }
 
 func streamTitle(ep int, quality string) string {
-	title := "Episodio " + itoa(ep)
+	quality = strings.TrimSpace(quality)
 	if quality != "" {
-		title += " · " + quality
+		return quality
 	}
-	return title
+	return "Episodio " + itoa(ep)
 }
 
 func itoa(n int) string {
@@ -222,10 +232,6 @@ func itoa(n int) string {
 		buf[i], buf[j] = buf[j], buf[i]
 	}
 	return string(buf)
-}
-
-func sanitizeMagnet(magnet string) string {
-	return strings.TrimSpace(magnet)
 }
 
 func ParseCatalogPath(path string) (string, map[string]string, bool) {

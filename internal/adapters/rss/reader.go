@@ -22,7 +22,7 @@ func NewReader() *Reader {
 }
 
 func (r *Reader) Fetch(ctx context.Context, feed domain.Feed) ([]ports.ReleaseItem, error) {
-	if feed.Type != domain.FeedTypeRSS {
+	if feed.Type != domain.FeedTypeRSS && feed.Type != domain.FeedTypeTorznab {
 		return []ports.ReleaseItem{}, nil
 	}
 	fp := r.Parser
@@ -45,13 +45,25 @@ func (r *Reader) Fetch(ctx context.Context, feed domain.Feed) ([]ports.ReleaseIt
 		items = append(items, ports.ReleaseItem{
 			Title:     strings.TrimSpace(it.Title),
 			Magnet:    "",
-			Link:      strings.TrimSpace(it.Link),
+			Link:      pickDownloadURL(it),
 			Provider:  feed.Name,
 			Quality:   "",
 			Published: published,
 		})
 	}
 	return items, nil
+}
+
+func pickDownloadURL(item *gofeed.Item) string {
+	if item == nil {
+		return ""
+	}
+	for _, enclosure := range item.Enclosures {
+		if url := strings.TrimSpace(enclosure.URL); url != "" {
+			return url
+		}
+	}
+	return strings.TrimSpace(item.Link)
 }
 
 func hasPortugueseSubtitle(item *gofeed.Item) bool {

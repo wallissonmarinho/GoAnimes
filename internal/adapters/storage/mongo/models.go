@@ -7,9 +7,11 @@ type animeDoc struct {
 	TMDBID        int          `bson:"tmdb_id"`
 	SeasonNumber  int          `bson:"season_number"`
 	Title         string       `bson:"title"`
+	Overview      string       `bson:"overview"`
 	Genres        []string     `bson:"genres"`
 	Rating        float64      `bson:"rating"`
 	PosterPath    string       `bson:"poster_path"`
+	BackdropPath  string       `bson:"backdrop_path"`
 	Episodes      []episodeDoc `bson:"episodes"`
 	MappingStatus string       `bson:"mapping_status"`
 	UpdatedAt     time.Time    `bson:"updated_at"`

@@ -6,21 +6,24 @@ import (
 )
 
 var (
-	spaceRe   = regexp.MustCompile(`\s+`)
-	tagRe     = regexp.MustCompile(`\[[^\]]+\]`)
-	parenRe   = regexp.MustCompile(`\([^\)]+\)`)
-	epRe      = regexp.MustCompile(`(?i)(?:s\d{1,2})?e(\d{1,3})\b|(?:ep|e)\s?(\d{1,3})\b`)
-	numDashRe = regexp.MustCompile(`\s-\s(\d{1,3})\b`)
-	qualityRe = regexp.MustCompile(`\b(480p|720p|1080p|2160p)\b`)
+	spaceRe        = regexp.MustCompile(`\s+`)
+	tagRe          = regexp.MustCompile(`\[[^\]]+\]`)
+	parenRe        = regexp.MustCompile(`\([^\)]+\)`)
+	epRe           = regexp.MustCompile(`(?i)(?:s\d{1,2})?e(\d{1,3})\b|(?:ep|e)\s?(\d{1,3})\b`)
+	numDashRe      = regexp.MustCompile(`\s-\s(\d{1,3})\b`)
+	qualityBlockRe = regexp.MustCompile(`(?i)\[([^\]]*\b(?:480p|720p|1080p|2160p)\b[^\]]*)\]`)
+	qualityRe      = regexp.MustCompile(`(?i)\b(?:480p|720p|1080p|2160p)\b`)
 )
 
 func NormalizeTitle(raw string) (nameKey string, episode int, quality string) {
 	clean := strings.TrimSpace(raw)
+	if match := qualityBlockRe.FindStringSubmatch(raw); len(match) > 1 {
+		quality = strings.TrimSpace(match[1])
+	} else if match := qualityRe.FindString(raw); match != "" {
+		quality = strings.TrimSpace(match)
+	}
 	clean = tagRe.ReplaceAllString(clean, " ")
 	clean = parenRe.ReplaceAllString(clean, " ")
-	if match := qualityRe.FindStringSubmatch(clean); len(match) > 0 {
-		quality = strings.ToLower(match[1])
-	}
 	if match := epRe.FindStringSubmatch(clean); len(match) > 0 {
 		// Group 1: s##e## pattern, Group 2: e## or ep## pattern
 		if match[1] != "" {

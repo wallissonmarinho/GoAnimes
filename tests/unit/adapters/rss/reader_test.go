@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"github.com/wallissonmarinho/GoAnimes/internal/adapters/rss"
 	"github.com/wallissonmarinho/GoAnimes/internal/domain"
 )
@@ -61,4 +62,34 @@ func TestFetchKeepsOnlyPortugueseSubtitleItems(t *testing.T) {
 	if items[1].Title != "[ToonsHub] LIAR GAME S01E05 1080p CR WEB-DL AAC2.0 H.264 (Multi-Subs) {Tags:L0;V9;C1;A=ja;S=en,ptbr,frfr,de;}" {
 		t.Fatalf("unexpected second item title: %q", items[1].Title)
 	}
+}
+
+func TestFetchSupportsTorznabEnclosures(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/rss+xml")
+		_, _ = fmt.Fprint(w, `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:torznab="http://torznab.com/schemas/2015/feed">
+  <channel>
+    <title>Example</title>
+    <item>
+      <title>[ToonsHub] LIAR GAME S01E05 1080p CR WEB-DL AAC2.0 H.264 (Multi-Subs) {Tags:L0;V9;C1;A=ja;S=en,ptbr;}</title>
+      <link>https://example.test/ignored</link>
+      <description>Subtitles: [br]</description>
+	<enclosure url="magnet:?xt=urn:btih:c493466b9fdf12429b4383aecbdd75a52f55bc98&amp;dn=Test" length="1506831923" type="application/x-bittorrent"/>
+	<torznab:attr name="magneturl" value="magnet:?xt=urn:btih:c493466b9fdf12429b4383aecbdd75a52f55bc98&amp;dn=Test"/>
+    </item>
+  </channel>
+</rss>`)
+	}))
+	defer server.Close()
+
+	reader := rss.NewReader()
+	items, err := reader.Fetch(context.Background(), domain.Feed{
+		Name: "NekoBT",
+		URL:  server.URL,
+		Type: domain.FeedTypeTorznab,
+	})
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	require.Equal(t, "magnet:?xt=urn:btih:c493466b9fdf12429b4383aecbdd75a52f55bc98&dn=Test", items[0].Link)
 }
