@@ -26,7 +26,20 @@ func (r *CatalogRepository) UpsertSeason(ctx context.Context, anime domain.Anime
 	anime.UpdatedAt = time.Now().UTC()
 	doc := toAnimeDoc(anime)
 	filter := bson.M{"tmdb_id": anime.TMDBID, "season_number": anime.SeasonNumber}
-	update := bson.M{"$set": doc}
+	update := bson.M{
+		"$set": bson.M{
+			"tmdb_id":        doc.TMDBID,
+			"season_number":  doc.SeasonNumber,
+			"title":          doc.Title,
+			"genres":         doc.Genres,
+			"rating":         doc.Rating,
+			"poster_path":    doc.PosterPath,
+			"episodes":       doc.Episodes,
+			"mapping_status": doc.MappingStatus,
+			"updated_at":     doc.UpdatedAt,
+		},
+		"$setOnInsert": bson.M{"_id": doc.ID},
+	}
 	_, err := r.store.Animes.UpdateOne(ctx, filter, update, options.Update().SetUpsert(true))
 	return err
 }
@@ -50,7 +63,20 @@ func (r *CatalogRepository) AddEpisodeSource(ctx context.Context, tmdbID, season
 	}
 	doc := toAnimeDoc(anime)
 	filter := bson.M{"tmdb_id": tmdbID, "season_number": season}
-	update := bson.M{"$set": doc}
+	update := bson.M{
+		"$set": bson.M{
+			"tmdb_id":        doc.TMDBID,
+			"season_number":  doc.SeasonNumber,
+			"title":          doc.Title,
+			"genres":         doc.Genres,
+			"rating":         doc.Rating,
+			"poster_path":    doc.PosterPath,
+			"episodes":       doc.Episodes,
+			"mapping_status": doc.MappingStatus,
+			"updated_at":     doc.UpdatedAt,
+		},
+		"$setOnInsert": bson.M{"_id": doc.ID},
+	}
 	_, err = r.store.Animes.UpdateOne(ctx, filter, update, options.Update().SetUpsert(true))
 	return added, err
 }

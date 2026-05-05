@@ -42,7 +42,16 @@ func (r *MappingRepository) UpsertOverride(ctx context.Context, override domain.
 		ID: override.ID, RSSNameKey: override.RSSNameKey, TMDBID: override.TMDBID, Season: override.Season, Locked: override.Locked, UpdatedAt: override.UpdatedAt,
 	}
 	filter := bson.M{"rss_name_key": override.RSSNameKey}
-	update := bson.M{"$set": doc}
+	update := bson.M{
+		"$set": bson.M{
+			"rss_name_key": doc.RSSNameKey,
+			"tmdb_id":      doc.TMDBID,
+			"season":       doc.Season,
+			"locked":       doc.Locked,
+			"updated_at":   doc.UpdatedAt,
+		},
+		"$setOnInsert": bson.M{"_id": doc.ID},
+	}
 	_, err := r.store.Overrides.UpdateOne(ctx, filter, update, options.Update().SetUpsert(true))
 	return override, err
 }
@@ -80,7 +89,16 @@ func (r *MappingRepository) AddUnmatched(ctx context.Context, release domain.Unm
 		ID: release.ID, RSSNameKey: release.RSSNameKey, RawTitle: release.RawTitle, Provider: release.Provider, AddedAt: release.AddedAt, LastSeenAt: release.LastSeenAt, Count: release.Count,
 	}
 	filter := bson.M{"rss_name_key": release.RSSNameKey}
-	update := bson.M{"$set": doc}
+	update := bson.M{
+		"$set": bson.M{
+			"raw_title":    doc.RawTitle,
+			"provider":     doc.Provider,
+			"last_seen_at": doc.LastSeenAt,
+			"count":        doc.Count,
+			"rss_name_key": doc.RSSNameKey,
+		},
+		"$setOnInsert": bson.M{"_id": doc.ID, "added_at": doc.AddedAt},
+	}
 	_, err := r.store.Unmatched.UpdateOne(ctx, filter, update, options.Update().SetUpsert(true))
 	return err
 }

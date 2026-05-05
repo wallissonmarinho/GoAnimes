@@ -35,7 +35,16 @@ func (r *FeedRepository) Upsert(ctx context.Context, feed domain.Feed) (domain.F
 		ID: feed.ID, Name: feed.Name, URL: feed.URL, Type: string(feed.Type), Enabled: feed.Enabled, UpdatedAt: feed.UpdatedAt,
 	}
 	filter := bson.M{"_id": feed.ID}
-	update := bson.M{"$set": doc}
+	update := bson.M{
+		"$set": bson.M{
+			"name":       doc.Name,
+			"url":        doc.URL,
+			"type":       doc.Type,
+			"enabled":    doc.Enabled,
+			"updated_at": doc.UpdatedAt,
+		},
+		"$setOnInsert": bson.M{"_id": doc.ID},
+	}
 	_, err := r.store.Feeds.UpdateOne(ctx, filter, update, options.Update().SetUpsert(true))
 	return feed, err
 }

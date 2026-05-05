@@ -67,6 +67,15 @@ func (s *Service) runInner(ctx context.Context) Result {
 // Returns false if a sync is already in progress. Uses context.Background so work is not
 // cancelled when the HTTP client disconnects.
 func (s *Service) RequestAsync() bool {
+	// Note: this method intentionally starts background work using
+	// `context.Background()` so the started sync is not cancelled when the
+	// originating HTTP request context is finished. This means the background
+	// sync run will be a root trace (no parent) unless a caller explicitly
+	// changes this behavior by passing a context through a different API.
+	//
+	// If you want the spawned goroutine to inherit the caller's trace span,
+	// change the API to accept a `context.Context` and propagate it into the
+	// goroutine (e.g. `go func(ctx context.Context) { _ = s.runInner(ctx) }(ctx)`).
 	if s.Guard == nil {
 		go func() { _ = s.runInner(context.Background()) }()
 		return true
