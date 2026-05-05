@@ -127,3 +127,38 @@ func imageURL(path string) string {
 	}
 	return "https://image.tmdb.org/t/p/w780" + path
 }
+
+func (c *Client) GetEpisodeDetails(ctx context.Context, tmdbID, season, episode int) (ports.TMDBEpisodeDetails, error) {
+	if c == nil || c.key == "" {
+		return ports.TMDBEpisodeDetails{}, errors.New("tmdb api key not configured")
+	}
+	q := url.Values{}
+	q.Set("api_key", c.key)
+	q.Set("language", "pt-BR")
+	endpoint := fmt.Sprintf("%s/tv/%d/season/%d/episode/%d?%s", c.baseURL, tmdbID, season, episode, q.Encode())
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return ports.TMDBEpisodeDetails{}, err
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return ports.TMDBEpisodeDetails{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return ports.TMDBEpisodeDetails{}, fmt.Errorf("tmdb episode details failed: %s", resp.Status)
+	}
+	var payload struct {
+		Name     string `json:"name"`
+		Overview string `json:"overview"`
+		Still    string `json:"still_path"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return ports.TMDBEpisodeDetails{}, err
+	}
+	return ports.TMDBEpisodeDetails{
+		Title:     strings.TrimSpace(payload.Name),
+		Overview:  strings.TrimSpace(payload.Overview),
+		StillPath: imageURL(payload.Still),
+	}, nil
+}

@@ -87,11 +87,12 @@ func (s *Service) Catalog(ctx context.Context, catalogID string, extras map[stri
 	metas := make([]map[string]any, 0, len(animes))
 	for _, anime := range animes {
 		metas = append(metas, map[string]any{
-			"id":     domain.SeriesStremioID(anime.TMDBID, anime.SeasonNumber),
-			"type":   StremioType,
-			"name":   anime.Title,
-			"poster": anime.PosterPath,
-			"genres": anime.Genres,
+			"id":          domain.SeriesStremioID(anime.TMDBID, anime.SeasonNumber),
+			"type":        StremioType,
+			"name":        anime.Title,
+			"poster":      anime.PosterPath,
+			"genres":      anime.Genres,
+			"description": anime.Overview,
 		})
 	}
 	return metas, nil
@@ -136,13 +137,27 @@ func (s *Service) Meta(ctx context.Context, id string) (map[string]any, bool, er
 	}
 	videos := make([]map[string]any, 0, len(anime.Episodes))
 	for _, ep := range anime.Episodes {
-		videos = append(videos, map[string]any{
+		video := map[string]any{
 			"id":       domain.EpisodeStremioID(anime.TMDBID, anime.SeasonNumber, ep.Number),
-			"title":    episodeTitle(ep.Number),
 			"released": ep.AddedAt.Format(time.RFC3339),
 			"season":   anime.SeasonNumber,
 			"episode":  ep.Number,
-		})
+		}
+		// Use episode title if available, otherwise generate default
+		if strings.TrimSpace(ep.Title) != "" {
+			video["title"] = ep.Title
+		} else {
+			video["title"] = episodeTitle(ep.Number)
+		}
+		// Add episode image if available
+		if strings.TrimSpace(ep.StillPath) != "" {
+			video["thumbnail"] = ep.StillPath
+		}
+		// Add episode description if available
+		if strings.TrimSpace(ep.Overview) != "" {
+			video["overview"] = ep.Overview
+		}
+		videos = append(videos, video)
 	}
 	meta := map[string]any{
 		"id":     domain.SeriesStremioID(anime.TMDBID, anime.SeasonNumber),

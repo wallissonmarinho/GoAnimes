@@ -18,9 +18,12 @@ type animeDoc struct {
 }
 
 type episodeDoc struct {
-	Number  int         `bson:"number"`
-	Sources []sourceDoc `bson:"sources"`
-	AddedAt time.Time   `bson:"added_at"`
+	Number    int         `bson:"number"`
+	Title     string      `bson:"title"`
+	Overview  string      `bson:"overview"`
+	StillPath string      `bson:"still_path"`
+	Sources   []sourceDoc `bson:"sources"`
+	AddedAt   time.Time   `bson:"added_at"`
 }
 
 type sourceDoc struct {

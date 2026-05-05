@@ -85,6 +85,26 @@ func (r *CatalogRepository) AddEpisodeSource(ctx context.Context, tmdbID, season
 	return added, err
 }
 
+func (r *CatalogRepository) UpdateEpisodeDetails(ctx context.Context, tmdbID, season, episode int, title, overview, stillPath string) error {
+	if tmdbID <= 0 || season <= 0 || episode <= 0 {
+		return errors.New("invalid episode identity")
+	}
+	filter := bson.M{
+		"tmdb_id":         tmdbID,
+		"season_number":   season,
+		"episodes.number": episode,
+	}
+	update := bson.M{
+		"$set": bson.M{
+			"episodes.$.title":      title,
+			"episodes.$.overview":   overview,
+			"episodes.$.still_path": stillPath,
+		},
+	}
+	_, err := r.store.Animes.UpdateOne(ctx, filter, update)
+	return err
+}
+
 func (r *CatalogRepository) GetByTMDBSeason(ctx context.Context, tmdbID, season int) (domain.Anime, bool, error) {
 	filter := bson.M{"tmdb_id": tmdbID, "season_number": season}
 	var doc animeDoc
@@ -184,7 +204,7 @@ func toAnimeDoc(a domain.Anime) animeDoc {
 		for _, src := range ep.Sources {
 			sources = append(sources, sourceDoc{Provider: src.Provider, MagnetLink: src.MagnetLink, Quality: src.Quality})
 		}
-		eps = append(eps, episodeDoc{Number: ep.Number, Sources: sources, AddedAt: ep.AddedAt})
+		eps = append(eps, episodeDoc{Number: ep.Number, Title: ep.Title, Overview: ep.Overview, StillPath: ep.StillPath, Sources: sources, AddedAt: ep.AddedAt})
 	}
 	return animeDoc{
 		ID:            a.ID,
@@ -209,7 +229,7 @@ func fromAnimeDoc(doc animeDoc) domain.Anime {
 		for _, src := range ep.Sources {
 			sources = append(sources, domain.Source{Provider: src.Provider, MagnetLink: src.MagnetLink, Quality: src.Quality})
 		}
-		eps = append(eps, domain.Episode{Number: ep.Number, Sources: sources, AddedAt: ep.AddedAt})
+		eps = append(eps, domain.Episode{Number: ep.Number, Title: ep.Title, Overview: ep.Overview, StillPath: ep.StillPath, Sources: sources, AddedAt: ep.AddedAt})
 	}
 	return domain.Anime{
 		ID:            doc.ID,

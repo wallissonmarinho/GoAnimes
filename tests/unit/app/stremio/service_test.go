@@ -24,6 +24,9 @@ func (f *fakeCatalogRepo) UpsertSeason(ctx context.Context, anime domain.Anime) 
 func (f *fakeCatalogRepo) AddEpisodeSource(ctx context.Context, tmdbID, season, episode int, src domain.Source) (bool, error) {
 	return false, nil
 }
+func (f *fakeCatalogRepo) UpdateEpisodeDetails(ctx context.Context, tmdbID, season, episode int, title, overview, stillPath string) error {
+	return nil
+}
 func (f *fakeCatalogRepo) GetByTMDBSeason(ctx context.Context, tmdbID, season int) (domain.Anime, bool, error) {
 	return f.anime, true, nil
 }

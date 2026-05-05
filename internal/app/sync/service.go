@@ -181,6 +181,8 @@ func (s *Service) processItem(ctx context.Context, res Result, item ports.Releas
 		res.Errors = append(res.Errors, addedErr)
 		return res
 	}
+	// Fetch episode details from TMDB if available
+	_ = s.enrichEpisodeDetails(ctx, tmdbID, season, norm.Episode)
 	if ensureErr := s.ensureSeason(ctx, tmdbID, season, norm); ensureErr != nil {
 		span.RecordError(ensureErr)
 		span.SetStatus(codes.Error, ensureErr.Error())
@@ -239,6 +241,18 @@ func (s *Service) addEpisodeSource(ctx context.Context, tmdbID, season int, norm
 		Quality:    norm.Quality,
 	})
 	return addErr
+}
+
+func (s *Service) enrichEpisodeDetails(ctx context.Context, tmdbID, season, episodeNum int) error {
+	if s.TMDB == nil {
+		return nil
+	}
+	episodeDetails, err := s.TMDB.GetEpisodeDetails(ctx, tmdbID, season, episodeNum)
+	if err != nil {
+		return nil // Non-blocking error, continue on TMDB failure
+	}
+	// Update episode with TMDB details
+	return s.Catalog.UpdateEpisodeDetails(ctx, tmdbID, season, episodeNum, episodeDetails.Title, episodeDetails.Overview, episodeDetails.StillPath)
 }
 
 func (s *Service) ensureSeason(ctx context.Context, tmdbID, season int, norm NormalizedRelease) error {

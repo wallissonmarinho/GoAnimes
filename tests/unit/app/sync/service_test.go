@@ -100,6 +100,27 @@ func (f *fakeCatalogRepo) AddEpisodeSource(ctx context.Context, tmdbID, season, 
 	return added, nil
 }
 
+func (f *fakeCatalogRepo) UpdateEpisodeDetails(ctx context.Context, tmdbID, season, episode int, title, overview, stillPath string) error {
+	if f.items == nil {
+		return nil
+	}
+	key := catalogKey(tmdbID, season)
+	anime, ok := f.items[key]
+	if !ok {
+		return nil
+	}
+	for i := range anime.Episodes {
+		if anime.Episodes[i].Number == episode {
+			anime.Episodes[i].Title = title
+			anime.Episodes[i].Overview = overview
+			anime.Episodes[i].StillPath = stillPath
+			f.items[key] = anime
+			break
+		}
+	}
+	return nil
+}
+
 func (f *fakeCatalogRepo) GetByTMDBSeason(ctx context.Context, tmdbID, season int) (domain.Anime, bool, error) {
 	if f.items == nil {
 		return domain.Anime{}, false, nil
@@ -138,11 +159,13 @@ func (f *fakeFeedReader) Fetch(ctx context.Context, feed domain.Feed) ([]ports.R
 }
 
 type fakeTMDBClient struct {
-	searchResult ports.TMDBSearchResult
-	found        bool
-	searchErr    error
-	details      ports.TMDBSeasonDetails
-	detailsErr   error
+	searchResult      ports.TMDBSearchResult
+	found             bool
+	searchErr         error
+	details           ports.TMDBSeasonDetails
+	detailsErr        error
+	episodeDetails    ports.TMDBEpisodeDetails
+	episodeDetailsErr error
 }
 
 func (f *fakeTMDBClient) SearchSeries(ctx context.Context, query string) (ports.TMDBSearchResult, bool, error) {
@@ -151,6 +174,10 @@ func (f *fakeTMDBClient) SearchSeries(ctx context.Context, query string) (ports.
 
 func (f *fakeTMDBClient) GetSeasonDetails(ctx context.Context, tmdbID, season int) (ports.TMDBSeasonDetails, error) {
 	return f.details, f.detailsErr
+}
+
+func (f *fakeTMDBClient) GetEpisodeDetails(ctx context.Context, tmdbID, season, episode int) (ports.TMDBEpisodeDetails, error) {
+	return f.episodeDetails, f.episodeDetailsErr
 }
 
 func TestSyncRunWithOverride(t *testing.T) {

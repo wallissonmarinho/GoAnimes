@@ -29,9 +29,12 @@ type Anime struct {
 }
 
 type Episode struct {
-	Number  int
-	Sources []Source
-	AddedAt time.Time
+	Number    int
+	Title     string
+	Overview  string
+	StillPath string
+	Sources   []Source
+	AddedAt   time.Time
 }
 
 type Source struct {

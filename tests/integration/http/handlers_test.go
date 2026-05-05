@@ -31,6 +31,10 @@ func (m *mockCatalogRepository) AddEpisodeSource(ctx context.Context, tmdbID, se
 	return true, nil
 }
 
+func (m *mockCatalogRepository) UpdateEpisodeDetails(ctx context.Context, tmdbID, season, episode int, title, overview, stillPath string) error {
+	return nil
+}
+
 func (m *mockCatalogRepository) GetByTMDBSeason(ctx context.Context, tmdbID, season int) (domain.Anime, bool, error) {
 	if len(m.animes) > 0 {
 		return m.animes[0], true, nil
@@ -132,6 +136,10 @@ func (m *mockTMDBClient) SearchSeries(ctx context.Context, query string) (ports.
 
 func (m *mockTMDBClient) GetSeasonDetails(ctx context.Context, tmdbID, season int) (ports.TMDBSeasonDetails, error) {
 	return ports.TMDBSeasonDetails{}, nil
+}
+
+func (m *mockTMDBClient) GetEpisodeDetails(ctx context.Context, tmdbID, season, episode int) (ports.TMDBEpisodeDetails, error) {
+	return ports.TMDBEpisodeDetails{}, nil
 }
 
 var _ ports.CatalogRepository = (*mockCatalogRepository)(nil)

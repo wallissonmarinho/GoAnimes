@@ -16,7 +16,14 @@ type TMDBSeasonDetails struct {
 	Rating       float64
 }
 
+type TMDBEpisodeDetails struct {
+	Title     string
+	Overview  string
+	StillPath string
+}
+
 type TMDBClient interface {
 	SearchSeries(ctx context.Context, query string) (TMDBSearchResult, bool, error)
 	GetSeasonDetails(ctx context.Context, tmdbID, season int) (TMDBSeasonDetails, error)
+	GetEpisodeDetails(ctx context.Context, tmdbID, season, episode int) (TMDBEpisodeDetails, error)
 }
