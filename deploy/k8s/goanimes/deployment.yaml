@@ -19,8 +19,9 @@ spec:
       labels:
         app.kubernetes.io/name: goanimes
     spec:
+      # Imagem GHCR é multi-arch (oracle-deploy.yml); aqui fixamos o worker em SP.
       nodeSelector:
-        kubernetes.io/arch: arm64
+        kubernetes.io/hostname: oci-prd-saopaulo-e2-micro-1
       containers:
         - name: goanimes
           # Substituído no CI antes do tar (oracle-deploy.yml — passo "Stamp container image").
