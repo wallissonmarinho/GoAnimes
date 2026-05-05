@@ -2,6 +2,7 @@ package rss
 
 import (
 	"context"
+	"regexp"
 	"strings"
 	"time"
 
@@ -13,6 +14,8 @@ import (
 type Reader struct {
 	Parser *gofeed.Parser
 }
+
+var portugueseSubtitleRe = regexp.MustCompile(`(?i)(\[br\]|\bpt[-_ ]?br\b|\bbrazilian portuguese\b|\bportuguese\b)`)
 
 func NewReader() *Reader {
 	return &Reader{Parser: gofeed.NewParser()}
@@ -32,6 +35,9 @@ func (r *Reader) Fetch(ctx context.Context, feed domain.Feed) ([]ports.ReleaseIt
 	}
 	items := make([]ports.ReleaseItem, 0, len(parsed.Items))
 	for _, it := range parsed.Items {
+		if !hasPortugueseSubtitle(it) {
+			continue
+		}
 		published := time.Now().UTC()
 		if it.PublishedParsed != nil {
 			published = it.PublishedParsed.UTC()
@@ -46,4 +52,12 @@ func (r *Reader) Fetch(ctx context.Context, feed domain.Feed) ([]ports.ReleaseIt
 		})
 	}
 	return items, nil
+}
+
+func hasPortugueseSubtitle(item *gofeed.Item) bool {
+	if item == nil {
+		return false
+	}
+	text := strings.ToLower(strings.TrimSpace(strings.Join([]string{item.Title, item.Description, item.Content}, " ")))
+	return portugueseSubtitleRe.MatchString(text)
 }
