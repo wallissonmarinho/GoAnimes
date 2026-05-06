@@ -61,6 +61,20 @@ func (s *Service) ListUnmatched(ctx context.Context, limit int) ([]domain.Unmatc
 	return s.Mapping.ListUnmatched(ctx, limit)
 }
 
+func (s *Service) DeleteOverride(ctx context.Context, id string) error {
+	ctx, span := tracer.Start(ctx, "admin.delete_override")
+	span.SetAttributes(attribute.String("override.id", id))
+	defer span.End()
+	return s.Mapping.DeleteOverride(ctx, id)
+}
+
+func (s *Service) DeleteUnmatched(ctx context.Context, id string) error {
+	ctx, span := tracer.Start(ctx, "admin.delete_unmatched")
+	span.SetAttributes(attribute.String("unmatched.id", id))
+	defer span.End()
+	return s.Mapping.DeleteUnmatched(ctx, id)
+}
+
 func (s *Service) RemoveSourcesByProvider(ctx context.Context, provider string) (int, error) {
 	ctx, span := tracer.Start(ctx, "admin.remove_sources_by_provider")
 	span.SetAttributes(attribute.String("provider", provider))

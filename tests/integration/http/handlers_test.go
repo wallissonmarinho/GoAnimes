@@ -120,6 +120,14 @@ func (m *mockMappingRepository) ListUnmatched(ctx context.Context, limit int) ([
 	return nil, nil
 }
 
+func (m *mockMappingRepository) DeleteOverride(ctx context.Context, id string) error {
+	return nil
+}
+
+func (m *mockMappingRepository) DeleteUnmatched(ctx context.Context, id string) error {
+	return nil
+}
+
 // mockFeedReader implements ports.FeedReader for testing
 type mockFeedReader struct{}
 

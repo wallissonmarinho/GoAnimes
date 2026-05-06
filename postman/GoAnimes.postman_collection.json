@@ -9,6 +9,8 @@
     { "key": "baseUrl", "value": "http://127.0.0.1:8080" },
     { "key": "adminApiKey", "value": "" },
     { "key": "feedId", "value": "" },
+    { "key": "overrideId", "value": "" },
+    { "key": "unmatchedId", "value": "" },
     {
       "key": "sampleFeedUrl",
       "value": "https://www.erai-raws.info/feed/?type=torrent&token=SEU_TOKEN_AQUI"
@@ -210,6 +212,15 @@
                 },
                 "url": "{{baseUrl}}/admin/mapping-overrides"
               }
+            },
+            {
+              "name": "Delete override",
+              "request": {
+                "method": "DELETE",
+                "header": [],
+                "description": "Delete an override by ID. Use the override ID from List overrides response.",
+                "url": "{{baseUrl}}/admin/mapping-overrides/{{overrideId}}"
+              }
             }
           ]
         },
@@ -222,6 +233,15 @@
                 "method": "GET",
                 "header": [],
                 "url": "{{baseUrl}}/admin/unmatched?limit=100"
+              }
+            },
+            {
+              "name": "Delete unmatched",
+              "request": {
+                "method": "DELETE",
+                "header": [],
+                "description": "Delete an unmatched release by ID. Use the unmatched ID from List unmatched response.",
+                "url": "{{baseUrl}}/admin/unmatched/{{unmatchedId}}"
               }
             }
           ]

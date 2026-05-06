@@ -42,7 +42,9 @@ func Register(engine *gin.Engine, deps Deps) {
 	adminGroup.DELETE("/feeds/:id", h.deleteFeed)
 	adminGroup.GET("/mapping-overrides", h.listOverrides)
 	adminGroup.POST("/mapping-overrides", h.upsertOverride)
+	adminGroup.DELETE("/mapping-overrides/:id", h.deleteOverride)
 	adminGroup.GET("/unmatched", h.listUnmatched)
+	adminGroup.DELETE("/unmatched/:id", h.deleteUnmatched)
 }
 
 func (h *handlers) health(c *gin.Context) {
@@ -276,6 +278,34 @@ func (h *handlers) listUnmatched(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"unmatched": items})
+}
+
+func (h *handlers) deleteOverride(c *gin.Context) {
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "id is required"})
+		return
+	}
+	err := h.deps.Admin.DeleteOverride(c.Request.Context(), id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "override not found"})
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+func (h *handlers) deleteUnmatched(c *gin.Context) {
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "id is required"})
+		return
+	}
+	err := h.deps.Admin.DeleteUnmatched(c.Request.Context(), id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "unmatched not found"})
+		return
+	}
+	c.Status(http.StatusNoContent)
 }
 
 func (h *handlers) requireAdminKey(c *gin.Context) {

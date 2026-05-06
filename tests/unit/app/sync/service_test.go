@@ -68,6 +68,14 @@ func (f *fakeMappingRepo) ListUnmatched(ctx context.Context, limit int) ([]domai
 	return f.unmatched, nil
 }
 
+func (f *fakeMappingRepo) DeleteOverride(ctx context.Context, id string) error {
+	return nil
+}
+
+func (f *fakeMappingRepo) DeleteUnmatched(ctx context.Context, id string) error {
+	return nil
+}
+
 type fakeCatalogRepo struct {
 	items   map[string]domain.Anime
 	listAll []domain.Anime

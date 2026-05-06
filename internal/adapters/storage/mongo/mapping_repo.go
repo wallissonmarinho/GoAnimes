@@ -134,3 +134,31 @@ func (r *MappingRepository) ListUnmatched(ctx context.Context, limit int) ([]dom
 	}
 	return out, cur.Err()
 }
+
+func (r *MappingRepository) DeleteOverride(ctx context.Context, id string) error {
+	if id == "" {
+		return mongodb.ErrNoDocuments
+	}
+	result, err := r.store.Overrides.DeleteOne(ctx, bson.M{"_id": id})
+	if err != nil {
+		return err
+	}
+	if result.DeletedCount == 0 {
+		return mongodb.ErrNoDocuments
+	}
+	return nil
+}
+
+func (r *MappingRepository) DeleteUnmatched(ctx context.Context, id string) error {
+	if id == "" {
+		return mongodb.ErrNoDocuments
+	}
+	result, err := r.store.Unmatched.DeleteOne(ctx, bson.M{"_id": id})
+	if err != nil {
+		return err
+	}
+	if result.DeletedCount == 0 {
+		return mongodb.ErrNoDocuments
+	}
+	return nil
+}
