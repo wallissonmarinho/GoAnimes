@@ -164,7 +164,7 @@ func (s *Service) processItem(ctx context.Context, res Result, item ports.Releas
 		res.Errors = append(res.Errors, err)
 		return res
 	}
-	tmdbID, season, ok, err := s.resolveMapping(ctx, norm, item, mapping, ok)
+	tmdbID, season, mappedEpisode, ok, err := s.resolveMapping(ctx, norm, item, mapping, ok)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
@@ -174,7 +174,7 @@ func (s *Service) processItem(ctx context.Context, res Result, item ports.Releas
 	if !ok || tmdbID <= 0 || season <= 0 {
 		return res
 	}
-	addedErr := s.addEpisodeSource(ctx, tmdbID, season, norm)
+	addedErr := s.addEpisodeSource(ctx, tmdbID, season, mappedEpisode, norm)
 	if addedErr != nil {
 		span.RecordError(addedErr)
 		span.SetStatus(codes.Error, addedErr.Error())
@@ -182,7 +182,7 @@ func (s *Service) processItem(ctx context.Context, res Result, item ports.Releas
 		return res
 	}
 	// Fetch episode details from TMDB if available
-	_ = s.enrichEpisodeDetails(ctx, tmdbID, season, norm.Episode)
+	_ = s.enrichEpisodeDetails(ctx, tmdbID, season, mappedEpisode)
 	if ensureErr := s.ensureSeason(ctx, tmdbID, season, norm); ensureErr != nil {
 		span.RecordError(ensureErr)
 		span.SetStatus(codes.Error, ensureErr.Error())
@@ -215,27 +215,33 @@ func (s *Service) resolveMapping(
 	item ports.ReleaseItem,
 	override domain.MappingOverride,
 	matched bool,
-) (tmdbID int, season int, ok bool, err error) {
+) (tmdbID int, season int, mappedEpisode int, ok bool, err error) {
+	// Default mappedEpisode is the normalized episode
+	mappedEpisode = norm.Episode
 	if matched {
-		return override.TMDBID, override.Season, true, nil
+		// If override contains an episode offset, apply it
+		if override.EpisodeOffset > 0 {
+			mappedEpisode = norm.Episode + override.EpisodeOffset
+		}
+		return override.TMDBID, override.Season, mappedEpisode, true, nil
 	}
 	if s.TMDB == nil {
 		s.addUnmatched(ctx, Result{}, norm, item)
-		return 0, 0, false, nil
+		return 0, 0, 0, false, nil
 	}
 	search, found, searchErr := s.TMDB.SearchSeries(ctx, norm.RSSNameKey)
 	if searchErr != nil {
-		return 0, 0, false, searchErr
+		return 0, 0, 0, false, searchErr
 	}
 	if !found {
 		s.addUnmatched(ctx, Result{}, norm, item)
-		return 0, 0, false, nil
+		return 0, 0, 0, false, nil
 	}
-	return search.TMDBID, 1, true, nil
+	return search.TMDBID, 1, mappedEpisode, true, nil
 }
 
-func (s *Service) addEpisodeSource(ctx context.Context, tmdbID, season int, norm NormalizedRelease) error {
-	_, addErr := s.Catalog.AddEpisodeSource(ctx, tmdbID, season, norm.Episode, domain.Source{
+func (s *Service) addEpisodeSource(ctx context.Context, tmdbID, season, episode int, norm NormalizedRelease) error {
+	_, addErr := s.Catalog.AddEpisodeSource(ctx, tmdbID, season, episode, domain.Source{
 		Provider:   norm.Provider,
 		MagnetLink: norm.MagnetLink,
 		Quality:    norm.Quality,

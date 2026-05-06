@@ -206,7 +206,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"rss_name_key\": \"Honzuki no Gekokujou: Ryushu no Youjo\",\n  \"tmdb_id\": 91768,\n  \"season\": 4,\n  \"locked\": true\n}"
+                  "raw": "{\n  \"rss_name_key\": \"Honzuki no Gekokujou: Ryushu no Youjo\",\n  \"tmdb_id\": 91768,\n  \"season\": 4,\n  \"locked\": true,\n  \"episode_offset\": 48\n}"
                 },
                 "url": "{{baseUrl}}/admin/mapping-overrides"
               }

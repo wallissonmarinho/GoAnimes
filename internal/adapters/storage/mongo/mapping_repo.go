@@ -29,7 +29,7 @@ func (r *MappingRepository) FindOverride(ctx context.Context, rssNameKey string)
 		return domain.MappingOverride{}, false, err
 	}
 	return domain.MappingOverride{
-		ID: doc.ID, RSSNameKey: doc.RSSNameKey, TMDBID: doc.TMDBID, Season: doc.Season, Locked: doc.Locked, UpdatedAt: doc.UpdatedAt,
+		ID: doc.ID, RSSNameKey: doc.RSSNameKey, TMDBID: doc.TMDBID, Season: doc.Season, Locked: doc.Locked, EpisodeOffset: doc.EpisodeOffset, UpdatedAt: doc.UpdatedAt,
 	}, true, nil
 }
 
@@ -39,16 +39,17 @@ func (r *MappingRepository) UpsertOverride(ctx context.Context, override domain.
 	}
 	override.UpdatedAt = time.Now().UTC()
 	doc := mappingOverrideDoc{
-		ID: override.ID, RSSNameKey: override.RSSNameKey, TMDBID: override.TMDBID, Season: override.Season, Locked: override.Locked, UpdatedAt: override.UpdatedAt,
+		ID: override.ID, RSSNameKey: override.RSSNameKey, TMDBID: override.TMDBID, Season: override.Season, Locked: override.Locked, EpisodeOffset: override.EpisodeOffset, UpdatedAt: override.UpdatedAt,
 	}
 	filter := bson.M{"rss_name_key": override.RSSNameKey}
 	update := bson.M{
 		"$set": bson.M{
-			"rss_name_key": doc.RSSNameKey,
-			"tmdb_id":      doc.TMDBID,
-			"season":       doc.Season,
-			"locked":       doc.Locked,
-			"updated_at":   doc.UpdatedAt,
+			"rss_name_key":   doc.RSSNameKey,
+			"tmdb_id":        doc.TMDBID,
+			"season":         doc.Season,
+			"locked":         doc.Locked,
+			"episode_offset": doc.EpisodeOffset,
+			"updated_at":     doc.UpdatedAt,
 		},
 		"$setOnInsert": bson.M{"_id": doc.ID},
 	}
@@ -78,7 +79,7 @@ func (r *MappingRepository) ListOverrides(ctx context.Context) ([]domain.Mapping
 			return nil, err
 		}
 		out = append(out, domain.MappingOverride{
-			ID: doc.ID, RSSNameKey: doc.RSSNameKey, TMDBID: doc.TMDBID, Season: doc.Season, Locked: doc.Locked, UpdatedAt: doc.UpdatedAt,
+			ID: doc.ID, RSSNameKey: doc.RSSNameKey, TMDBID: doc.TMDBID, Season: doc.Season, Locked: doc.Locked, EpisodeOffset: doc.EpisodeOffset, UpdatedAt: doc.UpdatedAt,
 		})
 	}
 	return out, cur.Err()

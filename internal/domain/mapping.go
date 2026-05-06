@@ -19,12 +19,13 @@ type Feed struct {
 }
 
 type MappingOverride struct {
-	ID         string
-	RSSNameKey string
-	TMDBID     int
-	Season     int
-	Locked     bool
-	UpdatedAt  time.Time
+	ID            string
+	RSSNameKey    string
+	TMDBID        int
+	Season        int
+	Locked        bool
+	EpisodeOffset int
+	UpdatedAt     time.Time
 }
 
 type UnmatchedRelease struct {

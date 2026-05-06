@@ -245,11 +245,12 @@ func (h *handlers) listOverrides(c *gin.Context) {
 
 func (h *handlers) upsertOverride(c *gin.Context) {
 	var input struct {
-		ID         string `json:"id"`
-		RSSNameKey string `json:"rss_name_key"`
-		TMDBID     int    `json:"tmdb_id"`
-		Season     int    `json:"season"`
-		Locked     bool   `json:"locked"`
+		ID            string `json:"id"`
+		RSSNameKey    string `json:"rss_name_key"`
+		TMDBID        int    `json:"tmdb_id"`
+		Season        int    `json:"season"`
+		Locked        bool   `json:"locked"`
+		EpisodeOffset int    `json:"episode_offset"`
 	}
 	if err := c.BindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -257,6 +258,7 @@ func (h *handlers) upsertOverride(c *gin.Context) {
 	}
 	override := domain.MappingOverride{
 		ID: input.ID, RSSNameKey: input.RSSNameKey, TMDBID: input.TMDBID, Season: input.Season, Locked: input.Locked,
+		EpisodeOffset: input.EpisodeOffset,
 	}
 	out, err := h.deps.Admin.UpsertOverride(c.Request.Context(), override)
 	if err != nil {

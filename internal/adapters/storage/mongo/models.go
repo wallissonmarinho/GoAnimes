@@ -42,12 +42,13 @@ type feedDoc struct {
 }
 
 type mappingOverrideDoc struct {
-	ID         string    `bson:"_id,omitempty"`
-	RSSNameKey string    `bson:"rss_name_key"`
-	TMDBID     int       `bson:"tmdb_id"`
-	Season     int       `bson:"season"`
-	Locked     bool      `bson:"locked"`
-	UpdatedAt  time.Time `bson:"updated_at"`
+	ID            string    `bson:"_id,omitempty"`
+	RSSNameKey    string    `bson:"rss_name_key"`
+	TMDBID        int       `bson:"tmdb_id"`
+	Season        int       `bson:"season"`
+	Locked        bool      `bson:"locked"`
+	EpisodeOffset int       `bson:"episode_offset"`
+	UpdatedAt     time.Time `bson:"updated_at"`
 }
 
 type unmatchedDoc struct {
