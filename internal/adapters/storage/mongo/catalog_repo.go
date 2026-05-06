@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/wallissonmarinho/GoAnimes/internal/domain"
 	"go.mongodb.org/mongo-driver/bson"
 	mongodb "go.mongodb.org/mongo-driver/mongo"
@@ -22,6 +23,9 @@ func NewCatalogRepository(store *Store) *CatalogRepository {
 func (r *CatalogRepository) UpsertSeason(ctx context.Context, anime domain.Anime) error {
 	if err := anime.Validate(); err != nil {
 		return err
+	}
+	if anime.ID == "" {
+		anime.ID = uuid.NewString()
 	}
 	anime.UpdatedAt = time.Now().UTC()
 	doc := toAnimeDoc(anime)
@@ -55,7 +59,9 @@ func (r *CatalogRepository) AddEpisodeSource(ctx context.Context, tmdbID, season
 		return false, err
 	}
 	if !found {
-		anime = domain.Anime{TMDBID: tmdbID, SeasonNumber: season, Title: ""}
+		anime = domain.Anime{ID: uuid.NewString(), TMDBID: tmdbID, SeasonNumber: season, Title: ""}
+	} else if anime.ID == "" {
+		anime.ID = uuid.NewString()
 	}
 	ep := anime.EnsureEpisode(episode)
 	added := ep.AddSource(src)
