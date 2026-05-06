@@ -31,7 +31,6 @@ type Service struct {
 var tracer = otel.Tracer("goanimes/stremio")
 
 var streamQualityBlockRe = regexp.MustCompile(`(?i)\[([^\]]*\b(?:480p|720p|1080p|2160p)\b[^\]]*)\]`)
-var providerSeasonSuffixRe = regexp.MustCompile(`(?i)^([\w.-]+)\s+.*\b\d+\w*\s+season\b.*$`)
 
 func (s *Service) Manifest(ctx context.Context) (map[string]any, error) {
 	ctx, span := tracer.Start(ctx, "stremio.manifest")
@@ -204,14 +203,22 @@ func (s *Service) Streams(ctx context.Context, id string) ([]map[string]any, err
 		}
 		streams := make([]map[string]any, 0, len(ep.Sources))
 		for _, src := range ep.Sources {
-			playbackURL, err := resolvePlaybackURL(ctx, src.MagnetLink)
-			if err != nil || strings.TrimSpace(playbackURL) == "" {
+			magnet, err := resolvePlaybackURL(ctx, src.MagnetLink)
+			if err != nil || strings.TrimSpace(magnet) == "" {
+				continue
+			}
+			infoHash := magnetInfoHash(magnet)
+			if strings.TrimSpace(infoHash) == "" {
 				continue
 			}
 			streams = append(streams, map[string]any{
-				"name":  buildStreamName(src.Provider, src.Quality, src.MagnetLink),
-				"title": streamTitle(episode, src.Quality, src.MagnetLink),
-				"url":   playbackURL,
+				"behaviorHints": map[string]any{
+					"bingeGroup": id,
+				},
+				"fileIdx":  0,
+				"infoHash": infoHash,
+				"name":     buildStreamName(src.Quality, magnet),
+				"title":    streamTitle(episode, magnet),
 			})
 		}
 		return streams, nil
@@ -246,26 +253,15 @@ func parseCatalogExtras(catalogPath string) (string, map[string]string, bool) {
 }
 
 func episodeTitle(ep int) string {
-	return "Episodio " + itoa(ep)
+	return "Episódio " + itoa(ep)
 }
 
-func buildStreamName(provider, quality string, magnet string) string {
-	name := normalizedProviderName(provider)
+func buildStreamName(quality string, magnet string) string {
+	name := "Torrent"
 	if resolution := extractResolution(quality, magnet); strings.TrimSpace(resolution) != "" {
-		name = name + " " + strings.TrimSpace(resolution)
+		name = name + " · " + strings.TrimSpace(resolution)
 	}
 	return name
-}
-
-func normalizedProviderName(provider string) string {
-	provider = strings.TrimSpace(provider)
-	if provider == "" {
-		return provider
-	}
-	if match := providerSeasonSuffixRe.FindStringSubmatch(provider); len(match) > 1 {
-		return strings.TrimSpace(match[1])
-	}
-	return provider
 }
 
 func extractResolution(quality string, magnet string) string {
@@ -286,14 +282,12 @@ func extractResolution(quality string, magnet string) string {
 	return ""
 }
 
-func streamTitle(ep int, quality, rawLink string) string {
-	if title := normalizedStreamQuality(quality); title != "" {
-		return title
+func streamTitle(ep int, rawLink string) string {
+	name := releaseNameFromLink(rawLink)
+	if strings.TrimSpace(name) == "" {
+		return episodeTitle(ep)
 	}
-	if title := qualityFromLink(rawLink); title != "" {
-		return title
-	}
-	return "Episodio " + itoa(ep)
+	return episodeTitle(ep) + " · [Torrent] " + name
 }
 
 func normalizedStreamQuality(quality string) string {
@@ -302,6 +296,32 @@ func normalizedStreamQuality(quality string) string {
 		return ""
 	}
 	return quality
+}
+
+func releaseNameFromLink(rawLink string) string {
+	rawLink = strings.TrimSpace(rawLink)
+	if rawLink == "" {
+		return ""
+	}
+	decoded := rawLink
+	if parsed, err := url.Parse(rawLink); err == nil {
+		if strings.EqualFold(parsed.Scheme, "magnet") {
+			if dn := strings.TrimSpace(parsed.Query().Get("dn")); dn != "" {
+				if unescaped, err := url.QueryUnescape(dn); err == nil {
+					decoded = unescaped
+				} else {
+					decoded = dn
+				}
+			}
+		} else if parsed.Path != "" {
+			if unescaped, err := url.PathUnescape(parsed.Path); err == nil {
+				decoded = unescaped
+			} else {
+				decoded = parsed.Path
+			}
+		}
+	}
+	return decoded
 }
 
 func qualityFromLink(rawLink string) string {
@@ -331,6 +351,30 @@ func qualityFromLink(rawLink string) string {
 		return strings.TrimSpace(match[1])
 	}
 	return ""
+}
+
+func magnetInfoHash(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil || !strings.EqualFold(parsed.Scheme, "magnet") {
+		return ""
+	}
+	xt := strings.TrimSpace(parsed.Query().Get("xt"))
+	if xt == "" {
+		return ""
+	}
+	const prefix = "urn:btih:"
+	if !strings.HasPrefix(strings.ToLower(xt), prefix) {
+		return ""
+	}
+	h := strings.TrimSpace(xt[len(prefix):])
+	if h == "" {
+		return ""
+	}
+	return strings.ToLower(h)
 }
 
 func itoa(n int) string {

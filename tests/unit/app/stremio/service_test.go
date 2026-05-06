@@ -77,12 +77,13 @@ func TestStreamsConvertsTorrentURLToMagnet(t *testing.T) {
 	streams, err := service.Streams(context.Background(), "tmdb:288551:1:5")
 	require.NoError(t, err)
 	require.Len(t, streams, 1)
-	require.Equal(t, "Erai 1080p", streams[0]["name"])
-	require.Equal(t, "1080p CR WEBRip HEVC AAC", streams[0]["title"])
-	require.True(t, strings.HasPrefix(streams[0]["url"].(string), "magnet:?xt=urn:btih:"))
-	require.Contains(t, streams[0]["url"].(string), expectedHash)
-	require.Contains(t, streams[0]["url"].(string), "dn=test")
-	require.Contains(t, streams[0]["url"].(string), "tr=http%3A%2F%2Ft%2Fann")
+	require.Equal(t, "Torrent · 1080p", streams[0]["name"])
+	require.Equal(t, "Episódio 5 · [Torrent] test", streams[0]["title"])
+	require.Equal(t, 0, streams[0]["fileIdx"])
+	require.Equal(t, expectedHash, streams[0]["infoHash"])
+	hints, ok := streams[0]["behaviorHints"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "tmdb:288551:1:5", hints["bingeGroup"])
 }
 
 func TestStreamsUsesQualityFromMagnetDnWhenMissing(t *testing.T) {
@@ -101,8 +102,9 @@ func TestStreamsUsesQualityFromMagnetDnWhenMissing(t *testing.T) {
 	streams, err := service.Streams(context.Background(), "tmdb:300126:1:4")
 	require.NoError(t, err)
 	require.Len(t, streams, 1)
-	require.Equal(t, "Erai 1080p", streams[0]["name"])
-	require.Equal(t, "1080p CR WEBRip HEVC AAC", streams[0]["title"])
+	require.Equal(t, "Torrent · 1080p", streams[0]["name"])
+	require.Equal(t, "Episódio 4 · [Torrent] [Erai-raws] Liar Game - 04 [1080p CR WEBRip HEVC AAC][MultiSub][73D39D91].mkv", streams[0]["title"])
+	require.NotContains(t, streams[0], "url")
 }
 
 func TestStreamsNormalizesProviderNameWithSeasonSuffix(t *testing.T) {
@@ -121,8 +123,8 @@ func TestStreamsNormalizesProviderNameWithSeasonSuffix(t *testing.T) {
 	streams, err := service.Streams(context.Background(), "tmdb:96316:1:48")
 	require.NoError(t, err)
 	require.Len(t, streams, 1)
-	require.Equal(t, "Erai 1080p", streams[0]["name"])
-	require.Equal(t, "1080p CR WEBRip HEVC AAC", streams[0]["title"])
+	require.Equal(t, "Torrent · 1080p", streams[0]["name"])
+	require.Equal(t, "Episódio 48 · [Torrent] [Erai-raws] Kanojo Okarishimasu 4th Season - 12 [1080p CR WEBRip HEVC AAC][MultiSub].mkv", streams[0]["title"])
 }
 
 var _ ports.CatalogRepository = (*fakeCatalogRepo)(nil)
