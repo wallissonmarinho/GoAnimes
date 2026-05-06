@@ -69,11 +69,12 @@ func (a *Anime) EnsureEpisode(num int) *Episode {
 
 func (e *Episode) AddSource(src Source) bool {
 	src.MagnetLink = strings.TrimSpace(src.MagnetLink)
-	if src.MagnetLink == "" {
+	src.Provider = strings.TrimSpace(src.Provider)
+	if src.MagnetLink == "" || src.Provider == "" {
 		return false
 	}
 	for _, existing := range e.Sources {
-		if strings.EqualFold(existing.MagnetLink, src.MagnetLink) {
+		if strings.EqualFold(existing.MagnetLink, src.MagnetLink) && strings.EqualFold(existing.Provider, src.Provider) {
 			return false
 		}
 	}

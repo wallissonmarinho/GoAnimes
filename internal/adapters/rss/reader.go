@@ -15,7 +15,8 @@ type Reader struct {
 	Parser *gofeed.Parser
 }
 
-var portugueseSubtitleRe = regexp.MustCompile(`(?i)(\[br\]|\bpt[-_ ]?br\b|\bbrazilian portuguese\b|\bportuguese\b)`)
+// Match common Portuguese subtitle markers: pt, pt-br, ptbr, pt_pt, ptpt, portuguese, brazilian portuguese, [br]
+var portugueseSubtitleRe = regexp.MustCompile(`(?i)(\[br\]|\bpt(?:[-_ ]?br|[-_ ]?pt)?\b|\bportuguese\b|\bbrazilian portuguese\b)`)
 
 func NewReader() *Reader {
 	return &Reader{Parser: gofeed.NewParser()}

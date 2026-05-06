@@ -53,7 +53,16 @@ func (r *MappingRepository) UpsertOverride(ctx context.Context, override domain.
 		"$setOnInsert": bson.M{"_id": doc.ID},
 	}
 	_, err := r.store.Overrides.UpdateOne(ctx, filter, update, options.Update().SetUpsert(true))
-	return override, err
+	if err != nil {
+		return override, err
+	}
+
+	// After successfully upserting an override, remove any unmatched entries
+	// that refer to the same rss_name_key so they don't linger in the unmatched list.
+	if _, delErr := r.store.Unmatched.DeleteOne(ctx, bson.M{"rss_name_key": override.RSSNameKey}); delErr != nil {
+		return override, delErr
+	}
+	return override, nil
 }
 
 func (r *MappingRepository) ListOverrides(ctx context.Context) ([]domain.MappingOverride, error) {
