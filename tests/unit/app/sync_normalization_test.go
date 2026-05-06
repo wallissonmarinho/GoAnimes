@@ -113,7 +113,7 @@ func TestNormalizeTitle_extractsQuality(t *testing.T) {
 func TestNormalizeTitle_seasonEpisodeFormat(t *testing.T) {
 	// s01e05 format (common in anime torrents)
 	name, ep, _ := sync.NormalizeTitle("Even A Replica Can Fall In Love s01e05 CR WEB-DL AAC2.0 H.264")
-	require.Equal(t, "even a replica can fall in love cr web-dl aac2.0 h.264", name)
+	require.Equal(t, "even a replica can fall in love", name)
 	require.Equal(t, 5, ep)
 
 	// s01e05 with mixed case
@@ -142,7 +142,19 @@ func TestNormalizeTitle_stripsSourceTags(t *testing.T) {
 
 	// Should not include codec or container info in name
 	name, _, _ = sync.NormalizeTitle("Show CR WEBRip HEVC AAC - 01 1080p")
-	require.Equal(t, "show cr webrip hevc aac", name)
+	require.Equal(t, "show", name)
+}
+
+func TestNormalizeTitle_toonshubTagsAndTechNoise(t *testing.T) {
+	name, ep, quality := sync.NormalizeTitle("[ToonsHub] Witch Hat Atelier S01E06 1080p NF WEB-DL AAC2.0 H.264 (Multi-Subs) {Tags:L0;V9;C1;A=ja;S=en,zhhant,id,ja,ko,ms,th,vi;}")
+	require.Equal(t, "witch hat atelier", name)
+	require.Equal(t, 6, ep)
+	require.Equal(t, "1080p", quality)
+
+	name, ep, quality = sync.NormalizeTitle("[ToonsHub] Witch Hat Atelier S01E06 1080p CR WEB-DL MULTi AAC2.0 H.264 (Multi-Audio, Multi-Subs) {Tags:L0;V9;C1;A=ja,en,ar,frfr,de,it,ptbr,eses,es419;S=en,ar,frfr,de,it,ptbr,ru,es419,eses;}")
+	require.Equal(t, "witch hat atelier", name)
+	require.Equal(t, 6, ep)
+	require.Equal(t, "1080p", quality)
 }
 
 func TestNormalizeTitle_handlesEdgeCases(t *testing.T) {

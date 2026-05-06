@@ -9,10 +9,12 @@ var (
 	spaceRe        = regexp.MustCompile(`\s+`)
 	tagRe          = regexp.MustCompile(`\[[^\]]+\]`)
 	parenRe        = regexp.MustCompile(`\([^\)]+\)`)
+	braceRe        = regexp.MustCompile(`\{[^\}]+\}`)
 	epRe           = regexp.MustCompile(`(?i)(?:s\d{1,2})?e(\d{1,3})\b|(?:ep|e)\s?(\d{1,3})\b`)
 	numDashRe      = regexp.MustCompile(`\s-\s(\d{1,3})\b`)
 	qualityBlockRe = regexp.MustCompile(`(?i)\[([^\]]*\b(?:480p|720p|1080p|2160p)\b[^\]]*)\]`)
 	qualityRe      = regexp.MustCompile(`(?i)\b(?:480p|720p|1080p|2160p)\b`)
+	noiseTokenRe   = regexp.MustCompile(`(?i)\b(?:web[\s-]?dl|web[\s-]?rip|webrip|bluray|bdrip|hevc|x265|x264|h\.?264|aac\d?(?:\.\d)?|multi(?:-audio|-subs)?|dual(?:-audio)?|nf|cr|avc)\b`)
 )
 
 func NormalizeTitle(raw string) (nameKey string, episode int, quality string) {
@@ -24,6 +26,7 @@ func NormalizeTitle(raw string) (nameKey string, episode int, quality string) {
 	}
 	clean = tagRe.ReplaceAllString(clean, " ")
 	clean = parenRe.ReplaceAllString(clean, " ")
+	clean = braceRe.ReplaceAllString(clean, " ")
 	if match := epRe.FindStringSubmatch(clean); len(match) > 0 {
 		// Group 1: s##e## pattern, Group 2: e## or ep## pattern
 		if match[1] != "" {
@@ -37,6 +40,7 @@ func NormalizeTitle(raw string) (nameKey string, episode int, quality string) {
 	clean = qualityRe.ReplaceAllString(clean, " ")
 	clean = epRe.ReplaceAllString(clean, " ")
 	clean = numDashRe.ReplaceAllString(clean, " ")
+	clean = noiseTokenRe.ReplaceAllString(clean, " ")
 	clean = strings.ToLower(spaceRe.ReplaceAllString(clean, " "))
 	clean = strings.TrimSpace(clean)
 	nameKey = clean
