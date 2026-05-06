@@ -31,6 +31,7 @@ type Service struct {
 var tracer = otel.Tracer("goanimes/stremio")
 
 var streamQualityBlockRe = regexp.MustCompile(`(?i)\[([^\]]*\b(?:480p|720p|1080p|2160p)\b[^\]]*)\]`)
+var providerSeasonSuffixRe = regexp.MustCompile(`(?i)^([\w.-]+)\s+.*\b\d+\w*\s+season\b.*$`)
 
 func (s *Service) Manifest(ctx context.Context) (map[string]any, error) {
 	ctx, span := tracer.Start(ctx, "stremio.manifest")
@@ -249,11 +250,22 @@ func episodeTitle(ep int) string {
 }
 
 func buildStreamName(provider, quality string, magnet string) string {
-	name := provider
+	name := normalizedProviderName(provider)
 	if resolution := extractResolution(quality, magnet); strings.TrimSpace(resolution) != "" {
-		name = provider + " " + strings.TrimSpace(resolution)
+		name = name + " " + strings.TrimSpace(resolution)
 	}
 	return name
+}
+
+func normalizedProviderName(provider string) string {
+	provider = strings.TrimSpace(provider)
+	if provider == "" {
+		return provider
+	}
+	if match := providerSeasonSuffixRe.FindStringSubmatch(provider); len(match) > 1 {
+		return strings.TrimSpace(match[1])
+	}
+	return provider
 }
 
 func extractResolution(quality string, magnet string) string {

@@ -105,4 +105,24 @@ func TestStreamsUsesQualityFromMagnetDnWhenMissing(t *testing.T) {
 	require.Equal(t, "1080p CR WEBRip HEVC AAC", streams[0]["title"])
 }
 
+func TestStreamsNormalizesProviderNameWithSeasonSuffix(t *testing.T) {
+	service := &stremio.Service{Repo: &fakeCatalogRepo{anime: domain.Anime{
+		TMDBID:       96316,
+		SeasonNumber: 1,
+		Episodes: []domain.Episode{{
+			Number: 48,
+			Sources: []domain.Source{{
+				Provider:   "Erai Kanojo Okarishimasu 4nd Season",
+				MagnetLink: "magnet:?xt=urn:btih:94d6baed7ccd6f422dc23a6639b0d3e003696a8b&dn=%5BErai-raws%5D+Kanojo+Okarishimasu+4th+Season+-+12+%5B1080p+CR+WEBRip+HEVC+AAC%5D%5BMultiSub%5D.mkv",
+			}},
+		}},
+	}}}
+
+	streams, err := service.Streams(context.Background(), "tmdb:96316:1:48")
+	require.NoError(t, err)
+	require.Len(t, streams, 1)
+	require.Equal(t, "Erai 1080p", streams[0]["name"])
+	require.Equal(t, "1080p CR WEBRip HEVC AAC", streams[0]["title"])
+}
+
 var _ ports.CatalogRepository = (*fakeCatalogRepo)(nil)
