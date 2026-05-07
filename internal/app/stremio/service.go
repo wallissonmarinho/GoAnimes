@@ -3,6 +3,7 @@ package stremio
 import (
 	"context"
 	"net/url"
+	"sort"
 	"regexp"
 	"strings"
 	"time"
@@ -15,8 +16,6 @@ import (
 )
 
 const (
-	CatalogIDMain         = "goanimes"
-	CatalogIDWeek         = "goanimes-week"
 	StremioType           = "anime"
 	ManifestID            = "org.goanimes"
 	ManifestName          = "GoAnimes"
@@ -59,8 +58,10 @@ func (s *Service) Manifest(ctx context.Context) (map[string]any, error) {
 		"types":       []string{StremioType},
 		"genres":      genres,
 		"catalogs": []map[string]any{
-			{"type": StremioType, "id": CatalogIDMain, "name": "GoAnimes", "extra": genreExtra},
-			{"type": StremioType, "id": CatalogIDWeek, "name": "GoAnimes · Últimos 7 dias", "extra": genreExtra},
+			{"type": StremioType, "id": CatalogIDTrending, "name": "GoAnimes · Em Alta", "extra": genreExtra},
+			{"type": StremioType, "id": CatalogIDTopAiring, "name": "GoAnimes · Top Airing", "extra": genreExtra},
+			{"type": StremioType, "id": CatalogIDMostPopular, "name": "GoAnimes · Mais Populares", "extra": genreExtra},
+			{"type": StremioType, "id": CatalogIDHighestRated, "name": "GoAnimes · Mais Bem Avaliados", "extra": genreExtra},
 		},
 		"resources":  []any{"catalog", "meta", "stream"},
 		"idPrefixes": []string{domain.StremioIDPrefix},
@@ -75,15 +76,7 @@ func (s *Service) Catalog(ctx context.Context, catalogID string, extras map[stri
 		attribute.Int("catalog.skip", skip),
 	)
 	defer span.End()
-	var animes []domain.Anime
-	var err error
-	if catalogID == CatalogIDWeek {
-		animes, err = s.Repo.ListRecent(ctx, 7, limit, skip)
-	} else if g := strings.TrimSpace(extras["genre"]); g != "" {
-		animes, err = s.Repo.ListByGenre(ctx, g, limit, skip)
-	} else {
-		animes, err = s.Repo.ListAll(ctx, limit, skip)
-	}
+	animes, err := s.loadCatalogAnimes(ctx, catalogID, extras, limit, skip)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
@@ -101,6 +94,139 @@ func (s *Service) Catalog(ctx context.Context, catalogID string, extras map[stri
 		})
 	}
 	return metas, nil
+}
+
+func (s *Service) loadCatalogAnimes(ctx context.Context, catalogID string, extras map[string]string, limit, skip int) ([]domain.Anime, error) {
+	switch catalogID {
+	case CatalogIDTrending:
+		return s.loadTrendingCatalog(ctx, extras, limit, skip)
+	case CatalogIDTopAiring:
+		return s.loadSortedCatalog(ctx, extras, limit, skip, filterCurrentAnime, compareTopAiring)
+	case CatalogIDMostPopular:
+		return s.loadSortedCatalog(ctx, extras, limit, skip, nil, compareMostPopular)
+	case CatalogIDHighestRated:
+		return s.loadSortedCatalog(ctx, extras, limit, skip, nil, compareHighestRated)
+	default:
+		return []domain.Anime{}, nil
+	}
+}
+
+func (s *Service) loadTrendingCatalog(ctx context.Context, extras map[string]string, limit, skip int) ([]domain.Anime, error) {
+	if g := strings.TrimSpace(extras["genre"]); g != "" {
+		return s.loadSortedCatalog(ctx, extras, limit, skip, nil, compareTrending)
+	}
+	return s.Repo.ListRecent(ctx, 7, limit, skip)
+}
+
+func (s *Service) loadSortedCatalog(ctx context.Context, extras map[string]string, limit, skip int, keep func(domain.Anime) bool, less func(domain.Anime, domain.Anime) bool) ([]domain.Anime, error) {
+	animes, err := s.loadCatalogBase(ctx, extras)
+	if err != nil {
+		return nil, err
+	}
+	if keep != nil {
+		filtered := make([]domain.Anime, 0, len(animes))
+		for _, anime := range animes {
+			if keep(anime) {
+				filtered = append(filtered, anime)
+			}
+		}
+		animes = filtered
+	}
+	sort.SliceStable(animes, func(i, j int) bool {
+		return less(animes[i], animes[j])
+	})
+	return paginateAnimes(animes, limit, skip), nil
+}
+
+func (s *Service) loadCatalogBase(ctx context.Context, extras map[string]string) ([]domain.Anime, error) {
+	if g := strings.TrimSpace(extras["genre"]); g != "" {
+		return s.Repo.ListByGenre(ctx, g, 200, 0)
+	}
+	return s.Repo.ListAll(ctx, 200, 0)
+}
+
+func paginateAnimes(animes []domain.Anime, limit, skip int) []domain.Anime {
+	if skip < 0 {
+		skip = 0
+	}
+	if skip >= len(animes) {
+		return []domain.Anime{}
+	}
+	if limit <= 0 || limit > 200 {
+		limit = 80
+	}
+	end := skip + limit
+	if end > len(animes) {
+		end = len(animes)
+	}
+	return animes[skip:end]
+}
+
+func filterCurrentAnime(anime domain.Anime) bool {
+	return strings.EqualFold(strings.TrimSpace(anime.Status), "current")
+}
+
+func compareTrending(a domain.Anime, b domain.Anime) bool {
+	return compareTimesDesc(a.UpdatedAt, b.UpdatedAt, a, b)
+}
+
+func compareTopAiring(a domain.Anime, b domain.Anime) bool {
+	aLatest := latestEpisodeAddedAt(a)
+	bLatest := latestEpisodeAddedAt(b)
+	if !aLatest.Equal(bLatest) {
+		return aLatest.After(bLatest)
+	}
+	return compareTimesDesc(a.UpdatedAt, b.UpdatedAt, a, b)
+}
+
+func compareMostPopular(a domain.Anime, b domain.Anime) bool {
+	aPopularity := popularityScore(a)
+	bPopularity := popularityScore(b)
+	if aPopularity != bPopularity {
+		return aPopularity > bPopularity
+	}
+	if a.Rating != b.Rating {
+		return a.Rating > b.Rating
+	}
+	return compareTimesDesc(a.UpdatedAt, b.UpdatedAt, a, b)
+}
+
+func compareHighestRated(a domain.Anime, b domain.Anime) bool {
+	if a.Rating != b.Rating {
+		return a.Rating > b.Rating
+	}
+	return compareTimesDesc(a.UpdatedAt, b.UpdatedAt, a, b)
+}
+
+func compareTimesDesc(aTime time.Time, bTime time.Time, a domain.Anime, b domain.Anime) bool {
+	if !aTime.Equal(bTime) {
+		return aTime.After(bTime)
+	}
+	if a.Title != b.Title {
+		return a.Title < b.Title
+	}
+	if a.TMDBID != b.TMDBID {
+		return a.TMDBID < b.TMDBID
+	}
+	return a.SeasonNumber < b.SeasonNumber
+}
+
+func latestEpisodeAddedAt(anime domain.Anime) time.Time {
+	latest := anime.UpdatedAt
+	for _, ep := range anime.Episodes {
+		if ep.AddedAt.After(latest) {
+			latest = ep.AddedAt
+		}
+	}
+	return latest
+}
+
+func popularityScore(anime domain.Anime) int {
+	score := 0
+	for _, ep := range anime.Episodes {
+		score += len(ep.Sources)
+	}
+	return score
 }
 
 func (s *Service) Meta(ctx context.Context, id string) (map[string]any, bool, error) {

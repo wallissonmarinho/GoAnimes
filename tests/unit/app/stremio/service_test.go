@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"github.com/wallissonmarinho/GoAnimes/internal/app/stremio"
@@ -18,6 +19,7 @@ import (
 
 type fakeCatalogRepo struct {
 	anime        domain.Anime
+	list         []domain.Anime
 	upsertCalled bool
 	upsertAnime  domain.Anime
 }
@@ -37,13 +39,22 @@ func (f *fakeCatalogRepo) GetByTMDBSeason(ctx context.Context, tmdbID, season in
 	return f.anime, true, nil
 }
 func (f *fakeCatalogRepo) ListByGenre(ctx context.Context, genre string, limit, skip int) ([]domain.Anime, error) {
-	return nil, nil
+	out := make([]domain.Anime, 0, len(f.list))
+	for _, anime := range f.list {
+		for _, animeGenre := range anime.Genres {
+			if animeGenre == genre {
+				out = append(out, anime)
+				break
+			}
+		}
+	}
+	return out, nil
 }
 func (f *fakeCatalogRepo) ListRecent(ctx context.Context, days, limit, skip int) ([]domain.Anime, error) {
-	return nil, nil
+	return f.list, nil
 }
 func (f *fakeCatalogRepo) ListAll(ctx context.Context, limit, skip int) ([]domain.Anime, error) {
-	return nil, nil
+	return f.list, nil
 }
 func (f *fakeCatalogRepo) ListGenres(ctx context.Context) ([]string, error) { return nil, nil }
 func (f *fakeCatalogRepo) RemoveSourcesByProvider(ctx context.Context, provider string) (int, error) {
@@ -222,6 +233,111 @@ func TestMetaFallsBackToTMDBDetailsAndPersists(t *testing.T) {
 	require.Equal(t, 6.0, meta["rating"])
 	require.True(t, repo.upsertCalled)
 	require.Equal(t, "current", repo.upsertAnime.Status)
+}
+
+func TestManifestPublishesOnlyNewCatalogs(t *testing.T) {
+	service := &stremio.Service{Repo: &fakeCatalogRepo{}}
+
+	manifest, err := service.Manifest(context.Background())
+	require.NoError(t, err)
+
+	catalogs, ok := manifest["catalogs"].([]map[string]any)
+	require.True(t, ok)
+	require.Len(t, catalogs, 4)
+	require.Equal(t, stremio.CatalogIDTrending, catalogs[0]["id"])
+	require.Equal(t, stremio.CatalogIDTopAiring, catalogs[1]["id"])
+	require.Equal(t, stremio.CatalogIDMostPopular, catalogs[2]["id"])
+	require.Equal(t, stremio.CatalogIDHighestRated, catalogs[3]["id"])
+}
+
+func TestCatalogTopAiringSortsByNewestEpisodeReleaseFirst(t *testing.T) {
+	now := time.Date(2026, 5, 7, 12, 0, 0, 0, time.UTC)
+	service := &stremio.Service{
+		Repo: &fakeCatalogRepo{
+			list: []domain.Anime{
+				{
+					TMDBID:       1,
+					SeasonNumber: 1,
+					Title:        "Older Airing",
+					Status:       "current",
+					Episodes: []domain.Episode{
+						{Number: 1, AddedAt: now.Add(-48 * time.Hour)},
+					},
+				},
+				{
+					TMDBID:       2,
+					SeasonNumber: 1,
+					Title:        "Newest Airing",
+					Status:       "current",
+					Episodes: []domain.Episode{
+						{Number: 3, AddedAt: now.Add(-2 * time.Hour)},
+					},
+				},
+				{
+					TMDBID:       3,
+					SeasonNumber: 1,
+					Title:        "Ended Show",
+					Status:       "ended",
+					Episodes: []domain.Episode{
+						{Number: 12, AddedAt: now.Add(-1 * time.Hour)},
+					},
+				},
+			},
+		},
+	}
+
+	metas, err := service.Catalog(context.Background(), stremio.CatalogIDTopAiring, nil, 20, 0)
+	require.NoError(t, err)
+	require.Len(t, metas, 2)
+	require.Equal(t, "Newest Airing", metas[0]["name"])
+	require.Equal(t, "Older Airing", metas[1]["name"])
+}
+
+func TestCatalogHighestRatedSortsByRatingDesc(t *testing.T) {
+	service := &stremio.Service{
+		Repo: &fakeCatalogRepo{
+			list: []domain.Anime{
+				{TMDBID: 1, SeasonNumber: 1, Title: "Second", Rating: 8.4},
+				{TMDBID: 2, SeasonNumber: 1, Title: "First", Rating: 9.1},
+			},
+		},
+	}
+
+	metas, err := service.Catalog(context.Background(), stremio.CatalogIDHighestRated, nil, 20, 0)
+	require.NoError(t, err)
+	require.Len(t, metas, 2)
+	require.Equal(t, "First", metas[0]["name"])
+	require.Equal(t, "Second", metas[1]["name"])
+}
+
+func TestCatalogMostPopularSortsBySourceCountDesc(t *testing.T) {
+	service := &stremio.Service{
+		Repo: &fakeCatalogRepo{
+			list: []domain.Anime{
+				{
+					TMDBID:       1,
+					SeasonNumber: 1,
+					Title:        "Less Popular",
+					Episodes: []domain.Episode{
+						{Number: 1, Sources: []domain.Source{{Provider: "A", MagnetLink: "magnet:?xt=urn:btih:1"}}},
+					},
+				},
+				{
+					TMDBID:       2,
+					SeasonNumber: 1,
+					Title:        "More Popular",
+					Episodes: []domain.Episode{
+						{Number: 1, Sources: []domain.Source{{Provider: "A", MagnetLink: "magnet:?xt=urn:btih:2"}, {Provider: "B", MagnetLink: "magnet:?xt=urn:btih:3"}}},
+					},
+				},
+			},
+		},
+	}
+
+	metas, err := service.Catalog(context.Background(), stremio.CatalogIDMostPopular, nil, 20, 0)
+	require.NoError(t, err)
+	require.Len(t, metas, 2)
+	require.Equal(t, "More Popular", metas[0]["name"])
 }
 
 var _ ports.CatalogRepository = (*fakeCatalogRepo)(nil)
