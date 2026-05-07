@@ -235,10 +235,24 @@ func latestEpisodeAddedAt(anime domain.Anime) time.Time {
 }
 
 func latestEpisodeReleaseAt(anime domain.Anime) time.Time {
-	if releasedAt := parseDate(anime.LastEpisodeAt); !releasedAt.IsZero() {
-		return releasedAt
+	lastEpisodeAt := parseDate(anime.LastEpisodeAt)
+	nextEpisodeAt := parseDate(anime.NextEpisodeAt)
+	latestAddedAt := latestEpisodeAddedAt(anime)
+
+	if !nextEpisodeAt.IsZero() && !sameOrBeforeToday(nextEpisodeAt) {
+		if !lastEpisodeAt.IsZero() {
+			return lastEpisodeAt
+		}
+		return latestAddedAt
 	}
-	return latestEpisodeAddedAt(anime)
+
+	if !lastEpisodeAt.IsZero() {
+		if latestAddedAt.After(lastEpisodeAt) && sameDay(latestAddedAt, nextEpisodeAt) {
+			return latestAddedAt
+		}
+		return lastEpisodeAt
+	}
+	return latestAddedAt
 }
 
 func lastRelevantCatalogTime(anime domain.Anime) time.Time {
@@ -307,6 +321,22 @@ func parseDate(value string) time.Time {
 		return time.Time{}
 	}
 	return parsed
+}
+
+func sameOrBeforeToday(value time.Time) bool {
+	now := time.Now().UTC()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	candidate := time.Date(value.Year(), value.Month(), value.Day(), 0, 0, 0, 0, time.UTC)
+	return !candidate.After(today)
+}
+
+func sameDay(a time.Time, b time.Time) bool {
+	if a.IsZero() || b.IsZero() {
+		return false
+	}
+	ay, am, ad := a.UTC().Date()
+	by, bm, bd := b.UTC().Date()
+	return ay == by && am == bm && ad == bd
 }
 
 func (s *Service) Meta(ctx context.Context, id string) (map[string]any, bool, error) {

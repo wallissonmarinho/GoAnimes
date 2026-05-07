@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"github.com/wallissonmarinho/GoAnimes/internal/app/stremio"
@@ -257,6 +258,9 @@ func TestManifestPublishesOnlyNewCatalogs(t *testing.T) {
 }
 
 func TestCatalogTopAiringSortsByNewestEpisodeReleaseFirst(t *testing.T) {
+	now := time.Now().UTC()
+	today := now.Format("2006-01-02")
+	yesterday := now.Add(-24 * time.Hour).Format("2006-01-02")
 	service := &stremio.Service{
 		Repo: &fakeCatalogRepo{
 			list: []domain.Anime{
@@ -265,21 +269,25 @@ func TestCatalogTopAiringSortsByNewestEpisodeReleaseFirst(t *testing.T) {
 					SeasonNumber:  1,
 					Title:         "Older Airing",
 					Status:        "current",
-					LastEpisodeAt: "2026-04-25",
+					LastEpisodeAt: yesterday,
 				},
 				{
 					TMDBID:        2,
 					SeasonNumber:  1,
 					Title:         "Newest Airing",
 					Status:        "current",
-					LastEpisodeAt: "2026-05-06",
+					LastEpisodeAt: yesterday,
+					NextEpisodeAt: today,
+					Episodes: []domain.Episode{
+						{Number: 5, AddedAt: now},
+					},
 				},
 				{
 					TMDBID:        3,
 					SeasonNumber:  1,
 					Title:         "Ended Show",
 					Status:        "ended",
-					LastEpisodeAt: "2026-05-07",
+					LastEpisodeAt: today,
 				},
 			},
 		},
