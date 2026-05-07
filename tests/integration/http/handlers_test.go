@@ -225,7 +225,7 @@ func TestCatalogEndpoint(t *testing.T) {
 	api.Register(engine, deps)
 
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/catalog/anime/goanimes.json", nil)
+	req := httptest.NewRequest(http.MethodGet, "/catalog/anime/goanimes.trending.json", nil)
 	engine.ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusOK, w.Code)
