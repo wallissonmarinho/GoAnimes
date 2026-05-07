@@ -9,7 +9,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 	"github.com/wallissonmarinho/GoAnimes/internal/app/stremio"
@@ -208,15 +207,19 @@ func TestMetaFallsBackToTMDBDetailsAndPersists(t *testing.T) {
 		Repo: repo,
 		TMDB: &fakeTMDBClient{
 			details: ports.TMDBSeasonDetails{
-				Title:          "The Warrior Princess and the Barbaric King",
-				OriginalTitle:  "Himekishi wa Barbaroi no Yome",
-				FirstAirDate:   "2026-04-09",
-				Status:         "Returning Series",
-				InProduction:   true,
-				HasNextEpisode: true,
-				TVType:         "Scripted",
-				EpisodeRunTime: []int{24},
-				Rating:         6.0,
+				Title:              "The Warrior Princess and the Barbaric King",
+				OriginalTitle:      "Himekishi wa Barbaroi no Yome",
+				FirstAirDate:       "2026-04-09",
+				LastEpisodeAirDate: "2026-04-30",
+				NextEpisodeAirDate: "2026-05-07",
+				Status:             "Returning Series",
+				InProduction:       true,
+				HasNextEpisode:     true,
+				TVType:             "Scripted",
+				EpisodeRunTime:     []int{24},
+				Rating:             6.0,
+				VoteCount:          8,
+				Popularity:         15.8361,
 			},
 		},
 	}
@@ -233,6 +236,9 @@ func TestMetaFallsBackToTMDBDetailsAndPersists(t *testing.T) {
 	require.Equal(t, 6.0, meta["rating"])
 	require.True(t, repo.upsertCalled)
 	require.Equal(t, "current", repo.upsertAnime.Status)
+	require.Equal(t, 8, repo.upsertAnime.VoteCount)
+	require.Equal(t, 15.8361, repo.upsertAnime.Popularity)
+	require.Equal(t, "2026-04-30", repo.upsertAnime.LastEpisodeAt)
 }
 
 func TestManifestPublishesOnlyNewCatalogs(t *testing.T) {
@@ -251,36 +257,29 @@ func TestManifestPublishesOnlyNewCatalogs(t *testing.T) {
 }
 
 func TestCatalogTopAiringSortsByNewestEpisodeReleaseFirst(t *testing.T) {
-	now := time.Date(2026, 5, 7, 12, 0, 0, 0, time.UTC)
 	service := &stremio.Service{
 		Repo: &fakeCatalogRepo{
 			list: []domain.Anime{
 				{
-					TMDBID:       1,
-					SeasonNumber: 1,
-					Title:        "Older Airing",
-					Status:       "current",
-					Episodes: []domain.Episode{
-						{Number: 1, AddedAt: now.Add(-48 * time.Hour)},
-					},
+					TMDBID:        1,
+					SeasonNumber:  1,
+					Title:         "Older Airing",
+					Status:        "current",
+					LastEpisodeAt: "2026-04-25",
 				},
 				{
-					TMDBID:       2,
-					SeasonNumber: 1,
-					Title:        "Newest Airing",
-					Status:       "current",
-					Episodes: []domain.Episode{
-						{Number: 3, AddedAt: now.Add(-2 * time.Hour)},
-					},
+					TMDBID:        2,
+					SeasonNumber:  1,
+					Title:         "Newest Airing",
+					Status:        "current",
+					LastEpisodeAt: "2026-05-06",
 				},
 				{
-					TMDBID:       3,
-					SeasonNumber: 1,
-					Title:        "Ended Show",
-					Status:       "ended",
-					Episodes: []domain.Episode{
-						{Number: 12, AddedAt: now.Add(-1 * time.Hour)},
-					},
+					TMDBID:        3,
+					SeasonNumber:  1,
+					Title:         "Ended Show",
+					Status:        "ended",
+					LastEpisodeAt: "2026-05-07",
 				},
 			},
 		},
@@ -293,12 +292,45 @@ func TestCatalogTopAiringSortsByNewestEpisodeReleaseFirst(t *testing.T) {
 	require.Equal(t, "Older Airing", metas[1]["name"])
 }
 
-func TestCatalogHighestRatedSortsByRatingDesc(t *testing.T) {
+func TestCatalogTrendingUsesPopularityAndCurrentSignals(t *testing.T) {
 	service := &stremio.Service{
 		Repo: &fakeCatalogRepo{
 			list: []domain.Anime{
-				{TMDBID: 1, SeasonNumber: 1, Title: "Second", Rating: 8.4},
-				{TMDBID: 2, SeasonNumber: 1, Title: "First", Rating: 9.1},
+				{
+					TMDBID:        1,
+					SeasonNumber:  1,
+					Title:         "Dormant Hit",
+					Popularity:    30,
+					VoteCount:     80,
+					Status:        "ended",
+					LastEpisodeAt: "2025-01-01",
+				},
+				{
+					TMDBID:        2,
+					SeasonNumber:  1,
+					Title:         "Current Buzz",
+					Popularity:    20,
+					VoteCount:     50,
+					Status:        "current",
+					LastEpisodeAt: "2026-05-05",
+					NextEpisodeAt: "2026-05-12",
+				},
+			},
+		},
+	}
+
+	metas, err := service.Catalog(context.Background(), stremio.CatalogIDTrending, nil, 20, 0)
+	require.NoError(t, err)
+	require.Len(t, metas, 2)
+	require.Equal(t, "Current Buzz", metas[0]["name"])
+}
+
+func TestCatalogHighestRatedPenalizesLowVoteCount(t *testing.T) {
+	service := &stremio.Service{
+		Repo: &fakeCatalogRepo{
+			list: []domain.Anime{
+				{TMDBID: 1, SeasonNumber: 1, Title: "Critic Darling", Rating: 8.4, VoteCount: 150},
+				{TMDBID: 2, SeasonNumber: 1, Title: "Tiny Sample", Rating: 9.1, VoteCount: 2},
 			},
 		},
 	}
@@ -306,11 +338,11 @@ func TestCatalogHighestRatedSortsByRatingDesc(t *testing.T) {
 	metas, err := service.Catalog(context.Background(), stremio.CatalogIDHighestRated, nil, 20, 0)
 	require.NoError(t, err)
 	require.Len(t, metas, 2)
-	require.Equal(t, "First", metas[0]["name"])
-	require.Equal(t, "Second", metas[1]["name"])
+	require.Equal(t, "Critic Darling", metas[0]["name"])
+	require.Equal(t, "Tiny Sample", metas[1]["name"])
 }
 
-func TestCatalogMostPopularSortsBySourceCountDesc(t *testing.T) {
+func TestCatalogMostPopularUsesTMDBPopularityFirst(t *testing.T) {
 	service := &stremio.Service{
 		Repo: &fakeCatalogRepo{
 			list: []domain.Anime{
@@ -318,6 +350,7 @@ func TestCatalogMostPopularSortsBySourceCountDesc(t *testing.T) {
 					TMDBID:       1,
 					SeasonNumber: 1,
 					Title:        "Less Popular",
+					Popularity:   10,
 					Episodes: []domain.Episode{
 						{Number: 1, Sources: []domain.Source{{Provider: "A", MagnetLink: "magnet:?xt=urn:btih:1"}}},
 					},
@@ -326,8 +359,9 @@ func TestCatalogMostPopularSortsBySourceCountDesc(t *testing.T) {
 					TMDBID:       2,
 					SeasonNumber: 1,
 					Title:        "More Popular",
+					Popularity:   25,
 					Episodes: []domain.Episode{
-						{Number: 1, Sources: []domain.Source{{Provider: "A", MagnetLink: "magnet:?xt=urn:btih:2"}, {Provider: "B", MagnetLink: "magnet:?xt=urn:btih:3"}}},
+						{Number: 1, Sources: []domain.Source{{Provider: "A", MagnetLink: "magnet:?xt=urn:btih:2"}}},
 					},
 				},
 			},

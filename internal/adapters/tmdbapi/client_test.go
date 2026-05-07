@@ -52,20 +52,21 @@ func TestGetSeasonDetailsReadsShowAndSeasonData(t *testing.T) {
 				"backdrop_path":"/show-backdrop.jpg",
 				"genres":[{"name":"Fantasy"}],
 				"vote_average":8.1,
+				"vote_count":42,
+				"popularity":15.8361,
 				"first_air_date":"2026-04-09",
 				"last_air_date":"2026-06-25",
+				"last_episode_to_air":{"air_date":"2026-04-30"},
 				"status":"Returning Series",
 				"in_production":true,
-				"next_episode_to_air":{"id":1},
+				"next_episode_to_air":{"id":1,"air_date":"2026-05-07"},
 				"episode_run_time":[24],
-				"type":"Scripted",
-				"networks":[{"logo_path":"/network-logo.jpg"}]
+				"type":"Scripted"
 			}`))
 		case "/tv/273467/season/1":
 			_, _ = w.Write([]byte(`{
 				"poster_path":"/season-poster.jpg",
 				"vote_average":6.0,
-				"networks":[{"logo_path":"/season-network-logo.jpg"}],
 				"episodes":[{"runtime":23},{"runtime":24},{"runtime":null}]
 			}`))
 		default:
@@ -89,6 +90,12 @@ func TestGetSeasonDetailsReadsShowAndSeasonData(t *testing.T) {
 	}
 	if details.Status != "Returning Series" || !details.InProduction || !details.HasNextEpisode {
 		t.Fatal("expected status, production and next episode data from show endpoint")
+	}
+	if details.VoteCount != 42 || details.Popularity != 15.8361 {
+		t.Fatalf("expected popularity signals from show endpoint, got voteCount=%d popularity=%v", details.VoteCount, details.Popularity)
+	}
+	if details.LastEpisodeAirDate != "2026-04-30" || details.NextEpisodeAirDate != "2026-05-07" {
+		t.Fatalf("unexpected episode air dates: last=%q next=%q", details.LastEpisodeAirDate, details.NextEpisodeAirDate)
 	}
 	if len(details.EpisodeRunTime) == 0 || details.EpisodeRunTime[0] != 24 {
 		t.Fatalf("unexpected episode runtime list: %#v", details.EpisodeRunTime)

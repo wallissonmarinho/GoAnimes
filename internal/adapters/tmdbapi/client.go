@@ -114,8 +114,12 @@ func (c *Client) GetSeasonDetails(ctx context.Context, tmdbID, season int) (port
 		LogoPath:          "",
 		Genres:            genres,
 		Rating:            rating,
+		VoteCount:         showPayload.VoteCount,
+		Popularity:        showPayload.Popularity,
 		FirstAirDate:      strings.TrimSpace(showPayload.FirstAirDate),
 		LastAirDate:       strings.TrimSpace(showPayload.LastAirDate),
+		LastEpisodeAirDate: episodeAirDate(showPayload.LastEpisodeToAir),
+		NextEpisodeAirDate: episodeAirDate(showPayload.NextEpisodeToAir),
 		Status:            strings.TrimSpace(showPayload.Status),
 		InProduction:      showPayload.InProduction,
 		HasNextEpisode:    showPayload.NextEpisodeToAir != nil,
@@ -191,13 +195,20 @@ type tmdbShowPayload struct {
 	Backdrop         string        `json:"backdrop_path"`
 	Genres           []tmdbGenre   `json:"genres"`
 	Rating           float64       `json:"vote_average"`
+	VoteCount        int           `json:"vote_count"`
+	Popularity       float64       `json:"popularity"`
 	FirstAirDate     string        `json:"first_air_date"`
 	LastAirDate      string        `json:"last_air_date"`
 	Status           string        `json:"status"`
 	InProduction     bool          `json:"in_production"`
-	NextEpisodeToAir *struct{}     `json:"next_episode_to_air"`
+	LastEpisodeToAir *tmdbAiredEpisode `json:"last_episode_to_air"`
+	NextEpisodeToAir *tmdbAiredEpisode `json:"next_episode_to_air"`
 	EpisodeRunTime   []int         `json:"episode_run_time"`
 	TVType           string        `json:"type"`
+}
+
+type tmdbAiredEpisode struct {
+	AirDate string `json:"air_date"`
 }
 
 type tmdbSeasonPayload struct {
@@ -269,6 +280,13 @@ func extractEpisodeRuntimes(episodes []tmdbEpisodePayload) []int {
 		runtimes = append(runtimes, *episode.Runtime)
 	}
 	return runtimes
+}
+
+func episodeAirDate(ep *tmdbAiredEpisode) string {
+	if ep == nil {
+		return ""
+	}
+	return strings.TrimSpace(ep.AirDate)
 }
 
 func isGenericEpisodeTitle(name string) bool {

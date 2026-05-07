@@ -29,8 +29,12 @@ type Anime struct {
 	Overview      string
 	Genres        []string
 	Rating        float64
+	VoteCount     int
+	Popularity    float64
 	PosterPath    string
 	BackdropPath  string
+	LastEpisodeAt string
+	NextEpisodeAt string
 	Episodes      []Episode
 	MappingStatus MappingStatus
 	UpdatedAt     time.Time

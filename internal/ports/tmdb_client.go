@@ -16,8 +16,12 @@ type TMDBSeasonDetails struct {
 	LogoPath          string
 	Genres            []string
 	Rating            float64
+	VoteCount         int
+	Popularity        float64
 	FirstAirDate      string
 	LastAirDate       string
+	LastEpisodeAirDate string
+	NextEpisodeAirDate string
 	Status            string
 	InProduction      bool
 	HasNextEpisode    bool

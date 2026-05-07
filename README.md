@@ -31,7 +31,7 @@ Catalogos disponiveis:
 | Catalogo | Endpoint |
 |----------|----------|
 | Em alta | `/catalog/anime/goanimes.trending.json` |
-| Top airing | `/catalog/anime/goanimes.top_airing.json` |
+| Em exibicao | `/catalog/anime/goanimes.top_airing.json` |
 | Mais populares | `/catalog/anime/goanimes.most_popular.json` |
 | Mais bem avaliados | `/catalog/anime/goanimes.highest_rated.json` |
 

@@ -2,6 +2,7 @@ package stremio
 
 import (
 	"context"
+	"math"
 	"net/url"
 	"sort"
 	"regexp"
@@ -59,7 +60,7 @@ func (s *Service) Manifest(ctx context.Context) (map[string]any, error) {
 		"genres":      genres,
 		"catalogs": []map[string]any{
 			{"type": StremioType, "id": CatalogIDTrending, "name": "GoAnimes · Em Alta", "extra": genreExtra},
-			{"type": StremioType, "id": CatalogIDTopAiring, "name": "GoAnimes · Top Airing", "extra": genreExtra},
+			{"type": StremioType, "id": CatalogIDTopAiring, "name": "GoAnimes · Em Exibição", "extra": genreExtra},
 			{"type": StremioType, "id": CatalogIDMostPopular, "name": "GoAnimes · Mais Populares", "extra": genreExtra},
 			{"type": StremioType, "id": CatalogIDHighestRated, "name": "GoAnimes · Mais Bem Avaliados", "extra": genreExtra},
 		},
@@ -112,10 +113,7 @@ func (s *Service) loadCatalogAnimes(ctx context.Context, catalogID string, extra
 }
 
 func (s *Service) loadTrendingCatalog(ctx context.Context, extras map[string]string, limit, skip int) ([]domain.Anime, error) {
-	if g := strings.TrimSpace(extras["genre"]); g != "" {
-		return s.loadSortedCatalog(ctx, extras, limit, skip, nil, compareTrending)
-	}
-	return s.Repo.ListRecent(ctx, 7, limit, skip)
+	return s.loadSortedCatalog(ctx, extras, limit, skip, nil, compareTrending)
 }
 
 func (s *Service) loadSortedCatalog(ctx context.Context, extras map[string]string, limit, skip int, keep func(domain.Anime) bool, less func(domain.Anime, domain.Anime) bool) ([]domain.Anime, error) {
@@ -167,16 +165,21 @@ func filterCurrentAnime(anime domain.Anime) bool {
 }
 
 func compareTrending(a domain.Anime, b domain.Anime) bool {
-	return compareTimesDesc(a.UpdatedAt, b.UpdatedAt, a, b)
+	aScore := trendingScore(a)
+	bScore := trendingScore(b)
+	if aScore != bScore {
+		return aScore > bScore
+	}
+	return compareTimesDesc(lastRelevantCatalogTime(a), lastRelevantCatalogTime(b), a, b)
 }
 
 func compareTopAiring(a domain.Anime, b domain.Anime) bool {
-	aLatest := latestEpisodeAddedAt(a)
-	bLatest := latestEpisodeAddedAt(b)
+	aLatest := latestEpisodeReleaseAt(a)
+	bLatest := latestEpisodeReleaseAt(b)
 	if !aLatest.Equal(bLatest) {
 		return aLatest.After(bLatest)
 	}
-	return compareTimesDesc(a.UpdatedAt, b.UpdatedAt, a, b)
+	return compareTimesDesc(lastRelevantCatalogTime(a), lastRelevantCatalogTime(b), a, b)
 }
 
 func compareMostPopular(a domain.Anime, b domain.Anime) bool {
@@ -185,17 +188,25 @@ func compareMostPopular(a domain.Anime, b domain.Anime) bool {
 	if aPopularity != bPopularity {
 		return aPopularity > bPopularity
 	}
-	if a.Rating != b.Rating {
-		return a.Rating > b.Rating
+	if a.VoteCount != b.VoteCount {
+		return a.VoteCount > b.VoteCount
 	}
-	return compareTimesDesc(a.UpdatedAt, b.UpdatedAt, a, b)
+	return compareTimesDesc(lastRelevantCatalogTime(a), lastRelevantCatalogTime(b), a, b)
 }
 
 func compareHighestRated(a domain.Anime, b domain.Anime) bool {
+	aScore := weightedRatingScore(a)
+	bScore := weightedRatingScore(b)
+	if aScore != bScore {
+		return aScore > bScore
+	}
 	if a.Rating != b.Rating {
 		return a.Rating > b.Rating
 	}
-	return compareTimesDesc(a.UpdatedAt, b.UpdatedAt, a, b)
+	if a.VoteCount != b.VoteCount {
+		return a.VoteCount > b.VoteCount
+	}
+	return compareTimesDesc(lastRelevantCatalogTime(a), lastRelevantCatalogTime(b), a, b)
 }
 
 func compareTimesDesc(aTime time.Time, bTime time.Time, a domain.Anime, b domain.Anime) bool {
@@ -221,12 +232,79 @@ func latestEpisodeAddedAt(anime domain.Anime) time.Time {
 	return latest
 }
 
-func popularityScore(anime domain.Anime) int {
-	score := 0
-	for _, ep := range anime.Episodes {
-		score += len(ep.Sources)
+func latestEpisodeReleaseAt(anime domain.Anime) time.Time {
+	if releasedAt := parseDate(anime.LastEpisodeAt); !releasedAt.IsZero() {
+		return releasedAt
 	}
+	return latestEpisodeAddedAt(anime)
+}
+
+func lastRelevantCatalogTime(anime domain.Anime) time.Time {
+	if releasedAt := latestEpisodeReleaseAt(anime); !releasedAt.IsZero() {
+		return releasedAt
+	}
+	return anime.UpdatedAt
+}
+
+func popularityScore(anime domain.Anime) float64 {
+	score := anime.Popularity
+	score += float64(sourceCount(anime)) * 0.25
+	score += math.Min(float64(anime.VoteCount), 100) * 0.02
 	return score
+}
+
+func sourceCount(anime domain.Anime) int {
+	total := 0
+	for _, ep := range anime.Episodes {
+		total += len(ep.Sources)
+	}
+	return total
+}
+
+func trendingScore(anime domain.Anime) float64 {
+	score := anime.Popularity
+	if strings.EqualFold(strings.TrimSpace(anime.Status), "current") {
+		score += 10
+	}
+	if strings.TrimSpace(anime.NextEpisodeAt) != "" {
+		score += 8
+	}
+	if last := parseDate(anime.LastEpisodeAt); !last.IsZero() {
+		days := time.Since(last).Hours() / 24
+		switch {
+		case days <= 7:
+			score += 12
+		case days <= 30:
+			score += 6
+		case days <= 90:
+			score += 2
+		}
+	}
+	score += math.Min(float64(anime.VoteCount), 100) * 0.03
+	score += float64(sourceCount(anime)) * 0.15
+	return score
+}
+
+func weightedRatingScore(anime domain.Anime) float64 {
+	const minimumVotes = 25.0
+	const baselineRating = 5.5
+	votes := float64(anime.VoteCount)
+	if votes <= 0 {
+		return 0
+	}
+	return (votes/(votes+minimumVotes))*anime.Rating + (minimumVotes/(votes+minimumVotes))*baselineRating
+}
+
+func parseDate(value string) time.Time {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return time.Time{}
+	}
+	parsed, err := time.Parse("2006-01-02", value)
+	if err != nil {
+		return time.Time{}
+	}
+	return parsed
 }
 
 func (s *Service) Meta(ctx context.Context, id string) (map[string]any, bool, error) {
@@ -358,6 +436,22 @@ func enrichAnimeFromTMDB(anime *domain.Anime, details ports.TMDBSeasonDetails) b
 	}
 	if anime.Rating == 0 && details.Rating > 0 {
 		anime.Rating = details.Rating
+		changed = true
+	}
+	if anime.VoteCount == 0 && details.VoteCount > 0 {
+		anime.VoteCount = details.VoteCount
+		changed = true
+	}
+	if anime.Popularity == 0 && details.Popularity > 0 {
+		anime.Popularity = details.Popularity
+		changed = true
+	}
+	if strings.TrimSpace(anime.LastEpisodeAt) == "" && strings.TrimSpace(details.LastEpisodeAirDate) != "" {
+		anime.LastEpisodeAt = strings.TrimSpace(details.LastEpisodeAirDate)
+		changed = true
+	}
+	if strings.TrimSpace(anime.NextEpisodeAt) == "" && strings.TrimSpace(details.NextEpisodeAirDate) != "" {
+		anime.NextEpisodeAt = strings.TrimSpace(details.NextEpisodeAirDate)
 		changed = true
 	}
 

@@ -319,12 +319,28 @@ func (s *Service) ensureSeason(ctx context.Context, tmdbID, season int, norm Nor
 				anime.Rating = details.Rating
 				needsUpdate = true
 			}
+			if anime.VoteCount == 0 && details.VoteCount > 0 {
+				anime.VoteCount = details.VoteCount
+				needsUpdate = true
+			}
+			if anime.Popularity == 0 && details.Popularity > 0 {
+				anime.Popularity = details.Popularity
+				needsUpdate = true
+			}
 			if anime.PosterPath == "" && details.PosterPath != "" {
 				anime.PosterPath = details.PosterPath
 				needsUpdate = true
 			}
 			if anime.BackdropPath == "" && details.BackdropPath != "" {
 				anime.BackdropPath = details.BackdropPath
+				needsUpdate = true
+			}
+			if anime.LastEpisodeAt == "" && details.LastEpisodeAirDate != "" {
+				anime.LastEpisodeAt = details.LastEpisodeAirDate
+				needsUpdate = true
+			}
+			if anime.NextEpisodeAt == "" && details.NextEpisodeAirDate != "" {
+				anime.NextEpisodeAt = details.NextEpisodeAirDate
 				needsUpdate = true
 			}
 			releaseInfo, year := deriveReleaseInfo(details.FirstAirDate, details.LastAirDate, details.Status, details.InProduction, details.HasNextEpisode)
@@ -424,12 +440,28 @@ func (s *Service) fillMissingAnimeDetails(ctx context.Context, anime domain.Anim
 		anime.Rating = details.Rating
 		changed = true
 	}
+	if anime.VoteCount == 0 && details.VoteCount > 0 {
+		anime.VoteCount = details.VoteCount
+		changed = true
+	}
+	if anime.Popularity == 0 && details.Popularity > 0 {
+		anime.Popularity = details.Popularity
+		changed = true
+	}
 	if strings.TrimSpace(anime.PosterPath) == "" && strings.TrimSpace(details.PosterPath) != "" {
 		anime.PosterPath = details.PosterPath
 		changed = true
 	}
 	if strings.TrimSpace(anime.BackdropPath) == "" && strings.TrimSpace(details.BackdropPath) != "" {
 		anime.BackdropPath = details.BackdropPath
+		changed = true
+	}
+	if strings.TrimSpace(anime.LastEpisodeAt) == "" && strings.TrimSpace(details.LastEpisodeAirDate) != "" {
+		anime.LastEpisodeAt = details.LastEpisodeAirDate
+		changed = true
+	}
+	if strings.TrimSpace(anime.NextEpisodeAt) == "" && strings.TrimSpace(details.NextEpisodeAirDate) != "" {
+		anime.NextEpisodeAt = details.NextEpisodeAirDate
 		changed = true
 	}
 	releaseInfo, year := deriveReleaseInfo(details.FirstAirDate, details.LastAirDate, details.Status, details.InProduction, details.HasNextEpisode)
@@ -464,13 +496,16 @@ func needsAnimeDetails(anime domain.Anime) bool {
 		strings.TrimSpace(anime.Title) == "" ||
 		len(anime.Genres) == 0 ||
 		anime.Rating == 0 ||
+		anime.VoteCount == 0 ||
+		anime.Popularity == 0 ||
 		strings.TrimSpace(anime.AnimeType) == "" ||
 		strings.TrimSpace(anime.Slug) == "" ||
 		len(anime.Aliases) == 0 ||
 		strings.TrimSpace(anime.ReleaseInfo) == "" ||
 		strings.TrimSpace(anime.Year) == "" ||
 		strings.TrimSpace(anime.Status) == "" ||
-		strings.TrimSpace(anime.Runtime) == ""
+		strings.TrimSpace(anime.Runtime) == "" ||
+		strings.TrimSpace(anime.LastEpisodeAt) == ""
 }
 
 func normalizeAnimeType(raw string) string {

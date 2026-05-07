@@ -47,7 +47,7 @@
           }
         },
         {
-          "name": "Catalog · Top Airing",
+          "name": "Catalog · Em Exibicao",
           "request": {
             "method": "GET",
             "header": [],

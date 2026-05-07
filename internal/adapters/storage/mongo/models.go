@@ -18,8 +18,12 @@ type animeDoc struct {
 	Overview      string       `bson:"overview"`
 	Genres        []string     `bson:"genres"`
 	Rating        float64      `bson:"rating"`
+	VoteCount     int          `bson:"vote_count,omitempty"`
+	Popularity    float64      `bson:"popularity,omitempty"`
 	PosterPath    string       `bson:"poster_path"`
 	BackdropPath  string       `bson:"backdrop_path"`
+	LastEpisodeAt string       `bson:"last_episode_at,omitempty"`
+	NextEpisodeAt string       `bson:"next_episode_at,omitempty"`
 	Episodes      []episodeDoc `bson:"episodes"`
 	MappingStatus string       `bson:"mapping_status"`
 	UpdatedAt     time.Time    `bson:"updated_at"`
