@@ -8,12 +8,23 @@ type TMDBSearchResult struct {
 }
 
 type TMDBSeasonDetails struct {
-	Title        string
-	Overview     string
-	PosterPath   string
-	BackdropPath string
-	Genres       []string
-	Rating       float64
+	Title             string
+	OriginalTitle     string
+	Overview          string
+	PosterPath        string
+	BackdropPath      string
+	LogoPath          string
+	Genres            []string
+	Rating            float64
+	FirstAirDate      string
+	LastAirDate       string
+	Status            string
+	InProduction      bool
+	HasNextEpisode    bool
+	TVType            string
+	EpisodeRunTime    []int
+	SeasonRunTime     []int
+	SeasonVoteAverage float64
 }
 
 type TMDBEpisodeDetails struct {

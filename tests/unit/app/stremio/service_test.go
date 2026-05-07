@@ -17,10 +17,16 @@ import (
 )
 
 type fakeCatalogRepo struct {
-	anime domain.Anime
+	anime        domain.Anime
+	upsertCalled bool
+	upsertAnime  domain.Anime
 }
 
-func (f *fakeCatalogRepo) UpsertSeason(ctx context.Context, anime domain.Anime) error { return nil }
+func (f *fakeCatalogRepo) UpsertSeason(ctx context.Context, anime domain.Anime) error {
+	f.upsertCalled = true
+	f.upsertAnime = anime
+	return nil
+}
 func (f *fakeCatalogRepo) AddEpisodeSource(ctx context.Context, tmdbID, season, episode int, src domain.Source) (bool, error) {
 	return false, nil
 }
@@ -42,6 +48,22 @@ func (f *fakeCatalogRepo) ListAll(ctx context.Context, limit, skip int) ([]domai
 func (f *fakeCatalogRepo) ListGenres(ctx context.Context) ([]string, error) { return nil, nil }
 func (f *fakeCatalogRepo) RemoveSourcesByProvider(ctx context.Context, provider string) (int, error) {
 	return 0, nil
+}
+
+type fakeTMDBClient struct {
+	details ports.TMDBSeasonDetails
+}
+
+func (f *fakeTMDBClient) SearchSeries(ctx context.Context, query string) (ports.TMDBSearchResult, bool, error) {
+	return ports.TMDBSearchResult{}, false, nil
+}
+
+func (f *fakeTMDBClient) GetSeasonDetails(ctx context.Context, tmdbID, season int) (ports.TMDBSeasonDetails, error) {
+	return f.details, nil
+}
+
+func (f *fakeTMDBClient) GetEpisodeDetails(ctx context.Context, tmdbID, season, episode int) (ports.TMDBEpisodeDetails, error) {
+	return ports.TMDBEpisodeDetails{}, nil
 }
 
 func bencodeString(value string) string {
@@ -127,4 +149,80 @@ func TestStreamsNormalizesProviderNameWithSeasonSuffix(t *testing.T) {
 	require.Equal(t, "Episódio 48 · [Torrent] [Erai-raws] Kanojo Okarishimasu 4th Season - 12 [1080p CR WEBRip HEVC AAC][MultiSub].mkv", streams[0]["title"])
 }
 
+func TestMetaIncludesExpandedFieldsFromCatalog(t *testing.T) {
+	service := &stremio.Service{
+		Repo: &fakeCatalogRepo{anime: domain.Anime{
+			TMDBID:       96316,
+			SeasonNumber: 1,
+			Title:        "Rent-a-Girlfriend",
+			AnimeType:    "TV",
+			Slug:         "rent-a-girlfriend",
+			Aliases:      []string{"Rent-a-Girlfriend", "彼女、お借りします"},
+			LogoPath:     "https://image.tmdb.org/t/p/w780/logo.png",
+			ReleaseInfo:  "2020-",
+			Year:         "2020-",
+			Status:       "current",
+			Runtime:      "24 min",
+			Rating:       8.3,
+			PosterPath:   "https://image.tmdb.org/t/p/w500/poster.jpg",
+			BackdropPath: "https://image.tmdb.org/t/p/w780/backdrop.jpg",
+			Overview:     "Overview",
+			Genres:       []string{"Comedy"},
+			Episodes: []domain.Episode{
+				{Number: 1, Title: "Episode 1"},
+			},
+		}},
+	}
+
+	meta, found, err := service.Meta(context.Background(), "tmdb:96316:1")
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, "TV", meta["animeType"])
+	require.Equal(t, "rent-a-girlfriend", meta["slug"])
+	require.Equal(t, []string{"Rent-a-Girlfriend", "彼女、お借りします"}, meta["aliases"])
+	require.Equal(t, "2020-", meta["releaseInfo"])
+	require.Equal(t, "2020-", meta["year"])
+	require.Equal(t, "current", meta["status"])
+	require.Equal(t, "24 min", meta["runtime"])
+	require.Equal(t, 8.3, meta["rating"])
+}
+
+func TestMetaFallsBackToTMDBDetailsAndPersists(t *testing.T) {
+	repo := &fakeCatalogRepo{anime: domain.Anime{
+		TMDBID:       273467,
+		SeasonNumber: 1,
+		Title:        "The Warrior Princess and the Barbaric King",
+	}}
+	service := &stremio.Service{
+		Repo: repo,
+		TMDB: &fakeTMDBClient{
+			details: ports.TMDBSeasonDetails{
+				Title:          "The Warrior Princess and the Barbaric King",
+				OriginalTitle:  "Himekishi wa Barbaroi no Yome",
+				FirstAirDate:   "2026-04-09",
+				Status:         "Returning Series",
+				InProduction:   true,
+				HasNextEpisode: true,
+				TVType:         "Scripted",
+				EpisodeRunTime: []int{24},
+				Rating:         6.0,
+			},
+		},
+	}
+
+	meta, found, err := service.Meta(context.Background(), "tmdb:273467:1")
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, "current", meta["status"])
+	require.Equal(t, "24 min", meta["runtime"])
+	require.Equal(t, "2026-", meta["releaseInfo"])
+	require.Equal(t, "2026-", meta["year"])
+	require.Equal(t, "TV", meta["animeType"])
+	require.Equal(t, []string{"The Warrior Princess and the Barbaric King", "Himekishi wa Barbaroi no Yome"}, meta["aliases"])
+	require.Equal(t, 6.0, meta["rating"])
+	require.True(t, repo.upsertCalled)
+	require.Equal(t, "current", repo.upsertAnime.Status)
+}
+
 var _ ports.CatalogRepository = (*fakeCatalogRepo)(nil)
+var _ ports.TMDBClient = (*fakeTMDBClient)(nil)

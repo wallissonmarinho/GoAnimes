@@ -3,6 +3,7 @@ package sync
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -290,6 +291,22 @@ func (s *Service) ensureSeason(ctx context.Context, tmdbID, season int, norm Nor
 				anime.Title = details.Title
 				needsUpdate = true
 			}
+			if anime.AnimeType == "" {
+				anime.AnimeType = normalizeAnimeType(details.TVType)
+				needsUpdate = true
+			}
+			if anime.Slug == "" {
+				if slug := slugify(anime.Title); slug != "" {
+					anime.Slug = slug
+					needsUpdate = true
+				}
+			}
+			if len(anime.Aliases) == 0 {
+				if aliases := buildAliases(anime.Title, details.OriginalTitle); len(aliases) > 0 {
+					anime.Aliases = aliases
+					needsUpdate = true
+				}
+			}
 			if anime.Overview == "" && details.Overview != "" {
 				anime.Overview = details.Overview
 				needsUpdate = true
@@ -309,6 +326,25 @@ func (s *Service) ensureSeason(ctx context.Context, tmdbID, season int, norm Nor
 			if anime.BackdropPath == "" && details.BackdropPath != "" {
 				anime.BackdropPath = details.BackdropPath
 				needsUpdate = true
+			}
+			releaseInfo, year := deriveReleaseInfo(details.FirstAirDate, details.LastAirDate, details.Status, details.InProduction, details.HasNextEpisode)
+			if anime.ReleaseInfo == "" && releaseInfo != "" {
+				anime.ReleaseInfo = releaseInfo
+				needsUpdate = true
+			}
+			if anime.Year == "" && year != "" {
+				anime.Year = year
+				needsUpdate = true
+			}
+			if anime.Status == "" {
+				anime.Status = deriveCatalogStatus(details.Status, details.InProduction, details.HasNextEpisode)
+				needsUpdate = true
+			}
+			if anime.Runtime == "" {
+				if runtime := deriveRuntime(details.EpisodeRunTime, details.SeasonRunTime); runtime != "" {
+					anime.Runtime = runtime
+					needsUpdate = true
+				}
 			}
 		}
 	}
@@ -360,6 +396,22 @@ func (s *Service) fillMissingAnimeDetails(ctx context.Context, anime domain.Anim
 		anime.Title = details.Title
 		changed = true
 	}
+	if strings.TrimSpace(anime.AnimeType) == "" {
+		anime.AnimeType = normalizeAnimeType(details.TVType)
+		changed = true
+	}
+	if strings.TrimSpace(anime.Slug) == "" {
+		if slug := slugify(anime.Title); slug != "" {
+			anime.Slug = slug
+			changed = true
+		}
+	}
+	if len(anime.Aliases) == 0 {
+		if aliases := buildAliases(anime.Title, details.OriginalTitle); len(aliases) > 0 {
+			anime.Aliases = aliases
+			changed = true
+		}
+	}
 	if strings.TrimSpace(anime.Overview) == "" && strings.TrimSpace(details.Overview) != "" {
 		anime.Overview = details.Overview
 		changed = true
@@ -380,6 +432,25 @@ func (s *Service) fillMissingAnimeDetails(ctx context.Context, anime domain.Anim
 		anime.BackdropPath = details.BackdropPath
 		changed = true
 	}
+	releaseInfo, year := deriveReleaseInfo(details.FirstAirDate, details.LastAirDate, details.Status, details.InProduction, details.HasNextEpisode)
+	if strings.TrimSpace(anime.ReleaseInfo) == "" && releaseInfo != "" {
+		anime.ReleaseInfo = releaseInfo
+		changed = true
+	}
+	if strings.TrimSpace(anime.Year) == "" && year != "" {
+		anime.Year = year
+		changed = true
+	}
+	if strings.TrimSpace(anime.Status) == "" {
+		anime.Status = deriveCatalogStatus(details.Status, details.InProduction, details.HasNextEpisode)
+		changed = true
+	}
+	if strings.TrimSpace(anime.Runtime) == "" {
+		if runtime := deriveRuntime(details.EpisodeRunTime, details.SeasonRunTime); runtime != "" {
+			anime.Runtime = runtime
+			changed = true
+		}
+	}
 	if changed {
 		anime.UpdatedAt = time.Now().UTC()
 	}
@@ -387,7 +458,127 @@ func (s *Service) fillMissingAnimeDetails(ctx context.Context, anime domain.Anim
 }
 
 func needsAnimeDetails(anime domain.Anime) bool {
-	return strings.TrimSpace(anime.Overview) == "" || strings.TrimSpace(anime.BackdropPath) == "" || strings.TrimSpace(anime.PosterPath) == "" || strings.TrimSpace(anime.Title) == "" || len(anime.Genres) == 0 || anime.Rating == 0
+	return strings.TrimSpace(anime.Overview) == "" ||
+		strings.TrimSpace(anime.BackdropPath) == "" ||
+		strings.TrimSpace(anime.PosterPath) == "" ||
+		strings.TrimSpace(anime.Title) == "" ||
+		len(anime.Genres) == 0 ||
+		anime.Rating == 0 ||
+		strings.TrimSpace(anime.AnimeType) == "" ||
+		strings.TrimSpace(anime.Slug) == "" ||
+		len(anime.Aliases) == 0 ||
+		strings.TrimSpace(anime.ReleaseInfo) == "" ||
+		strings.TrimSpace(anime.Year) == "" ||
+		strings.TrimSpace(anime.Status) == "" ||
+		strings.TrimSpace(anime.Runtime) == ""
+}
+
+func normalizeAnimeType(raw string) string {
+	if strings.TrimSpace(raw) == "" {
+		return "TV"
+	}
+	return "TV"
+}
+
+func buildAliases(values ...string) []string {
+	out := make([]string, 0, len(values))
+	seen := map[string]struct{}{}
+	for _, value := range values {
+		normalized := strings.TrimSpace(value)
+		if normalized == "" {
+			continue
+		}
+		key := strings.ToLower(normalized)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, normalized)
+	}
+	return out
+}
+
+func deriveCatalogStatus(tmdbStatus string, inProduction bool, hasNextEpisode bool) string {
+	isAiring := strings.EqualFold(strings.TrimSpace(tmdbStatus), "Returning Series") || inProduction
+	if isAiring || hasNextEpisode {
+		return "current"
+	}
+	if strings.EqualFold(strings.TrimSpace(tmdbStatus), "Ended") {
+		return "ended"
+	}
+	return "unknown"
+}
+
+func deriveReleaseInfo(firstAirDate, lastAirDate, tmdbStatus string, inProduction bool, hasNextEpisode bool) (string, string) {
+	startYear := yearFromDate(firstAirDate)
+	if startYear == "" {
+		return "", ""
+	}
+	status := deriveCatalogStatus(tmdbStatus, inProduction, hasNextEpisode)
+	if status == "current" {
+		return startYear + "-", startYear + "-"
+	}
+	if status == "ended" {
+		endYear := yearFromDate(lastAirDate)
+		if endYear != "" && endYear != startYear {
+			return startYear + "-" + endYear, startYear + "-" + endYear
+		}
+		return startYear, startYear
+	}
+	return startYear, startYear
+}
+
+func yearFromDate(v string) string {
+	v = strings.TrimSpace(v)
+	if len(v) < 4 {
+		return ""
+	}
+	return v[:4]
+}
+
+func deriveRuntime(showRuntime []int, seasonRuntime []int) string {
+	for _, runtime := range showRuntime {
+		if runtime > 0 {
+			return fmt.Sprintf("%d min", runtime)
+		}
+	}
+	for _, runtime := range seasonRuntime {
+		if runtime > 0 {
+			return fmt.Sprintf("%d min", runtime)
+		}
+	}
+	return ""
+}
+
+func slugify(value string) string {
+	value = strings.TrimSpace(strings.ToLower(value))
+	if value == "" {
+		return ""
+	}
+	replacer := strings.NewReplacer(
+		"á", "a", "à", "a", "â", "a", "ã", "a", "ä", "a",
+		"é", "e", "è", "e", "ê", "e", "ë", "e",
+		"í", "i", "ì", "i", "î", "i", "ï", "i",
+		"ó", "o", "ò", "o", "ô", "o", "õ", "o", "ö", "o",
+		"ú", "u", "ù", "u", "û", "u", "ü", "u",
+		"ç", "c", "ñ", "n",
+	)
+	value = replacer.Replace(value)
+	slug := make([]rune, 0, len(value))
+	lastDash := false
+	for _, r := range value {
+		isAlnum := (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9')
+		if isAlnum {
+			slug = append(slug, r)
+			lastDash = false
+			continue
+		}
+		if !lastDash {
+			slug = append(slug, '-')
+			lastDash = true
+		}
+	}
+	return strings.Trim(string(slug), "-")
 }
 
 func normalizeItem(item ports.ReleaseItem) NormalizedRelease {

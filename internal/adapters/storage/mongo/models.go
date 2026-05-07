@@ -7,6 +7,14 @@ type animeDoc struct {
 	TMDBID        int          `bson:"tmdb_id"`
 	SeasonNumber  int          `bson:"season_number"`
 	Title         string       `bson:"title"`
+	AnimeType     string       `bson:"anime_type,omitempty"`
+	Slug          string       `bson:"slug,omitempty"`
+	Aliases       []string     `bson:"aliases,omitempty"`
+	LogoPath      string       `bson:"logo_path,omitempty"`
+	ReleaseInfo   string       `bson:"release_info,omitempty"`
+	Year          string       `bson:"year,omitempty"`
+	Status        string       `bson:"status,omitempty"`
+	Runtime       string       `bson:"runtime,omitempty"`
 	Overview      string       `bson:"overview"`
 	Genres        []string     `bson:"genres"`
 	Rating        float64      `bson:"rating"`

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -18,6 +19,8 @@ type Client struct {
 	http    *http.Client
 	baseURL string
 }
+
+var genericEpisodeTitleRe = regexp.MustCompile(`(?i)^(epis[oó]dio|episode)\s+\d+$`)
 
 func NewClient(apiKey string, timeout time.Duration) *Client {
 	return &Client{
@@ -68,52 +71,58 @@ func (c *Client) GetSeasonDetails(ctx context.Context, tmdbID, season int) (port
 	if c == nil || c.key == "" {
 		return ports.TMDBSeasonDetails{}, errors.New("tmdb api key not configured")
 	}
-	q := url.Values{}
-	q.Set("api_key", c.key)
-	q.Set("language", "pt-BR")
-	endpoint := fmt.Sprintf("%s/tv/%d?%s", c.baseURL, tmdbID, q.Encode())
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	showPayload, err := c.getShowDetails(ctx, tmdbID, "pt-BR")
 	if err != nil {
 		return ports.TMDBSeasonDetails{}, err
 	}
-	resp, err := c.http.Do(req)
+	seasonPayload, err := c.getSeasonDetails(ctx, tmdbID, season, "pt-BR")
 	if err != nil {
 		return ports.TMDBSeasonDetails{}, err
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		return ports.TMDBSeasonDetails{}, fmt.Errorf("tmdb details failed: %s", resp.Status)
-	}
-	var payload struct {
-		Name     string `json:"name"`
-		Overview string `json:"overview"`
-		Poster   string `json:"poster_path"`
-		Backdrop string `json:"backdrop_path"`
-		Genres   []struct {
-			Name string `json:"name"`
-		} `json:"genres"`
-		Rating float64 `json:"vote_average"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		return ports.TMDBSeasonDetails{}, err
-	}
-	genres := make([]string, 0, len(payload.Genres))
-	for _, g := range payload.Genres {
+
+	genres := make([]string, 0, len(showPayload.Genres))
+	for _, g := range showPayload.Genres {
 		if g.Name != "" {
 			genres = append(genres, g.Name)
 		}
 	}
-	poster := payload.Poster
+
+	poster := strings.TrimSpace(seasonPayload.Poster)
+	if poster == "" {
+		poster = strings.TrimSpace(showPayload.Poster)
+	}
 	if poster != "" && !strings.HasPrefix(poster, "http") {
 		poster = "https://image.tmdb.org/t/p/w500" + poster
 	}
+
+	title := strings.TrimSpace(showPayload.Name)
+	if title == "" {
+		title = strings.TrimSpace(showPayload.OriginalName)
+	}
+
+	rating := showPayload.Rating
+	if rating == 0 && seasonPayload.VoteAverage > 0 {
+		rating = seasonPayload.VoteAverage
+	}
+
 	return ports.TMDBSeasonDetails{
-		Title:        payload.Name,
-		Overview:     strings.TrimSpace(payload.Overview),
-		PosterPath:   poster,
-		BackdropPath: imageURL(payload.Backdrop),
-		Genres:       genres,
-		Rating:       payload.Rating,
+		Title:             title,
+		OriginalTitle:     strings.TrimSpace(showPayload.OriginalName),
+		Overview:          strings.TrimSpace(showPayload.Overview),
+		PosterPath:        poster,
+		BackdropPath:      imageURL(showPayload.Backdrop),
+		LogoPath:          "",
+		Genres:            genres,
+		Rating:            rating,
+		FirstAirDate:      strings.TrimSpace(showPayload.FirstAirDate),
+		LastAirDate:       strings.TrimSpace(showPayload.LastAirDate),
+		Status:            strings.TrimSpace(showPayload.Status),
+		InProduction:      showPayload.InProduction,
+		HasNextEpisode:    showPayload.NextEpisodeToAir != nil,
+		TVType:            strings.TrimSpace(showPayload.TVType),
+		EpisodeRunTime:    showPayload.EpisodeRunTime,
+		SeasonRunTime:     extractEpisodeRuntimes(seasonPayload.Episodes),
+		SeasonVoteAverage: seasonPayload.VoteAverage,
 	}, nil
 }
 
@@ -132,33 +141,140 @@ func (c *Client) GetEpisodeDetails(ctx context.Context, tmdbID, season, episode 
 	if c == nil || c.key == "" {
 		return ports.TMDBEpisodeDetails{}, errors.New("tmdb api key not configured")
 	}
-	q := url.Values{}
-	q.Set("api_key", c.key)
-	q.Set("language", "pt-BR")
-	endpoint := fmt.Sprintf("%s/tv/%d/season/%d/episode/%d?%s", c.baseURL, tmdbID, season, episode, q.Encode())
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	localized, err := c.getEpisodeDetails(ctx, tmdbID, season, episode, "pt-BR")
 	if err != nil {
 		return ports.TMDBEpisodeDetails{}, err
+	}
+	title := strings.TrimSpace(localized.Name)
+	overview := strings.TrimSpace(localized.Overview)
+	still := strings.TrimSpace(localized.Still)
+
+	if title == "" || isGenericEpisodeTitle(title) {
+		original, fallbackErr := c.getEpisodeDetails(ctx, tmdbID, season, episode, "")
+		if fallbackErr == nil {
+			origTitle := strings.TrimSpace(original.Name)
+			if origTitle != "" && !isGenericEpisodeTitle(origTitle) {
+				title = origTitle
+			}
+			if overview == "" {
+				overview = strings.TrimSpace(original.Overview)
+			}
+			if still == "" {
+				still = strings.TrimSpace(original.Still)
+			}
+		}
+	}
+
+	return ports.TMDBEpisodeDetails{
+		Title:     title,
+		Overview:  overview,
+		StillPath: imageURL(still),
+	}, nil
+}
+
+type tmdbGenre struct {
+	Name string `json:"name"`
+}
+
+type tmdbEpisodePayload struct {
+	Name     string `json:"name"`
+	Overview string `json:"overview"`
+	Still    string `json:"still_path"`
+	Runtime  *int   `json:"runtime"`
+}
+
+type tmdbShowPayload struct {
+	Name             string        `json:"name"`
+	OriginalName     string        `json:"original_name"`
+	Overview         string        `json:"overview"`
+	Poster           string        `json:"poster_path"`
+	Backdrop         string        `json:"backdrop_path"`
+	Genres           []tmdbGenre   `json:"genres"`
+	Rating           float64       `json:"vote_average"`
+	FirstAirDate     string        `json:"first_air_date"`
+	LastAirDate      string        `json:"last_air_date"`
+	Status           string        `json:"status"`
+	InProduction     bool          `json:"in_production"`
+	NextEpisodeToAir *struct{}     `json:"next_episode_to_air"`
+	EpisodeRunTime   []int         `json:"episode_run_time"`
+	TVType           string        `json:"type"`
+}
+
+type tmdbSeasonPayload struct {
+	Name        string               `json:"name"`
+	Overview    string               `json:"overview"`
+	Poster      string               `json:"poster_path"`
+	VoteAverage float64              `json:"vote_average"`
+	Episodes    []tmdbEpisodePayload `json:"episodes"`
+}
+
+func (c *Client) getShowDetails(ctx context.Context, tmdbID int, language string) (tmdbShowPayload, error) {
+	var payload tmdbShowPayload
+	path := fmt.Sprintf("/tv/%d", tmdbID)
+	if err := c.get(ctx, path, language, &payload); err != nil {
+		return tmdbShowPayload{}, fmt.Errorf("tmdb details failed: %w", err)
+	}
+	return payload, nil
+}
+
+func (c *Client) getSeasonDetails(ctx context.Context, tmdbID, season int, language string) (tmdbSeasonPayload, error) {
+	var payload tmdbSeasonPayload
+	path := fmt.Sprintf("/tv/%d/season/%d", tmdbID, season)
+	if err := c.get(ctx, path, language, &payload); err != nil {
+		return tmdbSeasonPayload{}, fmt.Errorf("tmdb season details failed: %w", err)
+	}
+	return payload, nil
+}
+
+func (c *Client) getEpisodeDetails(ctx context.Context, tmdbID, season, episode int, language string) (tmdbEpisodePayload, error) {
+	var payload tmdbEpisodePayload
+	path := fmt.Sprintf("/tv/%d/season/%d/episode/%d", tmdbID, season, episode)
+	if err := c.get(ctx, path, language, &payload); err != nil {
+		return tmdbEpisodePayload{}, fmt.Errorf("tmdb episode details failed: %w", err)
+	}
+	return payload, nil
+}
+
+func (c *Client) get(ctx context.Context, path, language string, out any) error {
+	q := url.Values{}
+	q.Set("api_key", c.key)
+	if strings.TrimSpace(language) != "" {
+		q.Set("language", strings.TrimSpace(language))
+	}
+	endpoint := fmt.Sprintf("%s%s?%s", c.baseURL, path, q.Encode())
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return err
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return ports.TMDBEpisodeDetails{}, err
+		return err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
-		return ports.TMDBEpisodeDetails{}, fmt.Errorf("tmdb episode details failed: %s", resp.Status)
+		return fmt.Errorf("%s", resp.Status)
 	}
-	var payload struct {
-		Name     string `json:"name"`
-		Overview string `json:"overview"`
-		Still    string `json:"still_path"`
+	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+		return err
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		return ports.TMDBEpisodeDetails{}, err
+	return nil
+}
+
+func extractEpisodeRuntimes(episodes []tmdbEpisodePayload) []int {
+	runtimes := make([]int, 0, len(episodes))
+	for _, episode := range episodes {
+		if episode.Runtime == nil || *episode.Runtime <= 0 {
+			continue
+		}
+		runtimes = append(runtimes, *episode.Runtime)
 	}
-	return ports.TMDBEpisodeDetails{
-		Title:     strings.TrimSpace(payload.Name),
-		Overview:  strings.TrimSpace(payload.Overview),
-		StillPath: imageURL(payload.Still),
-	}, nil
+	return runtimes
+}
+
+func isGenericEpisodeTitle(name string) bool {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return true
+	}
+	return genericEpisodeTitleRe.MatchString(name)
 }

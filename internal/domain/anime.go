@@ -18,6 +18,14 @@ type Anime struct {
 	TMDBID        int
 	SeasonNumber  int
 	Title         string
+	AnimeType     string
+	Slug          string
+	Aliases       []string
+	LogoPath      string
+	ReleaseInfo   string
+	Year          string
+	Status        string
+	Runtime       string
 	Overview      string
 	Genres        []string
 	Rating        float64
