@@ -55,6 +55,8 @@ func (s *Service) Manifest(ctx context.Context) (map[string]any, error) {
 		"id":          ManifestID,
 		"version":     ManifestVersion,
 		"name":        ManifestName,
+		"logo":        "https://i.imgur.com/4Aq22Jp.jpeg",
+		"background":  "https://i.imgur.com/YIqFCRR.jpeg",
 		"description": "RSS anime torrents with curated mapping.",
 		"types":       []string{StremioType},
 		"genres":      genres,
