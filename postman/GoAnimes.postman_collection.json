@@ -39,27 +39,43 @@
           }
         },
         {
-          "name": "Catalog anime / goanimes",
+          "name": "Catalog · Trending",
           "request": {
             "method": "GET",
             "header": [],
-            "url": "{{baseUrl}}/catalog/anime/goanimes.json"
+            "url": "{{baseUrl}}/catalog/anime/goanimes.trending.json"
           }
         },
         {
-          "name": "Catalog · Ultimos 7 dias",
+          "name": "Catalog · Top Airing",
           "request": {
             "method": "GET",
             "header": [],
-            "url": "{{baseUrl}}/catalog/anime/goanimes-week.json"
+            "url": "{{baseUrl}}/catalog/anime/goanimes.top_airing.json"
           }
         },
         {
-          "name": "Catalog · goanimes + genre extra",
+          "name": "Catalog · Most Popular",
           "request": {
             "method": "GET",
             "header": [],
-            "url": "{{baseUrl}}/catalog/anime/goanimes/genre=Fantasia.json"
+            "url": "{{baseUrl}}/catalog/anime/goanimes.most_popular.json"
+          }
+        },
+        {
+          "name": "Catalog · Highest Rated",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/catalog/anime/goanimes.highest_rated.json"
+          }
+        },
+        {
+          "name": "Catalog · Trending + genre extra",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/catalog/anime/goanimes.trending/genre=Fantasia.json"
           }
         },
         {

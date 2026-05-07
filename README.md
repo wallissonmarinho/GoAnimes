@@ -26,7 +26,20 @@ Em Addons -> Addon repository URL:
 
 `http://<teu-host>:8080/manifest.json`
 
-Catalogo principal: `/catalog/anime/goanimes.json`.
+Catalogos disponiveis:
+
+| Catalogo | Endpoint |
+|----------|----------|
+| Em alta | `/catalog/anime/goanimes.trending.json` |
+| Top airing | `/catalog/anime/goanimes.top_airing.json` |
+| Mais populares | `/catalog/anime/goanimes.most_popular.json` |
+| Mais bem avaliados | `/catalog/anime/goanimes.highest_rated.json` |
+
+Observacoes:
+
+- Todos os catalogos aceitam extra de genero, por exemplo: `/catalog/anime/goanimes.trending/genre=Fantasia.json`.
+- `top_airing` ordena pelo episodio mais recente, com o lancamento mais novo primeiro.
+- O payload de `meta` inclui campos enriquecidos como `animeType`, `slug`, `aliases`, `releaseInfo`, `year`, `status`, `runtime` e `rating`.
 
 ## API admin
 
