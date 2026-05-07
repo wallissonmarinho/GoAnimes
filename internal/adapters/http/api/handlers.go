@@ -70,7 +70,7 @@ func (h *handlers) catalog(c *gin.Context) {
 		return
 	}
 	catalogID, extras, ok := stremio.ParseCatalogPath(c.Param("catalogPath"))
-	if !ok || (catalogID != stremio.CatalogIDMain && catalogID != stremio.CatalogIDWeek) {
+	if !ok || !isSupportedCatalogID(catalogID) {
 		c.JSON(http.StatusNotFound, gin.H{})
 		return
 	}
@@ -117,6 +117,15 @@ func (h *handlers) stream(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"streams": streams})
+}
+
+func isSupportedCatalogID(catalogID string) bool {
+	switch catalogID {
+	case stremio.CatalogIDTrending, stremio.CatalogIDTopAiring, stremio.CatalogIDMostPopular, stremio.CatalogIDHighestRated:
+		return true
+	default:
+		return false
+	}
 }
 
 func (h *handlers) sync(c *gin.Context) {
