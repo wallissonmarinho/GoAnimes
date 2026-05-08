@@ -21,7 +21,9 @@ type TMDBSeasonDetails struct {
 	FirstAirDate      string
 	LastAirDate       string
 	LastEpisodeAirDate string
+	LastEpisodeNumber int
 	NextEpisodeAirDate string
+	NextEpisodeNumber int
 	Status            string
 	InProduction      bool
 	HasNextEpisode    bool

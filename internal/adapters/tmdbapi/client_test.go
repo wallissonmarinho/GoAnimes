@@ -56,10 +56,10 @@ func TestGetSeasonDetailsReadsShowAndSeasonData(t *testing.T) {
 				"popularity":15.8361,
 				"first_air_date":"2026-04-09",
 				"last_air_date":"2026-06-25",
-				"last_episode_to_air":{"air_date":"2026-04-30"},
+				"last_episode_to_air":{"air_date":"2026-04-30","episode_number":4},
 				"status":"Returning Series",
 				"in_production":true,
-				"next_episode_to_air":{"id":1,"air_date":"2026-05-07"},
+				"next_episode_to_air":{"id":1,"air_date":"2026-05-07","episode_number":5},
 				"episode_run_time":[24],
 				"type":"Scripted"
 			}`))
@@ -96,6 +96,9 @@ func TestGetSeasonDetailsReadsShowAndSeasonData(t *testing.T) {
 	}
 	if details.LastEpisodeAirDate != "2026-04-30" || details.NextEpisodeAirDate != "2026-05-07" {
 		t.Fatalf("unexpected episode air dates: last=%q next=%q", details.LastEpisodeAirDate, details.NextEpisodeAirDate)
+	}
+	if details.LastEpisodeNumber != 4 || details.NextEpisodeNumber != 5 {
+		t.Fatalf("unexpected episode numbers: last=%d next=%d", details.LastEpisodeNumber, details.NextEpisodeNumber)
 	}
 	if len(details.EpisodeRunTime) == 0 || details.EpisodeRunTime[0] != 24 {
 		t.Fatalf("unexpected episode runtime list: %#v", details.EpisodeRunTime)

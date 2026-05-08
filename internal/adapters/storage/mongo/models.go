@@ -23,7 +23,9 @@ type animeDoc struct {
 	PosterPath    string       `bson:"poster_path"`
 	BackdropPath  string       `bson:"backdrop_path"`
 	LastEpisodeAt string       `bson:"last_episode_at,omitempty"`
+	LastEpisodeNo int          `bson:"last_episode_no,omitempty"`
 	NextEpisodeAt string       `bson:"next_episode_at,omitempty"`
+	NextEpisodeNo int          `bson:"next_episode_no,omitempty"`
 	Episodes      []episodeDoc `bson:"episodes"`
 	MappingStatus string       `bson:"mapping_status"`
 	UpdatedAt     time.Time    `bson:"updated_at"`

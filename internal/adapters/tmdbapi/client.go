@@ -119,7 +119,9 @@ func (c *Client) GetSeasonDetails(ctx context.Context, tmdbID, season int) (port
 		FirstAirDate:      strings.TrimSpace(showPayload.FirstAirDate),
 		LastAirDate:       strings.TrimSpace(showPayload.LastAirDate),
 		LastEpisodeAirDate: episodeAirDate(showPayload.LastEpisodeToAir),
+		LastEpisodeNumber: episodeNumber(showPayload.LastEpisodeToAir),
 		NextEpisodeAirDate: episodeAirDate(showPayload.NextEpisodeToAir),
+		NextEpisodeNumber: episodeNumber(showPayload.NextEpisodeToAir),
 		Status:            strings.TrimSpace(showPayload.Status),
 		InProduction:      showPayload.InProduction,
 		HasNextEpisode:    showPayload.NextEpisodeToAir != nil,
@@ -139,6 +141,13 @@ func imageURL(path string) string {
 		return path
 	}
 	return "https://image.tmdb.org/t/p/w780" + path
+}
+
+func episodeNumber(ep *tmdbAiredEpisode) int {
+	if ep == nil || ep.EpisodeNumber <= 0 {
+		return 0
+	}
+	return ep.EpisodeNumber
 }
 
 func (c *Client) GetEpisodeDetails(ctx context.Context, tmdbID, season, episode int) (ports.TMDBEpisodeDetails, error) {
@@ -208,7 +217,8 @@ type tmdbShowPayload struct {
 }
 
 type tmdbAiredEpisode struct {
-	AirDate string `json:"air_date"`
+	AirDate       string `json:"air_date"`
+	EpisodeNumber int    `json:"episode_number"`
 }
 
 type tmdbSeasonPayload struct {

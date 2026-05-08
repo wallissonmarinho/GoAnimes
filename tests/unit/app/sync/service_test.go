@@ -282,7 +282,9 @@ func TestSyncForceBackfillsMissingAnimeDetails(t *testing.T) {
 			catalogKey(300126, 1): {
 				TMDBID:       300126,
 				SeasonNumber: 1,
-				Title:        "",
+				Title:        "Old Title",
+				Status:       "ended",
+				LastEpisodeAt:"2026-04-01",
 			},
 		},
 	}
@@ -292,12 +294,19 @@ func TestSyncForceBackfillsMissingAnimeDetails(t *testing.T) {
 		Catalog: catalog,
 		Reader:  &fakeFeedReader{},
 		TMDB: &fakeTMDBClient{details: ports.TMDBSeasonDetails{
-			Title:        "Liar Game",
-			Overview:     "Sinopse preenchida",
-			PosterPath:   "/poster.jpg",
-			BackdropPath: "/backdrop.jpg",
-			Genres:       []string{"Drama"},
-			Rating:       8.7,
+			Title:             "Liar Game",
+			Overview:          "Sinopse preenchida",
+			PosterPath:        "/poster.jpg",
+			BackdropPath:      "/backdrop.jpg",
+			Genres:            []string{"Drama"},
+			Rating:            8.7,
+			Status:            "Returning Series",
+			InProduction:      true,
+			HasNextEpisode:    true,
+			LastEpisodeAirDate:"2026-05-05",
+			LastEpisodeNumber: 4,
+			NextEpisodeAirDate:"2026-05-12",
+			NextEpisodeNumber: 5,
 		}},
 		Guard: &sync.Guard{},
 	}
@@ -330,6 +339,18 @@ func TestSyncForceBackfillsMissingAnimeDetails(t *testing.T) {
 	}
 	if anime.PosterPath != "/poster.jpg" || anime.BackdropPath != "/backdrop.jpg" {
 		t.Fatal("expected poster and backdrop to be backfilled")
+	}
+	if anime.Title != "Liar Game" {
+		t.Fatalf("expected title to be refreshed, got %q", anime.Title)
+	}
+	if anime.Status != "current" {
+		t.Fatalf("expected status to be refreshed, got %q", anime.Status)
+	}
+	if anime.LastEpisodeAt != "2026-05-05" || anime.LastEpisodeNo != 4 {
+		t.Fatalf("expected last episode metadata refresh, got at=%q no=%d", anime.LastEpisodeAt, anime.LastEpisodeNo)
+	}
+	if anime.NextEpisodeAt != "2026-05-12" || anime.NextEpisodeNo != 5 {
+		t.Fatalf("expected next episode metadata refresh, got at=%q no=%d", anime.NextEpisodeAt, anime.NextEpisodeNo)
 	}
 }
 

@@ -339,8 +339,16 @@ func (s *Service) ensureSeason(ctx context.Context, tmdbID, season int, norm Nor
 				anime.LastEpisodeAt = details.LastEpisodeAirDate
 				needsUpdate = true
 			}
+			if anime.LastEpisodeNo == 0 && details.LastEpisodeNumber > 0 {
+				anime.LastEpisodeNo = details.LastEpisodeNumber
+				needsUpdate = true
+			}
 			if anime.NextEpisodeAt == "" && details.NextEpisodeAirDate != "" {
 				anime.NextEpisodeAt = details.NextEpisodeAirDate
+				needsUpdate = true
+			}
+			if anime.NextEpisodeNo == 0 && details.NextEpisodeNumber > 0 {
+				anime.NextEpisodeNo = details.NextEpisodeNumber
 				needsUpdate = true
 			}
 			releaseInfo, year := deriveReleaseInfo(details.FirstAirDate, details.LastAirDate, details.Status, details.InProduction, details.HasNextEpisode)
@@ -380,7 +388,7 @@ func (s *Service) backfillCatalog(ctx context.Context) error {
 			return err
 		}
 		for _, anime := range animes {
-			updated, changed, err := s.fillMissingAnimeDetails(ctx, anime)
+			updated, changed, err := s.refreshAnimeDetails(ctx, anime)
 			if err != nil {
 				return err
 			}
@@ -396,17 +404,103 @@ func (s *Service) backfillCatalog(ctx context.Context) error {
 	}
 }
 
-func (s *Service) fillMissingAnimeDetails(ctx context.Context, anime domain.Anime) (domain.Anime, bool, error) {
+func (s *Service) refreshAnimeDetails(ctx context.Context, anime domain.Anime) (domain.Anime, bool, error) {
 	if s.TMDB == nil {
-		return anime, false, nil
-	}
-	if !needsAnimeDetails(anime) {
 		return anime, false, nil
 	}
 	details, err := s.TMDB.GetSeasonDetails(ctx, anime.TMDBID, anime.SeasonNumber)
 	if err != nil {
 		return anime, false, err
 	}
+	changed := false
+	if title := strings.TrimSpace(details.Title); title != "" && anime.Title != title {
+		anime.Title = title
+		changed = true
+	}
+	animeType := normalizeAnimeType(details.TVType)
+	if animeType != "" && strings.TrimSpace(anime.AnimeType) != animeType {
+		anime.AnimeType = animeType
+		changed = true
+	}
+	if slug := slugify(anime.Title); slug != "" && strings.TrimSpace(anime.Slug) != slug {
+		anime.Slug = slug
+		changed = true
+	}
+	if aliases := buildAliases(anime.Title, details.OriginalTitle); !equalStrings(anime.Aliases, aliases) {
+		anime.Aliases = aliases
+		changed = true
+	}
+	if overview := strings.TrimSpace(details.Overview); overview != "" && strings.TrimSpace(anime.Overview) != overview {
+		anime.Overview = overview
+		changed = true
+	}
+	if len(details.Genres) > 0 && !equalStrings(anime.Genres, details.Genres) {
+		anime.Genres = details.Genres
+		changed = true
+	}
+	if details.Rating > 0 && anime.Rating != details.Rating {
+		anime.Rating = details.Rating
+		changed = true
+	}
+	if details.VoteCount > 0 && anime.VoteCount != details.VoteCount {
+		anime.VoteCount = details.VoteCount
+		changed = true
+	}
+	if details.Popularity > 0 && anime.Popularity != details.Popularity {
+		anime.Popularity = details.Popularity
+		changed = true
+	}
+	if poster := strings.TrimSpace(details.PosterPath); poster != "" && strings.TrimSpace(anime.PosterPath) != poster {
+		anime.PosterPath = poster
+		changed = true
+	}
+	if backdrop := strings.TrimSpace(details.BackdropPath); backdrop != "" && strings.TrimSpace(anime.BackdropPath) != backdrop {
+		anime.BackdropPath = backdrop
+		changed = true
+	}
+	if lastAt := strings.TrimSpace(details.LastEpisodeAirDate); lastAt != "" && strings.TrimSpace(anime.LastEpisodeAt) != lastAt {
+		anime.LastEpisodeAt = lastAt
+		changed = true
+	}
+	if details.LastEpisodeNumber > 0 && anime.LastEpisodeNo != details.LastEpisodeNumber {
+		anime.LastEpisodeNo = details.LastEpisodeNumber
+		changed = true
+	}
+	nextAt := strings.TrimSpace(details.NextEpisodeAirDate)
+	if strings.TrimSpace(anime.NextEpisodeAt) != nextAt {
+		anime.NextEpisodeAt = nextAt
+		changed = true
+	}
+	if anime.NextEpisodeNo != details.NextEpisodeNumber {
+		anime.NextEpisodeNo = details.NextEpisodeNumber
+		changed = true
+	}
+	releaseInfo, year := deriveReleaseInfo(details.FirstAirDate, details.LastAirDate, details.Status, details.InProduction, details.HasNextEpisode)
+	if strings.TrimSpace(anime.ReleaseInfo) != releaseInfo {
+		anime.ReleaseInfo = releaseInfo
+		changed = true
+	}
+	if strings.TrimSpace(anime.Year) != year {
+		anime.Year = year
+		changed = true
+	}
+	status := deriveCatalogStatus(details.Status, details.InProduction, details.HasNextEpisode)
+	if strings.TrimSpace(anime.Status) != status {
+		anime.Status = status
+		changed = true
+	}
+	runtime := deriveRuntime(details.EpisodeRunTime, details.SeasonRunTime)
+	if strings.TrimSpace(anime.Runtime) != runtime {
+		anime.Runtime = runtime
+		changed = true
+	}
+	if changed {
+		anime.UpdatedAt = time.Now().UTC()
+	}
+	return anime, changed, nil
+}
+
+func fillMissingAnimeDetailsFromTMDB(anime domain.Anime, details ports.TMDBSeasonDetails) (domain.Anime, bool) {
 	changed := false
 	if strings.TrimSpace(anime.Title) == "" {
 		anime.Title = details.Title
@@ -460,8 +554,16 @@ func (s *Service) fillMissingAnimeDetails(ctx context.Context, anime domain.Anim
 		anime.LastEpisodeAt = details.LastEpisodeAirDate
 		changed = true
 	}
+	if anime.LastEpisodeNo == 0 && details.LastEpisodeNumber > 0 {
+		anime.LastEpisodeNo = details.LastEpisodeNumber
+		changed = true
+	}
 	if strings.TrimSpace(anime.NextEpisodeAt) == "" && strings.TrimSpace(details.NextEpisodeAirDate) != "" {
 		anime.NextEpisodeAt = details.NextEpisodeAirDate
+		changed = true
+	}
+	if anime.NextEpisodeNo == 0 && details.NextEpisodeNumber > 0 {
+		anime.NextEpisodeNo = details.NextEpisodeNumber
 		changed = true
 	}
 	releaseInfo, year := deriveReleaseInfo(details.FirstAirDate, details.LastAirDate, details.Status, details.InProduction, details.HasNextEpisode)
@@ -486,7 +588,7 @@ func (s *Service) fillMissingAnimeDetails(ctx context.Context, anime domain.Anim
 	if changed {
 		anime.UpdatedAt = time.Now().UTC()
 	}
-	return anime, changed, nil
+	return anime, changed
 }
 
 func needsAnimeDetails(anime domain.Anime) bool {
@@ -505,7 +607,9 @@ func needsAnimeDetails(anime domain.Anime) bool {
 		strings.TrimSpace(anime.Year) == "" ||
 		strings.TrimSpace(anime.Status) == "" ||
 		strings.TrimSpace(anime.Runtime) == "" ||
-		strings.TrimSpace(anime.LastEpisodeAt) == ""
+		strings.TrimSpace(anime.LastEpisodeAt) == "" ||
+		anime.LastEpisodeNo == 0 ||
+		(anime.NextEpisodeAt != "" && anime.NextEpisodeNo == 0)
 }
 
 func normalizeAnimeType(raw string) string {
@@ -531,6 +635,18 @@ func buildAliases(values ...string) []string {
 		out = append(out, normalized)
 	}
 	return out
+}
+
+func equalStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func deriveCatalogStatus(tmdbStatus string, inProduction bool, hasNextEpisode bool) string {

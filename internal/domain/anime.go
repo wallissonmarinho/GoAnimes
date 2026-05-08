@@ -34,7 +34,9 @@ type Anime struct {
 	PosterPath    string
 	BackdropPath  string
 	LastEpisodeAt string
+	LastEpisodeNo int
 	NextEpisodeAt string
+	NextEpisodeNo int
 	Episodes      []Episode
 	MappingStatus MappingStatus
 	UpdatedAt     time.Time

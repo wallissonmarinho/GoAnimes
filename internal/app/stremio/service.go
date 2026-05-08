@@ -237,22 +237,14 @@ func latestEpisodeAddedAt(anime domain.Anime) time.Time {
 func latestEpisodeReleaseAt(anime domain.Anime) time.Time {
 	lastEpisodeAt := parseDate(anime.LastEpisodeAt)
 	nextEpisodeAt := parseDate(anime.NextEpisodeAt)
-	latestAddedAt := latestEpisodeAddedAt(anime)
-
-	if !nextEpisodeAt.IsZero() && !sameOrBeforeToday(nextEpisodeAt) {
-		if !lastEpisodeAt.IsZero() {
-			return lastEpisodeAt
-		}
-		return latestAddedAt
+	if shouldPromoteToNextEpisode(anime, nextEpisodeAt) {
+		return nextEpisodeAt
 	}
 
 	if !lastEpisodeAt.IsZero() {
-		if latestAddedAt.After(lastEpisodeAt) && sameDay(latestAddedAt, nextEpisodeAt) {
-			return latestAddedAt
-		}
 		return lastEpisodeAt
 	}
-	return latestAddedAt
+	return latestEpisodeAddedAt(anime)
 }
 
 func lastRelevantCatalogTime(anime domain.Anime) time.Time {
@@ -330,13 +322,16 @@ func sameOrBeforeToday(value time.Time) bool {
 	return !candidate.After(today)
 }
 
-func sameDay(a time.Time, b time.Time) bool {
-	if a.IsZero() || b.IsZero() {
+func shouldPromoteToNextEpisode(anime domain.Anime, nextEpisodeAt time.Time) bool {
+	if nextEpisodeAt.IsZero() || !sameOrBeforeToday(nextEpisodeAt) || anime.NextEpisodeNo <= 0 {
 		return false
 	}
-	ay, am, ad := a.UTC().Date()
-	by, bm, bd := b.UTC().Date()
-	return ay == by && am == bm && ad == bd
+	for _, ep := range anime.Episodes {
+		if ep.Number == anime.NextEpisodeNo {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Service) Meta(ctx context.Context, id string) (map[string]any, bool, error) {
@@ -482,8 +477,16 @@ func enrichAnimeFromTMDB(anime *domain.Anime, details ports.TMDBSeasonDetails) b
 		anime.LastEpisodeAt = strings.TrimSpace(details.LastEpisodeAirDate)
 		changed = true
 	}
+	if anime.LastEpisodeNo == 0 && details.LastEpisodeNumber > 0 {
+		anime.LastEpisodeNo = details.LastEpisodeNumber
+		changed = true
+	}
 	if strings.TrimSpace(anime.NextEpisodeAt) == "" && strings.TrimSpace(details.NextEpisodeAirDate) != "" {
 		anime.NextEpisodeAt = strings.TrimSpace(details.NextEpisodeAirDate)
+		changed = true
+	}
+	if anime.NextEpisodeNo == 0 && details.NextEpisodeNumber > 0 {
+		anime.NextEpisodeNo = details.NextEpisodeNumber
 		changed = true
 	}
 

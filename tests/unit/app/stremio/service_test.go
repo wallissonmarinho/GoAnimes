@@ -212,7 +212,9 @@ func TestMetaFallsBackToTMDBDetailsAndPersists(t *testing.T) {
 				OriginalTitle:      "Himekishi wa Barbaroi no Yome",
 				FirstAirDate:       "2026-04-09",
 				LastEpisodeAirDate: "2026-04-30",
+				LastEpisodeNumber:  4,
 				NextEpisodeAirDate: "2026-05-07",
+				NextEpisodeNumber:  5,
 				Status:             "Returning Series",
 				InProduction:       true,
 				HasNextEpisode:     true,
@@ -240,6 +242,9 @@ func TestMetaFallsBackToTMDBDetailsAndPersists(t *testing.T) {
 	require.Equal(t, 8, repo.upsertAnime.VoteCount)
 	require.Equal(t, 15.8361, repo.upsertAnime.Popularity)
 	require.Equal(t, "2026-04-30", repo.upsertAnime.LastEpisodeAt)
+	require.Equal(t, 4, repo.upsertAnime.LastEpisodeNo)
+	require.Equal(t, "2026-05-07", repo.upsertAnime.NextEpisodeAt)
+	require.Equal(t, 5, repo.upsertAnime.NextEpisodeNo)
 }
 
 func TestManifestPublishesOnlyNewCatalogs(t *testing.T) {
@@ -277,7 +282,9 @@ func TestCatalogTopAiringSortsByNewestEpisodeReleaseFirst(t *testing.T) {
 					Title:         "Newest Airing",
 					Status:        "current",
 					LastEpisodeAt: yesterday,
+					LastEpisodeNo: 4,
 					NextEpisodeAt: today,
+					NextEpisodeNo: 5,
 					Episodes: []domain.Episode{
 						{Number: 5, AddedAt: now},
 					},
@@ -298,6 +305,49 @@ func TestCatalogTopAiringSortsByNewestEpisodeReleaseFirst(t *testing.T) {
 	require.Len(t, metas, 2)
 	require.Equal(t, "Newest Airing", metas[0]["name"])
 	require.Equal(t, "Older Airing", metas[1]["name"])
+}
+
+func TestCatalogTopAiringPromotesEpisodeAddedAfterScheduledAirDate(t *testing.T) {
+	service := &stremio.Service{
+		Repo: &fakeCatalogRepo{
+			list: []domain.Anime{
+				{
+					TMDBID:        1,
+					SeasonNumber:  1,
+					Title:         "Recently Released",
+					Status:        "current",
+					LastEpisodeAt: "2026-04-30",
+					LastEpisodeNo: 7,
+					NextEpisodeAt: "2026-05-07",
+					NextEpisodeNo: 8,
+					Episodes: []domain.Episode{
+						{Number: 8, AddedAt: time.Date(2026, 5, 8, 14, 15, 23, 0, time.UTC)},
+					},
+					UpdatedAt: time.Date(2026, 5, 8, 14, 15, 23, 0, time.UTC),
+				},
+				{
+					TMDBID:        2,
+					SeasonNumber:  1,
+					Title:         "Older Current",
+					Status:        "current",
+					LastEpisodeAt: "2026-05-06",
+					LastEpisodeNo: 4,
+					NextEpisodeAt: "2026-05-13",
+					NextEpisodeNo: 5,
+					Episodes: []domain.Episode{
+						{Number: 4, AddedAt: time.Date(2026, 5, 8, 13, 57, 28, 0, time.UTC)},
+					},
+					UpdatedAt: time.Date(2026, 5, 8, 13, 57, 28, 0, time.UTC),
+				},
+			},
+		},
+	}
+
+	metas, err := service.Catalog(context.Background(), stremio.CatalogIDTopAiring, nil, 20, 0)
+	require.NoError(t, err)
+	require.Len(t, metas, 2)
+	require.Equal(t, "Recently Released", metas[0]["name"])
+	require.Equal(t, "Older Current", metas[1]["name"])
 }
 
 func TestCatalogTrendingUsesPopularityAndCurrentSignals(t *testing.T) {
