@@ -224,27 +224,17 @@ func compareTimesDesc(aTime time.Time, bTime time.Time, a domain.Anime, b domain
 	return a.SeasonNumber < b.SeasonNumber
 }
 
-func latestEpisodeAddedAt(anime domain.Anime) time.Time {
-	latest := anime.UpdatedAt
-	for _, ep := range anime.Episodes {
-		if ep.AddedAt.After(latest) {
-			latest = ep.AddedAt
-		}
-	}
-	return latest
-}
-
 func latestEpisodeReleaseAt(anime domain.Anime) time.Time {
 	lastEpisodeAt := parseDate(anime.LastEpisodeAt)
 	nextEpisodeAt := parseDate(anime.NextEpisodeAt)
-	if shouldPromoteToNextEpisode(anime, nextEpisodeAt) {
+	if !nextEpisodeAt.IsZero() && sameOrBeforeToday(nextEpisodeAt) {
 		return nextEpisodeAt
 	}
 
 	if !lastEpisodeAt.IsZero() {
 		return lastEpisodeAt
 	}
-	return latestEpisodeAddedAt(anime)
+	return time.Time{}
 }
 
 func lastRelevantCatalogTime(anime domain.Anime) time.Time {
@@ -320,18 +310,6 @@ func sameOrBeforeToday(value time.Time) bool {
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
 	candidate := time.Date(value.Year(), value.Month(), value.Day(), 0, 0, 0, 0, time.UTC)
 	return !candidate.After(today)
-}
-
-func shouldPromoteToNextEpisode(anime domain.Anime, nextEpisodeAt time.Time) bool {
-	if nextEpisodeAt.IsZero() || !sameOrBeforeToday(nextEpisodeAt) || anime.NextEpisodeNo <= 0 {
-		return false
-	}
-	for _, ep := range anime.Episodes {
-		if ep.Number == anime.NextEpisodeNo {
-			return true
-		}
-	}
-	return false
 }
 
 func (s *Service) Meta(ctx context.Context, id string) (map[string]any, bool, error) {

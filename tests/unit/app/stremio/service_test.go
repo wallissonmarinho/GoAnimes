@@ -282,12 +282,8 @@ func TestCatalogTopAiringSortsByNewestEpisodeReleaseFirst(t *testing.T) {
 					Title:         "Newest Airing",
 					Status:        "current",
 					LastEpisodeAt: yesterday,
-					LastEpisodeNo: 4,
 					NextEpisodeAt: today,
-					NextEpisodeNo: 5,
-					Episodes: []domain.Episode{
-						{Number: 5, AddedAt: now},
-					},
+					UpdatedAt:     now,
 				},
 				{
 					TMDBID:        3,
@@ -307,37 +303,25 @@ func TestCatalogTopAiringSortsByNewestEpisodeReleaseFirst(t *testing.T) {
 	require.Equal(t, "Older Airing", metas[1]["name"])
 }
 
-func TestCatalogTopAiringPromotesEpisodeAddedAfterScheduledAirDate(t *testing.T) {
+func TestCatalogTopAiringUsesLastWhenNextIsInFuture(t *testing.T) {
 	service := &stremio.Service{
 		Repo: &fakeCatalogRepo{
 			list: []domain.Anime{
 				{
 					TMDBID:        1,
 					SeasonNumber:  1,
-					Title:         "Recently Released",
+					Title:         "More Recent Last",
 					Status:        "current",
-					LastEpisodeAt: "2026-04-30",
-					LastEpisodeNo: 7,
-					NextEpisodeAt: "2026-05-07",
-					NextEpisodeNo: 8,
-					Episodes: []domain.Episode{
-						{Number: 8, AddedAt: time.Date(2026, 5, 8, 14, 15, 23, 0, time.UTC)},
-					},
-					UpdatedAt: time.Date(2026, 5, 8, 14, 15, 23, 0, time.UTC),
+					LastEpisodeAt: "2026-05-06",
+					NextEpisodeAt: "2099-05-13",
 				},
 				{
 					TMDBID:        2,
 					SeasonNumber:  1,
-					Title:         "Older Current",
+					Title:         "Older Last",
 					Status:        "current",
-					LastEpisodeAt: "2026-05-06",
-					LastEpisodeNo: 4,
-					NextEpisodeAt: "2026-05-13",
-					NextEpisodeNo: 5,
-					Episodes: []domain.Episode{
-						{Number: 4, AddedAt: time.Date(2026, 5, 8, 13, 57, 28, 0, time.UTC)},
-					},
-					UpdatedAt: time.Date(2026, 5, 8, 13, 57, 28, 0, time.UTC),
+					LastEpisodeAt: "2026-05-05",
+					NextEpisodeAt: "2099-05-12",
 				},
 			},
 		},
@@ -346,8 +330,8 @@ func TestCatalogTopAiringPromotesEpisodeAddedAfterScheduledAirDate(t *testing.T)
 	metas, err := service.Catalog(context.Background(), stremio.CatalogIDTopAiring, nil, 20, 0)
 	require.NoError(t, err)
 	require.Len(t, metas, 2)
-	require.Equal(t, "Recently Released", metas[0]["name"])
-	require.Equal(t, "Older Current", metas[1]["name"])
+	require.Equal(t, "More Recent Last", metas[0]["name"])
+	require.Equal(t, "Older Last", metas[1]["name"])
 }
 
 func TestCatalogTrendingUsesPopularityAndCurrentSignals(t *testing.T) {
