@@ -168,6 +168,11 @@ func TestNormalizeTitle_realWorldUnmatchedNoise(t *testing.T) {
 	require.Equal(t, 6, ep)
 	require.Equal(t, "1080p", quality)
 
+	name, ep, quality = sync.NormalizeTitle("[ToonsHub] NIPPON SANGOKU The Three Nations of the Crimson Sun S01E06 1080p AMZN WEB-DL DUAL DDP2.0 H.265 (Dual-Audio, Multi-Subs) {Tags:L0;V9;C2;A=ja,en;S=en,ar,zhhans,zhhant,cs,da,nl,fi,frfr,de,el,he,hi,hu,id,it,ja,ko,ms,pl,ptbr,ptpt,ro,es419,eses,sv,th,tr;}")
+	require.Equal(t, "nippon sangoku the three nations of the crimson sun", name)
+	require.Equal(t, 6, ep)
+	require.Equal(t, "1080p", quality)
+
 	name, ep, quality = sync.NormalizeTitle("[ToonsHub] Rooster Fighter S01E09 1080p DSNP WEB-DL DUAL AAC2.0 H.264 (Dual-Audio, Multi-Subs) {Tags:L0;V9;C1;A=ja,en;S=en,frfr,de,it,ptbr,es419;}")
 	require.Equal(t, "rooster fighter", name)
 	require.Equal(t, 9, ep)
