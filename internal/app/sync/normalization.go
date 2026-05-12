@@ -14,7 +14,8 @@ var (
 	numDashRe      = regexp.MustCompile(`\s-\s(\d{1,3})\b`)
 	qualityBlockRe = regexp.MustCompile(`(?i)\[([^\]]*\b(?:480p|720p|1080p|2160p)\b[^\]]*)\]`)
 	qualityRe      = regexp.MustCompile(`(?i)\b(?:480p|720p|1080p|2160p)\b`)
-	noiseTokenRe   = regexp.MustCompile(`(?i)\b(?:web[\s-]?dl|web[\s-]?rip|webrip|bluray|bdrip|hevc|x265|x264|h\.?264|aac\d?(?:\.\d)?|multi(?:-audio|-subs)?|dual(?:-audio)?|nf|cr|avc)\b`)
+	noiseTokenRe   = regexp.MustCompile(`(?i)\b(?:web[\s-]?dl|web[\s-]?rip|webrip|bluray|bdrip|hevc|x265|x264|h\.?264|avc|aac\d?(?:\.\d)?|eac3|ddp\d(?:\.\d)?|multi(?:-audio|-subs)?|dual(?:-audio)?|repack|end|finale|uncensored|encoded|more|nf|cr|dsnp|amzn|iq|tver|bili|viki|adn)\b`)
+	leadingProviderRe = regexp.MustCompile(`(?i)^(?:erai-raws|erai|toonshub|nekobt)\s+`)
 )
 
 func NormalizeTitle(raw string) (nameKey string, episode int, quality string) {
@@ -41,6 +42,7 @@ func NormalizeTitle(raw string) (nameKey string, episode int, quality string) {
 	clean = epRe.ReplaceAllString(clean, " ")
 	clean = numDashRe.ReplaceAllString(clean, " ")
 	clean = noiseTokenRe.ReplaceAllString(clean, " ")
+	clean = leadingProviderRe.ReplaceAllString(clean, " ")
 	clean = strings.ToLower(spaceRe.ReplaceAllString(clean, " "))
 	clean = strings.TrimSpace(clean)
 	nameKey = clean

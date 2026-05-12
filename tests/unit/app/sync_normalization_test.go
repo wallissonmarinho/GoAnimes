@@ -9,9 +9,9 @@ import (
 
 func TestNormalizeTitle_extractsAnimeNameAndEpisode(t *testing.T) {
 	// Standard format - removes episode and quality markers, lowercases, normalizes spaces
-	// Note: keeps other text like "Multiple Subtitle" unless in brackets
+	// Note: strips known provider prefixes and release-tech noise.
 	name, ep, quality := sync.NormalizeTitle("Erai-raws Solo Leveling - 01 1080p Multiple Subtitle")
-	require.Equal(t, "erai-raws solo leveling multiple subtitle", name)
+	require.Equal(t, "solo leveling multiple subtitle", name)
 	require.Equal(t, 1, ep)
 	require.Equal(t, "1080p", quality)
 
@@ -154,6 +154,33 @@ func TestNormalizeTitle_toonshubTagsAndTechNoise(t *testing.T) {
 	name, ep, quality = sync.NormalizeTitle("[ToonsHub] Witch Hat Atelier S01E06 1080p CR WEB-DL MULTi AAC2.0 H.264 (Multi-Audio, Multi-Subs) {Tags:L0;V9;C1;A=ja,en,ar,frfr,de,it,ptbr,eses,es419;S=en,ar,frfr,de,it,ptbr,ru,es419,eses;}")
 	require.Equal(t, "witch hat atelier", name)
 	require.Equal(t, 6, ep)
+	require.Equal(t, "1080p", quality)
+}
+
+func TestNormalizeTitle_realWorldUnmatchedNoise(t *testing.T) {
+	name, ep, quality := sync.NormalizeTitle("[ToonsHub] Mission Yozakura Family S02E02 REPACK 1080p DSNP WEB-DL AAC2.0 H.264 (Multi-Subs) {Tags:L0;V9;C1;A=ja;S=en,cs,da,nl,fi,frfr,de,el,hu,it,no,pl,ptbr,ptpt,ro,sk,es419,eses,sv,tr;}")
+	require.Equal(t, "mission yozakura family", name)
+	require.Equal(t, 2, ep)
+	require.Equal(t, "1080p", quality)
+
+	name, ep, quality = sync.NormalizeTitle("[ToonsHub] NIPPON SANGOKU The Three Nations of the Crimson Sun S01E06 1080p AMZN WEB-DL DUAL DDP2.0 H.264 (Dual-Audio, Multi-Subs) {Tags:L0;V9;C1;A=ja,en;S=en,ar,zhhans,zhhant,cs,da,nl,fi,frfr,de,el,he,hi,hu,id,it,ja,ko,ms,pl,ptbr,ptpt,ro,es419,eses,sv,th,tr;}")
+	require.Equal(t, "nippon sangoku the three nations of the crimson sun", name)
+	require.Equal(t, 6, ep)
+	require.Equal(t, "1080p", quality)
+
+	name, ep, quality = sync.NormalizeTitle("[ToonsHub] Rooster Fighter S01E09 1080p DSNP WEB-DL DUAL AAC2.0 H.264 (Dual-Audio, Multi-Subs) {Tags:L0;V9;C1;A=ja,en;S=en,frfr,de,it,ptbr,es419;}")
+	require.Equal(t, "rooster fighter", name)
+	require.Equal(t, 9, ep)
+	require.Equal(t, "1080p", quality)
+
+	name, ep, quality = sync.NormalizeTitle("[ToonsHub] MAO S01E06 1080p DSNP WEB-DL AAC2.0 H.264 (Multi-Subs) {Tags:L0;V9;C1;A=ja;S=en,ptbr,es419;}")
+	require.Equal(t, "mao", name)
+	require.Equal(t, 6, ep)
+	require.Equal(t, "1080p", quality)
+
+	name, ep, quality = sync.NormalizeTitle("[ToonsHub] How dare you S02E18 1080p iQ WEB-DL AAC2.0 H.264 (Multi-Subs) {Tags:L0;V9;C1;A=zh;S=en,ar,zhhans,zhhant,frfr,de,id,ja,ko,ms,ptbr,es419,th,vi;}")
+	require.Equal(t, "how dare you", name)
+	require.Equal(t, 18, ep)
 	require.Equal(t, "1080p", quality)
 }
 
