@@ -254,6 +254,42 @@ func TestSyncRunAddsUnmatchedWhenNoTMDB(t *testing.T) {
 	}
 }
 
+func TestSyncRunAddsUnmatchedWhenAutomaticTMDBMatchLooksIncoherent(t *testing.T) {
+	reader := &fakeFeedReader{items: []ports.ReleaseItem{{
+		Title:     "[Erai] Kanojo Okarishimasu 2nd Season - 03",
+		Link:      "magnet:?xt=urn:btih:def",
+		Provider:  "Erai",
+		Published: time.Now(),
+	}}}
+	mapping := &fakeMappingRepo{overrides: map[string]domain.MappingOverride{}}
+	service := &sync.Service{
+		Feeds:   &fakeFeedRepo{feeds: []domain.Feed{{ID: "f1", Name: "Erai", URL: "http://example", Type: domain.FeedTypeRSS, Enabled: true}}},
+		Mapping: mapping,
+		Catalog: &fakeCatalogRepo{},
+		Reader:  reader,
+		TMDB: &fakeTMDBClient{
+			searchResult: ports.TMDBSearchResult{TMDBID: 196950, Title: "Witch Hat Atelier"},
+			found:        true,
+			details: ports.TMDBSeasonDetails{
+				Title:         "Witch Hat Atelier",
+				OriginalTitle: "とんがり帽子のアトリエ",
+			},
+		},
+		Guard: &sync.Guard{},
+	}
+
+	res := service.Run(context.Background())
+	if len(res.Errors) != 0 {
+		t.Fatalf("unexpected errors: %v", res.Errors)
+	}
+	if res.Processed != 0 {
+		t.Fatalf("expected processed 0, got %d", res.Processed)
+	}
+	if len(mapping.unmatched) != 1 {
+		t.Fatalf("expected 1 unmatched, got %d", len(mapping.unmatched))
+	}
+}
+
 func TestSyncRunReportsFetchError(t *testing.T) {
 	reader := &fakeFeedReader{err: errors.New("fetch failed")}
 	service := &sync.Service{

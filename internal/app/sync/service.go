@@ -238,6 +238,12 @@ func (s *Service) resolveMapping(
 		s.addUnmatched(ctx, Result{}, norm, item)
 		return 0, 0, 0, false, nil
 	}
+	if details, detErr := s.TMDB.GetSeasonDetails(ctx, search.TMDBID, 1); detErr == nil {
+		if !matchesResolvedAnime(norm.RSSNameKey, details.Title, details.OriginalTitle) {
+			s.addUnmatched(ctx, Result{}, norm, item)
+			return 0, 0, 0, false, nil
+		}
+	}
 	return search.TMDBID, 1, mappedEpisode, true, nil
 }
 
@@ -523,6 +529,64 @@ func buildAliases(values ...string) []string {
 		out = append(out, normalized)
 	}
 	return out
+}
+
+func matchesResolvedAnime(rssNameKey string, values ...string) bool {
+	query := comparableTokenSet(rssNameKey)
+	if len(query) == 0 {
+		return false
+	}
+	best := 0
+	for _, value := range values {
+		score := comparableOverlapScore(query, comparableTokenSet(value))
+		if score > best {
+			best = score
+		}
+	}
+	return best >= 2
+}
+
+func comparableTokenSet(value string) map[string]struct{} {
+	normalized := normalizeComparableTitle(value)
+	out := make(map[string]struct{})
+	for _, token := range strings.Fields(normalized) {
+		if len(token) <= 1 {
+			continue
+		}
+		out[token] = struct{}{}
+	}
+	return out
+}
+
+func comparableOverlapScore(a, b map[string]struct{}) int {
+	if len(a) == 0 || len(b) == 0 {
+		return 0
+	}
+	score := 0
+	for token := range a {
+		if _, ok := b[token]; ok {
+			score++
+		}
+	}
+	return score
+}
+
+func normalizeComparableTitle(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	replacer := strings.NewReplacer(
+		":", " ",
+		"-", " ",
+		"_", " ",
+		"'", "",
+		".", " ",
+		",", " ",
+		"!", " ",
+		"?", " ",
+		"(", " ",
+		")", " ",
+	)
+	value = replacer.Replace(value)
+	return strings.Join(strings.Fields(value), " ")
 }
 
 func equalStrings(a, b []string) bool {
