@@ -110,3 +110,59 @@ func TestGetSeasonDetailsReadsShowAndSeasonData(t *testing.T) {
 		t.Fatalf("expected logo path to remain empty, got %q", details.LogoPath)
 	}
 }
+
+func TestSearchSeriesPrefersAnimatedCandidateOverLiveAction(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/search/tv" {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = w.Write([]byte(`{
+			"results":[
+				{"id":111110,"name":"ONE PIECE: A Série","original_name":"ONE PIECE","original_language":"en","first_air_date":"2023-08-31","genre_ids":[10759,10765]},
+				{"id":37854,"name":"One Piece","original_name":"ワンピース","original_language":"ja","first_air_date":"1999-10-20","genre_ids":[16,10759,35]}
+			]
+		}`))
+	}))
+	defer server.Close()
+
+	client := NewClient("test-key", time.Second)
+	client.baseURL = server.URL
+
+	result, found, err := client.SearchSeries(context.Background(), "one piece")
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if !found {
+		t.Fatal("expected animated match to be found")
+	}
+	if result.TMDBID != 37854 {
+		t.Fatalf("expected animated one piece match, got %d", result.TMDBID)
+	}
+}
+
+func TestSearchSeriesRejectsNonAnimatedCandidateWhenNoAnimatedMatchExists(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/search/tv" {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = w.Write([]byte(`{
+			"results":[
+				{"id":13967,"name":"Liar Game","original_name":"ライアーゲーム","original_language":"ja","first_air_date":"2007-04-14","genre_ids":[18,80]}
+			]
+		}`))
+	}))
+	defer server.Close()
+
+	client := NewClient("test-key", time.Second)
+	client.baseURL = server.URL
+
+	_, found, err := client.SearchSeries(context.Background(), "liar game")
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if found {
+		t.Fatal("expected non-animated live-action candidate to be rejected")
+	}
+}

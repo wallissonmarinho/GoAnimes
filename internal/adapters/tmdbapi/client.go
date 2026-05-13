@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -21,6 +22,8 @@ type Client struct {
 }
 
 var genericEpisodeTitleRe = regexp.MustCompile(`(?i)^(epis[oó]dio|episode)\s+\d+$`)
+
+const animationGenreID = 16
 
 func NewClient(apiKey string, timeout time.Duration) *Client {
 	return &Client{
@@ -53,8 +56,12 @@ func (c *Client) SearchSeries(ctx context.Context, query string) (ports.TMDBSear
 	}
 	var payload struct {
 		Results []struct {
-			ID   int    `json:"id"`
-			Name string `json:"name"`
+			ID               int    `json:"id"`
+			Name             string `json:"name"`
+			OriginalName     string `json:"original_name"`
+			OriginalLanguage string `json:"original_language"`
+			FirstAirDate     string `json:"first_air_date"`
+			GenreIDs         []int  `json:"genre_ids"`
 		} `json:"results"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
@@ -63,8 +70,170 @@ func (c *Client) SearchSeries(ctx context.Context, query string) (ports.TMDBSear
 	if len(payload.Results) == 0 {
 		return ports.TMDBSearchResult{}, false, nil
 	}
-	res := payload.Results[0]
-	return ports.TMDBSearchResult{TMDBID: res.ID, Title: res.Name}, true, nil
+	candidates := make([]tmdbSearchCandidate, 0, len(payload.Results))
+	for _, res := range payload.Results {
+		candidates = append(candidates, tmdbSearchCandidate{
+			ID:               res.ID,
+			Name:             strings.TrimSpace(res.Name),
+			OriginalName:     strings.TrimSpace(res.OriginalName),
+			OriginalLanguage: strings.TrimSpace(res.OriginalLanguage),
+			FirstAirDate:     strings.TrimSpace(res.FirstAirDate),
+			GenreIDs:         append([]int(nil), res.GenreIDs...),
+		})
+	}
+	best, ok := chooseBestSeriesCandidate(strings.TrimSpace(query), candidates)
+	if !ok {
+		return ports.TMDBSearchResult{}, false, nil
+	}
+	return ports.TMDBSearchResult{TMDBID: best.ID, Title: best.Name}, true, nil
+}
+
+type tmdbSearchCandidate struct {
+	ID               int
+	Name             string
+	OriginalName     string
+	OriginalLanguage string
+	FirstAirDate     string
+	GenreIDs         []int
+}
+
+func chooseBestSeriesCandidate(query string, candidates []tmdbSearchCandidate) (tmdbSearchCandidate, bool) {
+	if len(candidates) == 0 {
+		return tmdbSearchCandidate{}, false
+	}
+	queryNorm := normalizeSearchText(query)
+	queryTokens := tokenSet(queryNorm)
+	if len(queryTokens) == 0 {
+		return tmdbSearchCandidate{}, false
+	}
+
+	scored := make([]scoredCandidate, 0, len(candidates))
+	for _, candidate := range candidates {
+		score := candidateSearchScore(queryNorm, queryTokens, candidate)
+		if score < 0 {
+			continue
+		}
+		scored = append(scored, scoredCandidate{candidate: candidate, score: score})
+	}
+	if len(scored) == 0 {
+		return tmdbSearchCandidate{}, false
+	}
+
+	sort.Slice(scored, func(i, j int) bool {
+		if scored[i].score != scored[j].score {
+			return scored[i].score > scored[j].score
+		}
+		return scored[i].candidate.ID < scored[j].candidate.ID
+	})
+
+	best := scored[0]
+	if !hasAnimationGenre(best.candidate.GenreIDs) {
+		return tmdbSearchCandidate{}, false
+	}
+	if best.score < 4 {
+		return tmdbSearchCandidate{}, false
+	}
+	return best.candidate, true
+}
+
+type scoredCandidate struct {
+	candidate tmdbSearchCandidate
+	score     int
+}
+
+func candidateSearchScore(queryNorm string, queryTokens map[string]struct{}, candidate tmdbSearchCandidate) int {
+	nameNorm := normalizeSearchText(candidate.Name)
+	originalNorm := normalizeSearchText(candidate.OriginalName)
+
+	bestTitleScore := similarityScore(queryNorm, queryTokens, nameNorm)
+	if score := similarityScore(queryNorm, queryTokens, originalNorm); score > bestTitleScore {
+		bestTitleScore = score
+	}
+	if bestTitleScore <= 0 {
+		return -1
+	}
+
+	score := bestTitleScore
+	if hasAnimationGenre(candidate.GenreIDs) {
+		score += 10
+	}
+	switch strings.ToLower(candidate.OriginalLanguage) {
+	case "ja":
+		score += 3
+	case "zh", "ko":
+		score += 2
+	}
+	if candidate.FirstAirDate >= "2015-01-01" {
+		score += 1
+	}
+	return score
+}
+
+func similarityScore(queryNorm string, queryTokens map[string]struct{}, candidateNorm string) int {
+	if candidateNorm == "" {
+		return 0
+	}
+	if candidateNorm == queryNorm {
+		return 8
+	}
+	candidateTokens := tokenSet(candidateNorm)
+	if len(candidateTokens) == 0 {
+		return 0
+	}
+	overlap := 0
+	for token := range queryTokens {
+		if _, ok := candidateTokens[token]; ok {
+			overlap++
+		}
+	}
+	if overlap == 0 {
+		return 0
+	}
+	if overlap == len(queryTokens) {
+		if strings.Contains(candidateNorm, queryNorm) || strings.Contains(queryNorm, candidateNorm) {
+			return 7
+		}
+		return 6
+	}
+	if overlap >= 2 {
+		return 4 + overlap
+	}
+	return 2
+}
+
+func hasAnimationGenre(ids []int) bool {
+	for _, id := range ids {
+		if id == animationGenreID {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizeSearchText(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	replacer := strings.NewReplacer(
+		":", " ",
+		"-", " ",
+		"_", " ",
+		"'", "",
+		".", " ",
+		",", " ",
+		"!", " ",
+		"?", " ",
+		"(", " ",
+		")", " ",
+	)
+	s = replacer.Replace(s)
+	return strings.Join(strings.Fields(s), " ")
+}
+
+func tokenSet(s string) map[string]struct{} {
+	out := make(map[string]struct{})
+	for _, token := range strings.Fields(s) {
+		out[token] = struct{}{}
+	}
+	return out
 }
 
 func (c *Client) GetSeasonDetails(ctx context.Context, tmdbID, season int) (ports.TMDBSeasonDetails, error) {
