@@ -214,7 +214,7 @@ func TestSyncRunWithOverride(t *testing.T) {
 		t.Fatalf("unexpected errors: %v", res.Errors)
 	}
 	if res.Processed != 1 {
-		t.Fatalf("expected processed 1, got %d", res.Processed)
+		t.Fatalf("expected processed 1, got %d (unmatched=%d catalog=%d)", res.Processed, len(mapping.unmatched), len(catalog.items))
 	}
 	anime, found, _ := catalog.GetByTMDBSeason(context.Background(), 91768, 4)
 	if !found {
@@ -287,6 +287,95 @@ func TestSyncRunAddsUnmatchedWhenAutomaticTMDBMatchLooksIncoherent(t *testing.T)
 	}
 	if len(mapping.unmatched) != 1 {
 		t.Fatalf("expected 1 unmatched, got %d", len(mapping.unmatched))
+	}
+}
+
+func TestSyncRunMapsOnePieceEpisodesWithoutManualOverride(t *testing.T) {
+	feeds := []domain.Feed{{ID: "f1", Name: "Erai One Piece", URL: "http://example", Type: domain.FeedTypeRSS, Enabled: true}}
+	reader := &fakeFeedReader{items: []ports.ReleaseItem{{
+		Title:     "[Magnet] One Piece - 1105 (Multi) [SD][us][br][mx][es][sa][fr][de][it][ru][Airing]",
+		Link:      "magnet:?xt=urn:btih:onepiece1105",
+		Provider:  "Erai One Piece",
+		Published: time.Now(),
+	}}}
+	mapping := &fakeMappingRepo{overrides: map[string]domain.MappingOverride{}}
+	catalog := &fakeCatalogRepo{}
+	service := &sync.Service{
+		Feeds:   &fakeFeedRepo{feeds: feeds},
+		Mapping: mapping,
+		Catalog: catalog,
+		Reader:  reader,
+		TMDB:    nil,
+		Guard:   &sync.Guard{},
+	}
+
+	key, ep, _ := sync.NormalizeTitle("[Magnet] One Piece - 1105 (Multi) [SD][us][br][mx][es][sa][fr][de][it][ru][Airing]")
+	if key != "one piece - 1105" || ep != 0 {
+		t.Fatalf("unexpected normalization: key=%q ep=%d", key, ep)
+	}
+
+	res := service.Run(context.Background())
+	if len(res.Errors) > 0 {
+		t.Fatalf("unexpected errors: %v", res.Errors)
+	}
+	if res.Processed != 1 {
+		t.Fatalf("expected processed 1, got %d (unmatched=%d catalog=%d)", res.Processed, len(mapping.unmatched), len(catalog.items))
+	}
+	anime, found, _ := catalog.GetByTMDBSeason(context.Background(), 37854, 1)
+		if !found {
+			t.Fatalf("expected one piece to be mapped by generic override")
+		}
+	foundEpisode := false
+	for _, ep := range anime.Episodes {
+		if ep.Number == 1105 {
+			foundEpisode = true
+			break
+		}
+	}
+	if !foundEpisode {
+		t.Fatalf("expected episode 1105 to be added")
+	}
+	if len(mapping.unmatched) != 0 {
+		t.Fatalf("expected no unmatched entries, got %d", len(mapping.unmatched))
+	}
+}
+
+func TestSyncRunIgnoresOnePieceSpecialsAndBatches(t *testing.T) {
+	feeds := []domain.Feed{{ID: "f1", Name: "Erai One Piece", URL: "http://example", Type: domain.FeedTypeRSS, Enabled: true}}
+	reader := &fakeFeedReader{items: []ports.ReleaseItem{
+		{
+			Title:     "[Magnet] One Piece - 3D2Y [SD][us][br][mx][Movie or Special Episode]",
+			Link:      "magnet:?xt=urn:btih:onepiece3d2y",
+			Provider:  "Erai One Piece",
+			Published: time.Now(),
+		},
+		{
+			Title:     "[Magnet] One Piece - 0892 ~ 1089 [SD][us][br][mx][es][sa][fr][de][it][ru][Batch]",
+			Link:      "magnet:?xt=urn:btih:onepiecebatch",
+			Provider:  "Erai One Piece",
+			Published: time.Now(),
+		},
+	}}
+	mapping := &fakeMappingRepo{overrides: map[string]domain.MappingOverride{}}
+	catalog := &fakeCatalogRepo{}
+	service := &sync.Service{
+		Feeds:   &fakeFeedRepo{feeds: feeds},
+		Mapping: mapping,
+		Catalog: catalog,
+		Reader:  reader,
+		TMDB:    nil,
+		Guard:   &sync.Guard{},
+	}
+
+	res := service.Run(context.Background())
+	if len(res.Errors) > 0 {
+		t.Fatalf("unexpected errors: %v", res.Errors)
+	}
+	if res.Processed != 0 {
+		t.Fatalf("expected processed 0, got %d", res.Processed)
+	}
+	if len(mapping.unmatched) != 0 {
+		t.Fatalf("expected no unmatched entries, got %d", len(mapping.unmatched))
 	}
 }
 
