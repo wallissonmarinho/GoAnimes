@@ -213,3 +213,10 @@ func TestNormalizeTitle_onePieceMagnetStyleEpisode(t *testing.T) {
 	require.Equal(t, 0, ep)
 	require.Equal(t, "", quality)
 }
+
+func TestExtractSeasonHint(t *testing.T) {
+	require.Equal(t, 2, sync.ExtractSeasonHint("[ToonsHub] Mission Yozakura Family S02E02 1080p DSNP WEB-DL AAC2.0 H.264"))
+	require.Equal(t, 2, sync.ExtractSeasonHint("Show Name Season 2 - 03 1080p"))
+	require.Equal(t, 2, sync.ExtractSeasonHint("Show Name S2 - 04 1080p"))
+	require.Equal(t, 0, sync.ExtractSeasonHint("[Magnet] One Piece - 1105 (Multi) [Airing]"))
+}

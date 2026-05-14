@@ -256,6 +256,10 @@ func (s *Service) resolveMapping(
 			return 0, 0, 0, false, nil
 		}
 	}
+	if norm.Season > 0 && norm.Season != 1 {
+		s.addUnmatched(ctx, Result{}, norm, item)
+		return 0, 0, 0, false, nil
+	}
 	return search.TMDBID, 1, mappedEpisode, true, nil
 }
 
@@ -733,6 +737,7 @@ func normalizeItem(item ports.ReleaseItem) NormalizedRelease {
 	return NormalizedRelease{
 		RSSNameKey: key,
 		Title:      item.Title,
+		Season:     ExtractSeasonHint(item.Title),
 		Episode:    ep,
 		Quality:    quality,
 		MagnetLink: magnet,

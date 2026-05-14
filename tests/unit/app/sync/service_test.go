@@ -290,6 +290,46 @@ func TestSyncRunAddsUnmatchedWhenAutomaticTMDBMatchLooksIncoherent(t *testing.T)
 	}
 }
 
+func TestSyncRunAddsUnmatchedWhenAutomaticTMDBMatchIgnoresExplicitSeasonHint(t *testing.T) {
+	reader := &fakeFeedReader{items: []ports.ReleaseItem{{
+		Title:     "[ToonsHub] Mission Yozakura Family S02E02 1080p DSNP WEB-DL AAC2.0 H.264",
+		Link:      "magnet:?xt=urn:btih:yozakura-s02e02",
+		Provider:  "nekobt ToonsHub",
+		Published: time.Now(),
+	}}}
+	mapping := &fakeMappingRepo{overrides: map[string]domain.MappingOverride{}}
+	catalog := &fakeCatalogRepo{}
+	service := &sync.Service{
+		Feeds:   &fakeFeedRepo{feeds: []domain.Feed{{ID: "f1", Name: "nekobt ToonsHub", URL: "http://example", Type: domain.FeedTypeRSS, Enabled: true}}},
+		Mapping: mapping,
+		Catalog: catalog,
+		Reader:  reader,
+		TMDB: &fakeTMDBClient{
+			searchResult: ports.TMDBSearchResult{TMDBID: 216467, Title: "Mission: Yozakura Family"},
+			found:        true,
+			details: ports.TMDBSeasonDetails{
+				Title:         "Mission: Yozakura Family",
+				OriginalTitle: "Mission: Yozakura Family",
+			},
+		},
+		Guard: &sync.Guard{},
+	}
+
+	res := service.Run(context.Background())
+	if len(res.Errors) != 0 {
+		t.Fatalf("unexpected errors: %v", res.Errors)
+	}
+	if res.Processed != 0 {
+		t.Fatalf("expected processed 0, got %d", res.Processed)
+	}
+	if len(mapping.unmatched) != 1 {
+		t.Fatalf("expected 1 unmatched, got %d", len(mapping.unmatched))
+	}
+	if len(catalog.items) != 0 {
+		t.Fatalf("expected no catalog writes, got %d", len(catalog.items))
+	}
+}
+
 func TestSyncRunMapsOnePieceEpisodesWithoutManualOverride(t *testing.T) {
 	feeds := []domain.Feed{{ID: "f1", Name: "Erai One Piece", URL: "http://example", Type: domain.FeedTypeRSS, Enabled: true}}
 	reader := &fakeFeedReader{items: []ports.ReleaseItem{{

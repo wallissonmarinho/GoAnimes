@@ -10,6 +10,9 @@ var (
 	tagRe          = regexp.MustCompile(`\[[^\]]+\]`)
 	parenRe        = regexp.MustCompile(`\([^\)]+\)`)
 	braceRe        = regexp.MustCompile(`\{[^\}]+\}`)
+	seasonEpisodeRe = regexp.MustCompile(`(?i)\bs(\d{1,2})e\d{1,3}\b`)
+	seasonWordRe    = regexp.MustCompile(`(?i)\bseason\s+(\d{1,2})\b`)
+	shortSeasonRe   = regexp.MustCompile(`(?i)\bs(\d{1,2})\b`)
 	epRe           = regexp.MustCompile(`(?i)(?:s\d{1,2})?e(\d{1,3})\b|(?:ep|e)\s?(\d{1,3})\b`)
 	numDashRe      = regexp.MustCompile(`\s-\s(\d{1,3})\b`)
 	qualityBlockRe = regexp.MustCompile(`(?i)\[([^\]]*\b(?:480p|720p|1080p|2160p)\b[^\]]*)\]`)
@@ -47,6 +50,26 @@ func NormalizeTitle(raw string) (nameKey string, episode int, quality string) {
 	clean = strings.TrimSpace(clean)
 	nameKey = clean
 	return nameKey, episode, quality
+}
+
+func ExtractSeasonHint(raw string) int {
+	clean := strings.TrimSpace(raw)
+	if clean == "" {
+		return 0
+	}
+	clean = tagRe.ReplaceAllString(clean, " ")
+	clean = parenRe.ReplaceAllString(clean, " ")
+	clean = braceRe.ReplaceAllString(clean, " ")
+	if match := seasonEpisodeRe.FindStringSubmatch(clean); len(match) > 1 {
+		return atoi(match[1])
+	}
+	if match := seasonWordRe.FindStringSubmatch(clean); len(match) > 1 {
+		return atoi(match[1])
+	}
+	if match := shortSeasonRe.FindStringSubmatch(clean); len(match) > 1 {
+		return atoi(match[1])
+	}
+	return 0
 }
 
 func atoi(s string) int {

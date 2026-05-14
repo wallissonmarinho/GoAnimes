@@ -12,6 +12,7 @@ type Result struct {
 type NormalizedRelease struct {
 	RSSNameKey string
 	Title      string
+	Season     int
 	Episode    int
 	Quality    string
 	MagnetLink string
