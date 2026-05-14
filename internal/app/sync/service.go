@@ -267,6 +267,12 @@ func shouldIgnoreRelease(item ports.ReleaseItem, norm NormalizedRelease) bool {
 	if strings.Contains(raw, "movie or special episode") || strings.Contains(raw, "batch") {
 		return true
 	}
+	if strings.Contains(raw, "(recap)") || strings.Contains(raw, "(hevc)") || strings.Contains(raw, "[encoded]") {
+		return true
+	}
+	if strings.Contains(raw, " log - ") || strings.Contains(raw, " fan letter") || strings.Contains(raw, "dr. chopper no bouken karte") {
+		return true
+	}
 	return false
 }
 
