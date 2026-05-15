@@ -256,10 +256,7 @@ func (s *Service) resolveMapping(
 
 func shouldIgnoreRelease(item ports.ReleaseItem, norm NormalizedRelease) bool {
 	raw := strings.ToLower(strings.TrimSpace(item.Title))
-	if isReleaseWithoutEpisodeNoise(raw, norm) {
-		return true
-	}
-	return false
+	return isReleaseWithoutEpisodeNoise(raw, norm)
 }
 
 func isReleaseWithoutEpisodeNoise(rawTitle string, norm NormalizedRelease) bool {
