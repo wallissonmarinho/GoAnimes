@@ -209,8 +209,8 @@ func TestNormalizeTitle_handlesEdgeCases(t *testing.T) {
 
 func TestNormalizeTitle_onePieceMagnetStyleEpisode(t *testing.T) {
 	name, ep, quality := sync.NormalizeTitle("[Magnet] One Piece - 1105 (Multi) [SD][us][br][mx][es][sa][fr][de][it][ru][Airing]")
-	require.Equal(t, "one piece - 1105", name)
-	require.Equal(t, 0, ep)
+	require.Equal(t, "one piece", name)
+	require.Equal(t, 1105, ep)
 	require.Equal(t, "", quality)
 }
 

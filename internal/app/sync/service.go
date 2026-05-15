@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"regexp"
 	"strings"
 	"time"
 
@@ -25,8 +24,6 @@ type Service struct {
 }
 
 var tracer = otel.Tracer("goanimes/sync")
-
-var onePieceEpisodeKeyRe = regexp.MustCompile(`^one piece - (\d{1,4})$`)
 
 func (s *Service) Run(ctx context.Context) Result {
 	res := s.startResult()
@@ -201,9 +198,6 @@ func (s *Service) processItem(ctx context.Context, res Result, item ports.Releas
 }
 
 func (s *Service) isValidNormalized(norm NormalizedRelease) bool {
-	if _, _, _, ok := resolveBuiltInMapping(norm); ok {
-		return true
-	}
 	return norm.RSSNameKey != "" && norm.Episode > 0
 }
 
@@ -228,9 +222,6 @@ func (s *Service) resolveMapping(
 ) (tmdbID int, season int, mappedEpisode int, ok bool, err error) {
 	// Default mappedEpisode is the normalized episode
 	mappedEpisode = norm.Episode
-	if tmdbID, season, mappedEpisode, ok := resolveBuiltInMapping(norm); ok {
-		return tmdbID, season, mappedEpisode, true, nil
-	}
 	if matched {
 		// If override contains an episode offset, apply it
 		if override.EpisodeOffset > 0 {
@@ -264,31 +255,28 @@ func (s *Service) resolveMapping(
 }
 
 func shouldIgnoreRelease(item ports.ReleaseItem, norm NormalizedRelease) bool {
-	if !strings.EqualFold(strings.TrimSpace(item.Provider), "Erai One Piece") {
-		return false
-	}
 	raw := strings.ToLower(strings.TrimSpace(item.Title))
-	if strings.Contains(raw, "movie or special episode") || strings.Contains(raw, "batch") {
-		return true
-	}
-	if strings.Contains(raw, "(recap)") || strings.Contains(raw, "(hevc)") || strings.Contains(raw, "[encoded]") {
-		return true
-	}
-	if strings.Contains(raw, " log - ") || strings.Contains(raw, " fan letter") || strings.Contains(raw, "dr. chopper no bouken karte") {
+	if isReleaseWithoutEpisodeNoise(raw, norm) {
 		return true
 	}
 	return false
 }
 
-func resolveBuiltInMapping(norm NormalizedRelease) (tmdbID int, season int, mappedEpisode int, ok bool) {
-	matches := onePieceEpisodeKeyRe.FindStringSubmatch(strings.TrimSpace(norm.RSSNameKey))
-	if len(matches) > 1 {
-		episode := atoi(matches[1])
-		if episode > 0 {
-			return 37854, 1, episode, true
-		}
+func isReleaseWithoutEpisodeNoise(rawTitle string, norm NormalizedRelease) bool {
+	if strings.Contains(rawTitle, "movie or special episode") || strings.Contains(rawTitle, "batch") {
+		return true
 	}
-	return 0, 0, 0, false
+	if norm.Episode > 0 {
+		return false
+	}
+	if strings.Contains(rawTitle, "(recap)") || strings.Contains(rawTitle, "(hevc)") || strings.Contains(rawTitle, "[encoded]") {
+		return true
+	}
+	if norm.Season > 0 {
+		return true
+	}
+	// Generic movie-like releases often carry a year marker in the title but no episode.
+	return strings.Contains(rawTitle, "(19") || strings.Contains(rawTitle, "(20")
 }
 
 func (s *Service) addEpisodeSource(ctx context.Context, tmdbID, season, episode int, norm NormalizedRelease) error {

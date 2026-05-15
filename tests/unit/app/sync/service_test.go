@@ -345,12 +345,19 @@ func TestSyncRunMapsOnePieceEpisodesWithoutManualOverride(t *testing.T) {
 		Mapping: mapping,
 		Catalog: catalog,
 		Reader:  reader,
-		TMDB:    nil,
+		TMDB: &fakeTMDBClient{
+			searchResult: ports.TMDBSearchResult{TMDBID: 37854, Title: "One Piece"},
+			found:        true,
+			details: ports.TMDBSeasonDetails{
+				Title:         "One Piece",
+				OriginalTitle: "ワンピース",
+			},
+		},
 		Guard:   &sync.Guard{},
 	}
 
 	key, ep, _ := sync.NormalizeTitle("[Magnet] One Piece - 1105 (Multi) [SD][us][br][mx][es][sa][fr][de][it][ru][Airing]")
-	if key != "one piece - 1105" || ep != 0 {
+	if key != "one piece" || ep != 1105 {
 		t.Fatalf("unexpected normalization: key=%q ep=%d", key, ep)
 	}
 
@@ -362,9 +369,9 @@ func TestSyncRunMapsOnePieceEpisodesWithoutManualOverride(t *testing.T) {
 		t.Fatalf("expected processed 1, got %d (unmatched=%d catalog=%d)", res.Processed, len(mapping.unmatched), len(catalog.items))
 	}
 	anime, found, _ := catalog.GetByTMDBSeason(context.Background(), 37854, 1)
-		if !found {
-			t.Fatalf("expected one piece to be mapped by generic override")
-		}
+	if !found {
+		t.Fatalf("expected one piece to be mapped by generic TMDB resolution")
+	}
 	foundEpisode := false
 	for _, ep := range anime.Episodes {
 		if ep.Number == 1105 {
@@ -416,6 +423,48 @@ func TestSyncRunIgnoresOnePieceSpecialsAndBatches(t *testing.T) {
 	}
 	if len(mapping.unmatched) != 0 {
 		t.Fatalf("expected no unmatched entries, got %d", len(mapping.unmatched))
+	}
+}
+
+func TestSyncRunIgnoresToonsHubSeasonPacksWithoutEpisode(t *testing.T) {
+	feeds := []domain.Feed{{ID: "f1", Name: "nekobt ToonsHub", URL: "http://example", Type: domain.FeedTypeRSS, Enabled: true}}
+	reader := &fakeFeedReader{items: []ports.ReleaseItem{
+		{
+			Title:     "[ToonsHub] Medalist S02 1080p DSNP WEB-DL MULTi AAC2.0 H.264",
+			Link:      "magnet:?xt=urn:btih:medalists02",
+			Provider:  "nekobt ToonsHub",
+			Published: time.Now(),
+		},
+		{
+			Title:     "[ToonsHub] Cosmic Princess Kaguya (2026) REPACK 1080p NF WEB-DL DUAL DDP5.1 H.264",
+			Link:      "magnet:?xt=urn:btih:kaguya2026",
+			Provider:  "nekobt ToonsHub",
+			Published: time.Now(),
+		},
+	}}
+	mapping := &fakeMappingRepo{overrides: map[string]domain.MappingOverride{}}
+	catalog := &fakeCatalogRepo{}
+	service := &sync.Service{
+		Feeds:   &fakeFeedRepo{feeds: feeds},
+		Mapping: mapping,
+		Catalog: catalog,
+		Reader:  reader,
+		TMDB:    nil,
+		Guard:   &sync.Guard{},
+	}
+
+	res := service.Run(context.Background())
+	if len(res.Errors) > 0 {
+		t.Fatalf("unexpected errors: %v", res.Errors)
+	}
+	if res.Processed != 0 {
+		t.Fatalf("expected processed 0, got %d", res.Processed)
+	}
+	if len(mapping.unmatched) != 0 {
+		t.Fatalf("expected no unmatched entries, got %d", len(mapping.unmatched))
+	}
+	if len(catalog.items) != 0 {
+		t.Fatalf("expected no catalog writes, got %d", len(catalog.items))
 	}
 }
 

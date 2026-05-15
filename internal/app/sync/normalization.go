@@ -14,7 +14,7 @@ var (
 	seasonWordRe    = regexp.MustCompile(`(?i)\bseason\s+(\d{1,2})\b`)
 	shortSeasonRe   = regexp.MustCompile(`(?i)\bs(\d{1,2})\b`)
 	epRe           = regexp.MustCompile(`(?i)(?:s\d{1,2})?e(\d{1,3})\b|(?:ep|e)\s?(\d{1,3})\b`)
-	numDashRe      = regexp.MustCompile(`\s-\s(\d{1,3})\b`)
+	numDashRe      = regexp.MustCompile(`\s-\s(\d{1,4})\b`)
 	qualityBlockRe = regexp.MustCompile(`(?i)\[([^\]]*\b(?:480p|720p|1080p|2160p)\b[^\]]*)\]`)
 	qualityRe      = regexp.MustCompile(`(?i)\b(?:480p|720p|1080p|2160p)\b`)
 	noiseTokenRe   = regexp.MustCompile(`(?i)\b(?:web[\s-]?dl|web[\s-]?rip|webrip|bluray|bdrip|hevc|x265|x264|h\.?264|h\.?265|avc|aac\d?(?:\.\d)?|eac3|ddp\d(?:\.\d)?|multi(?:-audio|-subs)?|dual(?:-audio)?|repack|end|finale|uncensored|encoded|more|nf|cr|dsnp|amzn|iq|tver|bili|viki|adn)\b`)
