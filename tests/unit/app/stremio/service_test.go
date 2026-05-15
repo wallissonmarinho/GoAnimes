@@ -416,5 +416,47 @@ func TestCatalogMostPopularUsesTMDBPopularityFirst(t *testing.T) {
 	require.Equal(t, "More Popular", metas[0]["name"])
 }
 
+func TestCatalogDedupesByTMDBIDAfterSorting(t *testing.T) {
+	now := time.Now().UTC()
+	today := now.Format("2006-01-02")
+	yesterday := now.Add(-24 * time.Hour).Format("2006-01-02")
+	service := &stremio.Service{
+		Repo: &fakeCatalogRepo{
+			list: []domain.Anime{
+				{
+					TMDBID:        86031,
+					SeasonNumber:  1,
+					Title:         "Dr. Stone",
+					Status:        "current",
+					LastEpisodeAt: yesterday,
+				},
+				{
+					TMDBID:        86031,
+					SeasonNumber:  4,
+					Title:         "Dr. Stone",
+					Status:        "current",
+					LastEpisodeAt: yesterday,
+					NextEpisodeAt: today,
+					UpdatedAt:     now,
+				},
+				{
+					TMDBID:        12345,
+					SeasonNumber:  1,
+					Title:         "Another Show",
+					Status:        "current",
+					LastEpisodeAt: yesterday,
+				},
+			},
+		},
+	}
+
+	metas, err := service.Catalog(context.Background(), stremio.CatalogIDTopAiring, nil, 20, 0)
+	require.NoError(t, err)
+	require.Len(t, metas, 2)
+	require.Equal(t, "Dr. Stone", metas[0]["name"])
+	require.Equal(t, "tmdb:86031:4", metas[0]["id"])
+	require.Equal(t, "Another Show", metas[1]["name"])
+}
+
 var _ ports.CatalogRepository = (*fakeCatalogRepo)(nil)
 var _ ports.TMDBClient = (*fakeTMDBClient)(nil)

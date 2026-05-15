@@ -135,6 +135,7 @@ func (s *Service) loadSortedCatalog(ctx context.Context, extras map[string]strin
 	sort.SliceStable(animes, func(i, j int) bool {
 		return less(animes[i], animes[j])
 	})
+	animes = dedupeCatalogAnimes(animes)
 	return paginateAnimes(animes, limit, skip), nil
 }
 
@@ -160,6 +161,22 @@ func paginateAnimes(animes []domain.Anime, limit, skip int) []domain.Anime {
 		end = len(animes)
 	}
 	return animes[skip:end]
+}
+
+func dedupeCatalogAnimes(animes []domain.Anime) []domain.Anime {
+	if len(animes) < 2 {
+		return animes
+	}
+	seen := make(map[int]struct{}, len(animes))
+	out := make([]domain.Anime, 0, len(animes))
+	for _, anime := range animes {
+		if _, ok := seen[anime.TMDBID]; ok {
+			continue
+		}
+		seen[anime.TMDBID] = struct{}{}
+		out = append(out, anime)
+	}
+	return out
 }
 
 func filterCurrentAnime(anime domain.Anime) bool {
