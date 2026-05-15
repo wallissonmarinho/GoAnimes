@@ -294,7 +294,7 @@ func (s *Service) enrichEpisodeDetails(ctx context.Context, tmdbID, season, epis
 		return nil // Non-blocking error, continue on TMDB failure
 	}
 	// Update episode with TMDB details
-	return s.Catalog.UpdateEpisodeDetails(ctx, tmdbID, season, episodeNum, episodeDetails.Title, episodeDetails.Overview, episodeDetails.StillPath)
+	return s.Catalog.UpdateEpisodeDetails(ctx, tmdbID, season, episodeNum, episodeDetails.AirDate, episodeDetails.Title, episodeDetails.Overview, episodeDetails.StillPath)
 }
 
 func (s *Service) ensureSeason(ctx context.Context, tmdbID, season int, norm NormalizedRelease) error {

@@ -33,6 +33,7 @@ type animeDoc struct {
 
 type episodeDoc struct {
 	Number    int         `bson:"number"`
+	AirDate   string      `bson:"air_date,omitempty"`
 	Title     string      `bson:"title"`
 	Overview  string      `bson:"overview"`
 	StillPath string      `bson:"still_path"`

@@ -34,6 +34,7 @@ type TMDBSeasonDetails struct {
 }
 
 type TMDBEpisodeDetails struct {
+	AirDate   string
 	Title     string
 	Overview  string
 	StillPath string

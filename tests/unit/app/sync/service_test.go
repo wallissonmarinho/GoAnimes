@@ -108,7 +108,7 @@ func (f *fakeCatalogRepo) AddEpisodeSource(ctx context.Context, tmdbID, season, 
 	return added, nil
 }
 
-func (f *fakeCatalogRepo) UpdateEpisodeDetails(ctx context.Context, tmdbID, season, episode int, title, overview, stillPath string) error {
+func (f *fakeCatalogRepo) UpdateEpisodeDetails(ctx context.Context, tmdbID, season, episode int, airDate, title, overview, stillPath string) error {
 	if f.items == nil {
 		return nil
 	}
@@ -119,6 +119,7 @@ func (f *fakeCatalogRepo) UpdateEpisodeDetails(ctx context.Context, tmdbID, seas
 	}
 	for i := range anime.Episodes {
 		if anime.Episodes[i].Number == episode {
+			anime.Episodes[i].AirDate = airDate
 			anime.Episodes[i].Title = title
 			anime.Episodes[i].Overview = overview
 			anime.Episodes[i].StillPath = stillPath
@@ -135,6 +136,19 @@ func (f *fakeCatalogRepo) GetByTMDBSeason(ctx context.Context, tmdbID, season in
 	}
 	anime, ok := f.items[catalogKey(tmdbID, season)]
 	return anime, ok, nil
+}
+
+func (f *fakeCatalogRepo) ListByTMDBID(ctx context.Context, tmdbID int) ([]domain.Anime, error) {
+	out := []domain.Anime{}
+	if f.items == nil {
+		return out, nil
+	}
+	for _, anime := range f.items {
+		if anime.TMDBID == tmdbID {
+			out = append(out, anime)
+		}
+	}
+	return out, nil
 }
 
 func (f *fakeCatalogRepo) ListByGenre(ctx context.Context, genre string, limit, skip int) ([]domain.Anime, error) {

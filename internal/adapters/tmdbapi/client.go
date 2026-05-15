@@ -348,6 +348,7 @@ func (c *Client) GetEpisodeDetails(ctx context.Context, tmdbID, season, episode 
 	}
 
 	return ports.TMDBEpisodeDetails{
+		AirDate:   strings.TrimSpace(localized.AirDate),
 		Title:     title,
 		Overview:  overview,
 		StillPath: imageURL(still),
@@ -362,6 +363,7 @@ type tmdbEpisodePayload struct {
 	Name     string `json:"name"`
 	Overview string `json:"overview"`
 	Still    string `json:"still_path"`
+	AirDate  string `json:"air_date"`
 	Runtime  *int   `json:"runtime"`
 }
 

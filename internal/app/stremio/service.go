@@ -88,7 +88,7 @@ func (s *Service) Catalog(ctx context.Context, catalogID string, extras map[stri
 	metas := make([]map[string]any, 0, len(animes))
 	for _, anime := range animes {
 		metas = append(metas, map[string]any{
-			"id":          domain.SeriesStremioID(anime.TMDBID, anime.SeasonNumber),
+			"id":          domain.AggregateSeriesStremioID(anime.TMDBID),
 			"type":        StremioType,
 			"name":        anime.Title,
 			"poster":      anime.PosterPath,
@@ -337,6 +337,9 @@ func (s *Service) Meta(ctx context.Context, id string) (map[string]any, bool, er
 	if !ok {
 		return nil, false, nil
 	}
+	if season == 0 {
+		return s.aggregateMeta(ctx, tmdbID)
+	}
 	anime, found, err := s.Repo.GetByTMDBSeason(ctx, tmdbID, season)
 	if err != nil || !found {
 		if err != nil {
@@ -368,7 +371,7 @@ func (s *Service) Meta(ctx context.Context, id string) (map[string]any, bool, er
 	for _, ep := range anime.Episodes {
 		video := map[string]any{
 			"id":       domain.EpisodeStremioID(anime.TMDBID, anime.SeasonNumber, ep.Number),
-			"released": ep.AddedAt.Format(time.RFC3339),
+			"released": episodeReleasedAt(ep),
 			"season":   anime.SeasonNumber,
 			"episode":  ep.Number,
 		}
@@ -413,6 +416,104 @@ func (s *Service) Meta(ctx context.Context, id string) (map[string]any, bool, er
 		"videos":     videos,
 	}
 	return meta, true, nil
+}
+
+func (s *Service) aggregateMeta(ctx context.Context, tmdbID int) (map[string]any, bool, error) {
+	animes, err := s.Repo.ListByTMDBID(ctx, tmdbID)
+	if err != nil {
+		return nil, false, err
+	}
+	if len(animes) == 0 {
+		return nil, false, nil
+	}
+	sort.SliceStable(animes, func(i, j int) bool {
+		return animes[i].SeasonNumber < animes[j].SeasonNumber
+	})
+	primary := chooseAggregateMetaPrimary(animes)
+	videos := make([]map[string]any, 0)
+	for _, anime := range animes {
+		for _, ep := range anime.Episodes {
+			video := map[string]any{
+				"id":       domain.EpisodeStremioID(anime.TMDBID, anime.SeasonNumber, ep.Number),
+				"released": episodeReleasedAt(ep),
+				"season":   anime.SeasonNumber,
+				"episode":  ep.Number,
+			}
+			if strings.TrimSpace(ep.Title) != "" {
+				video["title"] = ep.Title
+			} else {
+				video["title"] = episodeTitle(ep.Number)
+			}
+			if strings.TrimSpace(ep.StillPath) != "" {
+				video["thumbnail"] = ep.StillPath
+			}
+			if strings.TrimSpace(ep.Overview) != "" {
+				video["overview"] = ep.Overview
+			}
+			videos = append(videos, video)
+		}
+	}
+	sort.SliceStable(videos, func(i, j int) bool {
+		aSeason, _ := videos[i]["season"].(int)
+		bSeason, _ := videos[j]["season"].(int)
+		if aSeason != bSeason {
+			return aSeason < bSeason
+		}
+		aEpisode, _ := videos[i]["episode"].(int)
+		bEpisode, _ := videos[j]["episode"].(int)
+		return aEpisode < bEpisode
+	})
+	meta := map[string]any{
+		"id":          domain.AggregateSeriesStremioID(primary.TMDBID),
+		"type":        StremioType,
+		"animeType":   animeTypeOrDefault(primary.AnimeType),
+		"name":        primary.Title,
+		"slug":        primary.Slug,
+		"aliases":     aliasesOrDefault(primary.Aliases, primary.Title),
+		"logo":        primary.LogoPath,
+		"poster":      primary.PosterPath,
+		"genres":      primary.Genres,
+		"releaseInfo": primary.ReleaseInfo,
+		"year":        yearOrDefault(primary.Year, primary.ReleaseInfo),
+		"status":      statusOrDefault(primary.Status),
+		"runtime":     primary.Runtime,
+		"description": func() string {
+			if strings.TrimSpace(primary.Overview) != "" {
+				return primary.Overview
+			}
+			return "Torrent releases with curated mapping."
+		}(),
+		"background": primary.BackdropPath,
+		"videos":     videos,
+	}
+	return meta, true, nil
+}
+
+func chooseAggregateMetaPrimary(animes []domain.Anime) domain.Anime {
+	if len(animes) == 0 {
+		return domain.Anime{}
+	}
+	best := animes[0]
+	for _, anime := range animes[1:] {
+		if anime.SeasonNumber > best.SeasonNumber && strings.EqualFold(strings.TrimSpace(anime.Status), "current") {
+			best = anime
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(best.Status), "current") {
+			continue
+		}
+		if anime.SeasonNumber > best.SeasonNumber {
+			best = anime
+		}
+	}
+	return best
+}
+
+func episodeReleasedAt(ep domain.Episode) string {
+	if airDate := parseDate(strings.TrimSpace(ep.AirDate)); !airDate.IsZero() {
+		return airDate.Format(time.RFC3339)
+	}
+	return ep.AddedAt.Format(time.RFC3339)
 }
 
 func needsMetaDetails(anime domain.Anime) bool {

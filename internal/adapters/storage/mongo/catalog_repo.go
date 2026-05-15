@@ -119,7 +119,7 @@ func (r *CatalogRepository) AddEpisodeSource(ctx context.Context, tmdbID, season
 	return added, err
 }
 
-func (r *CatalogRepository) UpdateEpisodeDetails(ctx context.Context, tmdbID, season, episode int, title, overview, stillPath string) error {
+func (r *CatalogRepository) UpdateEpisodeDetails(ctx context.Context, tmdbID, season, episode int, airDate, title, overview, stillPath string) error {
 	if tmdbID <= 0 || season <= 0 || episode <= 0 {
 		return errors.New("invalid episode identity")
 	}
@@ -130,6 +130,7 @@ func (r *CatalogRepository) UpdateEpisodeDetails(ctx context.Context, tmdbID, se
 	}
 	update := bson.M{
 		"$set": bson.M{
+			"episodes.$.air_date":    airDate,
 			"episodes.$.title":      title,
 			"episodes.$.overview":   overview,
 			"episodes.$.still_path": stillPath,
@@ -150,6 +151,25 @@ func (r *CatalogRepository) GetByTMDBSeason(ctx context.Context, tmdbID, season 
 		return domain.Anime{}, false, err
 	}
 	return fromAnimeDoc(doc), true, nil
+}
+
+func (r *CatalogRepository) ListByTMDBID(ctx context.Context, tmdbID int) ([]domain.Anime, error) {
+	cur, err := r.store.Animes.Find(ctx, bson.M{"tmdb_id": tmdbID}, options.Find().SetSort(bson.D{
+		{Key: "season_number", Value: 1},
+	}))
+	if err != nil {
+		return nil, err
+	}
+	defer cur.Close(ctx)
+	out := []domain.Anime{}
+	for cur.Next(ctx) {
+		var doc animeDoc
+		if err := cur.Decode(&doc); err != nil {
+			return nil, err
+		}
+		out = append(out, fromAnimeDoc(doc))
+	}
+	return out, cur.Err()
 }
 
 func (r *CatalogRepository) ListByGenre(ctx context.Context, genre string, limit, skip int) ([]domain.Anime, error) {
@@ -238,7 +258,7 @@ func toAnimeDoc(a domain.Anime) animeDoc {
 		for _, src := range ep.Sources {
 			sources = append(sources, sourceDoc{Provider: src.Provider, MagnetLink: src.MagnetLink, Quality: src.Quality})
 		}
-		eps = append(eps, episodeDoc{Number: ep.Number, Title: ep.Title, Overview: ep.Overview, StillPath: ep.StillPath, Sources: sources, AddedAt: ep.AddedAt})
+		eps = append(eps, episodeDoc{Number: ep.Number, AirDate: ep.AirDate, Title: ep.Title, Overview: ep.Overview, StillPath: ep.StillPath, Sources: sources, AddedAt: ep.AddedAt})
 	}
 	return animeDoc{
 		ID:            a.ID,
@@ -277,7 +297,7 @@ func fromAnimeDoc(doc animeDoc) domain.Anime {
 		for _, src := range ep.Sources {
 			sources = append(sources, domain.Source{Provider: src.Provider, MagnetLink: src.MagnetLink, Quality: src.Quality})
 		}
-		eps = append(eps, domain.Episode{Number: ep.Number, Title: ep.Title, Overview: ep.Overview, StillPath: ep.StillPath, Sources: sources, AddedAt: ep.AddedAt})
+		eps = append(eps, domain.Episode{Number: ep.Number, AirDate: ep.AirDate, Title: ep.Title, Overview: ep.Overview, StillPath: ep.StillPath, Sources: sources, AddedAt: ep.AddedAt})
 	}
 	return domain.Anime{
 		ID:            doc.ID,

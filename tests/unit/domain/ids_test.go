@@ -29,8 +29,10 @@ func TestParseSeriesID(t *testing.T) {
 	require.False(t, ok)
 
 	// Missing parts
-	_, _, ok = domain.ParseSeriesID("tmdb:123")
-	require.False(t, ok)
+	tmdbID, season, ok = domain.ParseSeriesID("tmdb:123")
+	require.True(t, ok)
+	require.Equal(t, 123, tmdbID)
+	require.Equal(t, 0, season)
 }
 
 func TestParseEpisodeID(t *testing.T) {
@@ -73,6 +75,11 @@ func TestSeriesStremioID(t *testing.T) {
 	// Season 0
 	id = domain.SeriesStremioID(789, 0)
 	require.Equal(t, "tmdb:789:0", id)
+}
+
+func TestAggregateSeriesStremioID(t *testing.T) {
+	id := domain.AggregateSeriesStremioID(123)
+	require.Equal(t, "tmdb:123", id)
 }
 
 func TestEpisodeStremioID(t *testing.T) {

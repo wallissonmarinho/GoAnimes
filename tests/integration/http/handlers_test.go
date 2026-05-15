@@ -31,7 +31,7 @@ func (m *mockCatalogRepository) AddEpisodeSource(ctx context.Context, tmdbID, se
 	return true, nil
 }
 
-func (m *mockCatalogRepository) UpdateEpisodeDetails(ctx context.Context, tmdbID, season, episode int, title, overview, stillPath string) error {
+func (m *mockCatalogRepository) UpdateEpisodeDetails(ctx context.Context, tmdbID, season, episode int, airDate, title, overview, stillPath string) error {
 	return nil
 }
 
@@ -40,6 +40,16 @@ func (m *mockCatalogRepository) GetByTMDBSeason(ctx context.Context, tmdbID, sea
 		return m.animes[0], true, nil
 	}
 	return domain.Anime{}, false, nil
+}
+
+func (m *mockCatalogRepository) ListByTMDBID(ctx context.Context, tmdbID int) ([]domain.Anime, error) {
+	out := make([]domain.Anime, 0, len(m.animes))
+	for _, anime := range m.animes {
+		if anime.TMDBID == tmdbID {
+			out = append(out, anime)
+		}
+	}
+	return out, nil
 }
 
 func (m *mockCatalogRepository) ListByGenre(ctx context.Context, genre string, limit, skip int) ([]domain.Anime, error) {

@@ -44,6 +44,7 @@ type Anime struct {
 
 type Episode struct {
 	Number    int
+	AirDate   string
 	Title     string
 	Overview  string
 	StillPath string

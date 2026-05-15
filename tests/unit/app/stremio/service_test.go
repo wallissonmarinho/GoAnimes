@@ -32,11 +32,23 @@ func (f *fakeCatalogRepo) UpsertSeason(ctx context.Context, anime domain.Anime) 
 func (f *fakeCatalogRepo) AddEpisodeSource(ctx context.Context, tmdbID, season, episode int, src domain.Source) (bool, error) {
 	return false, nil
 }
-func (f *fakeCatalogRepo) UpdateEpisodeDetails(ctx context.Context, tmdbID, season, episode int, title, overview, stillPath string) error {
+func (f *fakeCatalogRepo) UpdateEpisodeDetails(ctx context.Context, tmdbID, season, episode int, airDate, title, overview, stillPath string) error {
 	return nil
 }
 func (f *fakeCatalogRepo) GetByTMDBSeason(ctx context.Context, tmdbID, season int) (domain.Anime, bool, error) {
 	return f.anime, true, nil
+}
+func (f *fakeCatalogRepo) ListByTMDBID(ctx context.Context, tmdbID int) ([]domain.Anime, error) {
+	out := []domain.Anime{}
+	if f.anime.TMDBID == tmdbID {
+		out = append(out, f.anime)
+	}
+	for _, anime := range f.list {
+		if anime.TMDBID == tmdbID {
+			out = append(out, anime)
+		}
+	}
+	return out, nil
 }
 func (f *fakeCatalogRepo) ListByGenre(ctx context.Context, genre string, limit, skip int) ([]domain.Anime, error) {
 	out := make([]domain.Anime, 0, len(f.list))
@@ -247,6 +259,61 @@ func TestMetaFallsBackToTMDBDetailsAndPersists(t *testing.T) {
 	require.Equal(t, 5, repo.upsertAnime.NextEpisodeNo)
 }
 
+func TestAggregateMetaMergesSeasonsUnderSingleSeriesID(t *testing.T) {
+	service := &stremio.Service{
+		Repo: &fakeCatalogRepo{
+			list: []domain.Anime{
+				{
+					TMDBID:       37854,
+					SeasonNumber: 21,
+					Title:        "One Piece",
+					Slug:         "one-piece",
+					ReleaseInfo:  "País de Wano",
+					Year:         "2019",
+					Status:       "ended",
+					PosterPath:   "poster21",
+					BackdropPath: "backdrop",
+					Episodes: []domain.Episode{
+						{Number: 892, AirDate: "2019-07-07", Title: "Wano", StillPath: "thumb892"},
+					},
+				},
+				{
+					TMDBID:       37854,
+					SeasonNumber: 23,
+					Title:        "One Piece",
+					Slug:         "one-piece",
+					ReleaseInfo:  "Elbaph",
+					Year:         "2026",
+					Status:       "current",
+					PosterPath:   "poster23",
+					BackdropPath: "backdrop",
+					Episodes: []domain.Episode{
+						{Number: 1156, AirDate: "2026-04-05", Title: "Elbaph", StillPath: "thumb1156"},
+					},
+				},
+			},
+		},
+	}
+
+	meta, found, err := service.Meta(context.Background(), "tmdb:37854")
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, "tmdb:37854", meta["id"])
+	require.Equal(t, "One Piece", meta["name"])
+	require.Equal(t, "Elbaph", meta["releaseInfo"])
+	require.Equal(t, "2026", meta["year"])
+	require.Equal(t, "current", meta["status"])
+	require.Equal(t, "poster23", meta["poster"])
+
+	videos, ok := meta["videos"].([]map[string]any)
+	require.True(t, ok)
+	require.Len(t, videos, 2)
+	require.Equal(t, 21, videos[0]["season"])
+	require.Equal(t, 892, videos[0]["episode"])
+	require.Equal(t, 23, videos[1]["season"])
+	require.Equal(t, 1156, videos[1]["episode"])
+}
+
 func TestManifestPublishesOnlyNewCatalogs(t *testing.T) {
 	service := &stremio.Service{Repo: &fakeCatalogRepo{}}
 
@@ -454,7 +521,7 @@ func TestCatalogDedupesByTMDBIDAfterSorting(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, metas, 2)
 	require.Equal(t, "Dr. Stone", metas[0]["name"])
-	require.Equal(t, "tmdb:86031:4", metas[0]["id"])
+	require.Equal(t, "tmdb:86031", metas[0]["id"])
 	require.Equal(t, "Another Show", metas[1]["name"])
 }
 
