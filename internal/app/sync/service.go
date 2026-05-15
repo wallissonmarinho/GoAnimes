@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -178,6 +179,13 @@ func (s *Service) processItem(ctx context.Context, res Result, item ports.Releas
 	if !ok || tmdbID <= 0 || season <= 0 {
 		return res
 	}
+	season, err = s.resolveSeasonByEpisodeRange(ctx, tmdbID, season, mappedEpisode)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		res.Errors = append(res.Errors, err)
+		return res
+	}
 	addedErr := s.addEpisodeSource(ctx, tmdbID, season, mappedEpisode, norm)
 	if addedErr != nil {
 		span.RecordError(addedErr)
@@ -211,6 +219,55 @@ func (s *Service) addUnmatched(ctx context.Context, res Result, norm NormalizedR
 		Count:      1,
 	})
 	return res
+}
+
+func (s *Service) resolveSeasonByEpisodeRange(ctx context.Context, tmdbID, season, episode int) (int, error) {
+	if s == nil || s.Catalog == nil || tmdbID <= 0 || season <= 0 || episode <= 0 {
+		return season, nil
+	}
+	animes, err := s.Catalog.ListByTMDBID(ctx, tmdbID)
+	if err != nil || len(animes) == 0 {
+		return season, err
+	}
+	sort.SliceStable(animes, func(i, j int) bool {
+		return animes[i].SeasonNumber < animes[j].SeasonNumber
+	})
+	for _, anime := range animes {
+		minEp, maxEp, ok := episodeBounds(anime)
+		if !ok {
+			continue
+		}
+		if episode >= minEp && episode <= maxEp {
+			return anime.SeasonNumber, nil
+		}
+	}
+	// If the requested episode is beyond the latest saved episode, keep appending to the
+	// most recent current season when it is the active frontier for that TMDB series.
+	last := animes[len(animes)-1]
+	if minEp, maxEp, ok := episodeBounds(last); ok {
+		_ = minEp
+		if episode > maxEp && strings.EqualFold(strings.TrimSpace(last.Status), "current") {
+			return last.SeasonNumber, nil
+		}
+	}
+	return season, nil
+}
+
+func episodeBounds(anime domain.Anime) (int, int, bool) {
+	if len(anime.Episodes) == 0 {
+		return 0, 0, false
+	}
+	minEp := anime.Episodes[0].Number
+	maxEp := anime.Episodes[0].Number
+	for _, ep := range anime.Episodes[1:] {
+		if ep.Number < minEp {
+			minEp = ep.Number
+		}
+		if ep.Number > maxEp {
+			maxEp = ep.Number
+		}
+	}
+	return minEp, maxEp, true
 }
 
 func (s *Service) resolveMapping(

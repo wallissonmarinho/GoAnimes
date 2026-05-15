@@ -401,6 +401,73 @@ func TestSyncRunMapsOnePieceEpisodesWithoutManualOverride(t *testing.T) {
 	}
 }
 
+func TestSyncRunRoutesContinuousSeriesEpisodeToMatchingSavedSeason(t *testing.T) {
+	feeds := []domain.Feed{{ID: "f1", Name: "Erai One Piece", URL: "http://example", Type: domain.FeedTypeRSS, Enabled: true}}
+	reader := &fakeFeedReader{items: []ports.ReleaseItem{{
+		Title:     "[Magnet] One Piece - 1162 (Multi) [SD][us][br][mx][es][sa][fr][de][it][ru][Airing]",
+		Link:      "magnet:?xt=urn:btih:onepiece1162",
+		Provider:  "Erai One Piece",
+		Published: time.Now(),
+	}}}
+	mapping := &fakeMappingRepo{overrides: map[string]domain.MappingOverride{}}
+	catalog := &fakeCatalogRepo{
+		items: map[string]domain.Anime{
+			catalogKey(37854, 1): {
+				TMDBID: 37854, SeasonNumber: 1, Title: "One Piece", Status: "ended",
+				Episodes: []domain.Episode{{Number: 1}, {Number: 61}},
+			},
+			catalogKey(37854, 23): {
+				TMDBID: 37854, SeasonNumber: 23, Title: "One Piece", Status: "current",
+				Episodes: []domain.Episode{{Number: 1156}, {Number: 1161}},
+			},
+		},
+	}
+	service := &sync.Service{
+		Feeds:   &fakeFeedRepo{feeds: feeds},
+		Mapping: mapping,
+		Catalog: catalog,
+		Reader:  reader,
+		TMDB: &fakeTMDBClient{
+			searchResult: ports.TMDBSearchResult{TMDBID: 37854, Title: "One Piece"},
+			found:        true,
+			details: ports.TMDBSeasonDetails{
+				Title:         "One Piece",
+				OriginalTitle: "ワンピース",
+			},
+		},
+		Guard: &sync.Guard{},
+	}
+
+	res := service.Run(context.Background())
+	if len(res.Errors) > 0 {
+		t.Fatalf("unexpected errors: %v", res.Errors)
+	}
+	if res.Processed != 1 {
+		t.Fatalf("expected processed 1, got %d", res.Processed)
+	}
+	if anime, found, _ := catalog.GetByTMDBSeason(context.Background(), 37854, 23); !found {
+		t.Fatalf("expected season 23 to exist")
+	} else {
+		foundEpisode := false
+		for _, ep := range anime.Episodes {
+			if ep.Number == 1162 {
+				foundEpisode = true
+				break
+			}
+		}
+		if !foundEpisode {
+			t.Fatalf("expected episode 1162 to be added to season 23")
+		}
+	}
+	if anime, found, _ := catalog.GetByTMDBSeason(context.Background(), 37854, 1); found {
+		for _, ep := range anime.Episodes {
+			if ep.Number == 1162 {
+				t.Fatalf("did not expect episode 1162 in season 1")
+			}
+		}
+	}
+}
+
 func TestSyncRunIgnoresOnePieceSpecialsAndBatches(t *testing.T) {
 	feeds := []domain.Feed{{ID: "f1", Name: "Erai One Piece", URL: "http://example", Type: domain.FeedTypeRSS, Enabled: true}}
 	reader := &fakeFeedReader{items: []ports.ReleaseItem{
