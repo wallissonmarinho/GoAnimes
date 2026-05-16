@@ -211,7 +211,7 @@ func TestSyncRunWithOverride(t *testing.T) {
 		Published: time.Now(),
 	}}}
 	mapping := &fakeMappingRepo{overrides: map[string]domain.MappingOverride{
-		"honzuki no gekokujou": {TMDBID: 91768, Season: 4},
+		"honzuki no gekokujou": {TMDBID: 91768, Season: 2},
 	}}
 	catalog := &fakeCatalogRepo{}
 	service := &sync.Service{
@@ -230,7 +230,7 @@ func TestSyncRunWithOverride(t *testing.T) {
 	if res.Processed != 1 {
 		t.Fatalf("expected processed 1, got %d (unmatched=%d catalog=%d)", res.Processed, len(mapping.unmatched), len(catalog.items))
 	}
-	anime, found, _ := catalog.GetByTMDBSeason(context.Background(), 91768, 4)
+	anime, found, _ := catalog.GetByTMDBSeason(context.Background(), 91768, 2)
 	if !found {
 		t.Fatal("expected season to be upserted")
 	}

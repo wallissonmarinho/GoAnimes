@@ -233,11 +233,13 @@ func (s *Service) resolveSeasonByEpisodeRange(ctx context.Context, tmdbID, seaso
 		return animes[i].SeasonNumber < animes[j].SeasonNumber
 	})
 	for _, anime := range animes {
-		minEp, maxEp, ok := episodeBounds(anime)
-		if !ok {
+		if _, _, ok := episodeBounds(anime); !ok {
 			continue
 		}
-		if episode >= minEp && episode <= maxEp {
+		// Require an exact stored episode match before trusting a saved season.
+		// Using only the min/max range can misroute sparse catalogs where a season
+		// accidentally contains outlier episodes.
+		if containsEpisode(anime, episode) {
 			return anime.SeasonNumber, nil
 		}
 	}
@@ -268,6 +270,15 @@ func episodeBounds(anime domain.Anime) (int, int, bool) {
 		}
 	}
 	return minEp, maxEp, true
+}
+
+func containsEpisode(anime domain.Anime, episode int) bool {
+	for _, ep := range anime.Episodes {
+		if ep.Number == episode {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Service) resolveMapping(
