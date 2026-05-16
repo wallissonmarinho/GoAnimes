@@ -361,8 +361,9 @@ func (s *Service) enrichEpisodeDetails(ctx context.Context, tmdbID, season, epis
 	if err != nil {
 		return nil // Non-blocking error, continue on TMDB failure
 	}
+	title := sanitizeEpisodeTitle(episodeDetails.Title, episodeNum)
 	// Update episode with TMDB details
-	return s.Catalog.UpdateEpisodeDetails(ctx, tmdbID, season, episodeNum, episodeDetails.AirDate, episodeDetails.Title, episodeDetails.Overview, episodeDetails.StillPath)
+	return s.Catalog.UpdateEpisodeDetails(ctx, tmdbID, season, episodeNum, episodeDetails.AirDate, title, episodeDetails.Overview, episodeDetails.StillPath)
 }
 
 func (s *Service) ensureSeason(ctx context.Context, tmdbID, season int, norm NormalizedRelease) error {
@@ -614,6 +615,18 @@ func normalizeAnimeType(raw string) string {
 		return "TV"
 	}
 	return "TV"
+}
+
+func sanitizeEpisodeTitle(title string, episodeNum int) string {
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return ""
+	}
+	lowered := strings.ToLower(title)
+	if lowered == fmt.Sprintf("episode %d", episodeNum) || lowered == fmt.Sprintf("episódio %d", episodeNum) {
+		return ""
+	}
+	return title
 }
 
 func latestSavedEpisode(anime domain.Anime) (int, string, bool) {

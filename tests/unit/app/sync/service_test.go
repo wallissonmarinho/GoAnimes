@@ -722,6 +722,55 @@ func TestSyncForceDoesNotAdvanceLastBeyondSavedEpisodes(t *testing.T) {
 	}
 }
 
+func TestSyncRunSkipsGenericEpisodeTitleFromTMDB(t *testing.T) {
+	feeds := []domain.Feed{{ID: "f1", Name: "Erai", URL: "http://example", Type: domain.FeedTypeRSS, Enabled: true}}
+	reader := &fakeFeedReader{items: []ports.ReleaseItem{{
+		Title:     "[Erai] Honzuki no Gekokujou - 06 [br]",
+		Link:      "magnet:?xt=urn:btih:abc",
+		Provider:  "Erai",
+		Published: time.Now(),
+	}}}
+	mapping := &fakeMappingRepo{overrides: map[string]domain.MappingOverride{
+		"honzuki no gekokujou": {TMDBID: 91768, Season: 2},
+	}}
+	catalog := &fakeCatalogRepo{}
+	service := &sync.Service{
+		Feeds:   &fakeFeedRepo{feeds: feeds},
+		Mapping: mapping,
+		Catalog: catalog,
+		Reader:  reader,
+		TMDB: &fakeTMDBClient{
+			details: ports.TMDBSeasonDetails{Title: "Ascendance of a Bookworm"},
+			episodeDetails: ports.TMDBEpisodeDetails{
+				Title:     "Episódio 6",
+				Overview:  "",
+				StillPath: "/still.jpg",
+				AirDate:   "2026-05-16",
+			},
+		},
+		Guard: &sync.Guard{},
+	}
+
+	res := service.Run(context.Background())
+	if len(res.Errors) != 0 {
+		t.Fatalf("unexpected errors: %v", res.Errors)
+	}
+
+	anime, found, _ := catalog.GetByTMDBSeason(context.Background(), 91768, 2)
+	if !found {
+		t.Fatal("expected anime to be present")
+	}
+	if len(anime.Episodes) != 1 {
+		t.Fatalf("expected 1 episode, got %d", len(anime.Episodes))
+	}
+	if anime.Episodes[0].Title != "" {
+		t.Fatalf("expected generic TMDB title to be skipped, got %q", anime.Episodes[0].Title)
+	}
+	if anime.Episodes[0].StillPath != "/still.jpg" {
+		t.Fatalf("expected still path to be kept, got %q", anime.Episodes[0].StillPath)
+	}
+}
+
 func catalogKey(tmdbID, season int) string {
 	return fmt.Sprintf("%d:%d", tmdbID, season)
 }
