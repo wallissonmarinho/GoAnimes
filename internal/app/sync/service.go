@@ -561,12 +561,18 @@ func (s *Service) refreshAnimeDetails(ctx context.Context, anime domain.Anime) (
 		anime.BackdropPath = backdrop
 		changed = true
 	}
-	if lastAt := strings.TrimSpace(details.LastEpisodeAirDate); lastAt != "" && strings.TrimSpace(anime.LastEpisodeAt) != lastAt {
-		anime.LastEpisodeAt = lastAt
+	lastEpisodeNo := details.LastEpisodeNumber
+	lastEpisodeAt := strings.TrimSpace(details.LastEpisodeAirDate)
+	if savedNo, savedAt, ok := latestSavedEpisode(anime); ok {
+		lastEpisodeNo = savedNo
+		lastEpisodeAt = savedAt
+	}
+	if strings.TrimSpace(anime.LastEpisodeAt) != lastEpisodeAt {
+		anime.LastEpisodeAt = lastEpisodeAt
 		changed = true
 	}
-	if details.LastEpisodeNumber > 0 && anime.LastEpisodeNo != details.LastEpisodeNumber {
-		anime.LastEpisodeNo = details.LastEpisodeNumber
+	if anime.LastEpisodeNo != lastEpisodeNo {
+		anime.LastEpisodeNo = lastEpisodeNo
 		changed = true
 	}
 	nextAt := strings.TrimSpace(details.NextEpisodeAirDate)
@@ -608,6 +614,28 @@ func normalizeAnimeType(raw string) string {
 		return "TV"
 	}
 	return "TV"
+}
+
+func latestSavedEpisode(anime domain.Anime) (int, string, bool) {
+	if len(anime.Episodes) == 0 {
+		return 0, "", false
+	}
+	var (
+		bestNo int
+		bestAt string
+		ok     bool
+	)
+	for _, episode := range anime.Episodes {
+		if episode.Number <= 0 {
+			continue
+		}
+		if !ok || episode.Number > bestNo {
+			bestNo = episode.Number
+			bestAt = strings.TrimSpace(episode.AirDate)
+			ok = true
+		}
+	}
+	return bestNo, bestAt, ok
 }
 
 func buildAliases(values ...string) []string {

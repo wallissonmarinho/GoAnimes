@@ -649,6 +649,79 @@ func TestSyncForceBackfillsMissingAnimeDetails(t *testing.T) {
 	}
 }
 
+func TestSyncForceDoesNotAdvanceLastBeyondSavedEpisodes(t *testing.T) {
+	catalog := &fakeCatalogRepo{
+		listAll: []domain.Anime{{
+			TMDBID:       91768,
+			SeasonNumber: 2,
+			Title:        "Ascendance of a Bookworm",
+			Status:       "current",
+			Episodes: []domain.Episode{
+				{Number: 1, AirDate: "2026-04-04"},
+				{Number: 2, AirDate: "2026-04-11"},
+				{Number: 3, AirDate: "2026-04-18"},
+				{Number: 4, AirDate: "2026-04-25"},
+				{Number: 5, AirDate: "2026-05-09"},
+			},
+			LastEpisodeAt: "2026-05-09",
+			LastEpisodeNo: 5,
+			NextEpisodeAt: "2026-05-16",
+			NextEpisodeNo: 6,
+		}},
+		items: map[string]domain.Anime{
+			catalogKey(91768, 2): {
+				TMDBID:       91768,
+				SeasonNumber: 2,
+				Title:        "Ascendance of a Bookworm",
+				Status:       "current",
+				Episodes: []domain.Episode{
+					{Number: 1, AirDate: "2026-04-04"},
+					{Number: 2, AirDate: "2026-04-11"},
+					{Number: 3, AirDate: "2026-04-18"},
+					{Number: 4, AirDate: "2026-04-25"},
+					{Number: 5, AirDate: "2026-05-09"},
+				},
+				LastEpisodeAt: "2026-05-09",
+				LastEpisodeNo: 5,
+				NextEpisodeAt: "2026-05-16",
+				NextEpisodeNo: 6,
+			},
+		},
+	}
+	service := &sync.Service{
+		Feeds:   &fakeFeedRepo{feeds: []domain.Feed{}},
+		Mapping: &fakeMappingRepo{},
+		Catalog: catalog,
+		Reader:  &fakeFeedReader{},
+		TMDB: &fakeTMDBClient{details: ports.TMDBSeasonDetails{
+			Title:             "Ascendance of a Bookworm",
+			Status:            "Returning Series",
+			InProduction:      true,
+			HasNextEpisode:    true,
+			LastEpisodeAirDate:"2026-05-16",
+			LastEpisodeNumber: 6,
+			NextEpisodeAirDate:"2026-05-23",
+			NextEpisodeNumber: 7,
+		}},
+		Guard: &sync.Guard{},
+	}
+
+	forceRes := service.ForceRun(context.Background())
+	if len(forceRes.Errors) != 0 {
+		t.Fatalf("unexpected force sync errors: %v", forceRes.Errors)
+	}
+	anime, found, _ := catalog.GetByTMDBSeason(context.Background(), 91768, 2)
+	if !found {
+		t.Fatal("expected anime to remain present after force sync")
+	}
+	if anime.LastEpisodeAt != "2026-05-09" || anime.LastEpisodeNo != 5 {
+		t.Fatalf("expected last episode to stay bound to saved episodes, got at=%q no=%d", anime.LastEpisodeAt, anime.LastEpisodeNo)
+	}
+	if anime.NextEpisodeAt != "2026-05-23" || anime.NextEpisodeNo != 7 {
+		t.Fatalf("expected next episode metadata refresh, got at=%q no=%d", anime.NextEpisodeAt, anime.NextEpisodeNo)
+	}
+}
+
 func catalogKey(tmdbID, season int) string {
 	return fmt.Sprintf("%d:%d", tmdbID, season)
 }
