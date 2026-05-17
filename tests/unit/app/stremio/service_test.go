@@ -210,6 +210,51 @@ func TestMetaIncludesExpandedFieldsFromCatalog(t *testing.T) {
 	require.Equal(t, 8.3, meta["rating"])
 }
 
+func TestMetaFallsBackToBackdropWhenEpisodeThumbnailMissing(t *testing.T) {
+	service := &stremio.Service{
+		Repo: &fakeCatalogRepo{anime: domain.Anime{
+			TMDBID:       256783,
+			SeasonNumber: 2,
+			Title:        "Como Você Se Atreve?",
+			PosterPath:   "https://image.tmdb.org/t/p/w500/poster.jpg",
+			BackdropPath: "https://image.tmdb.org/t/p/w780/backdrop.jpg",
+			Episodes: []domain.Episode{
+				{Number: 18, Title: "Episódio 18", StillPath: ""},
+			},
+		}},
+	}
+
+	meta, found, err := service.Meta(context.Background(), "tmdb:256783:2")
+	require.NoError(t, err)
+	require.True(t, found)
+	videos, ok := meta["videos"].([]map[string]any)
+	require.True(t, ok)
+	require.Len(t, videos, 1)
+	require.Equal(t, "https://image.tmdb.org/t/p/w780/backdrop.jpg", videos[0]["thumbnail"])
+}
+
+func TestMetaFallsBackToPosterWhenBackdropMissing(t *testing.T) {
+	service := &stremio.Service{
+		Repo: &fakeCatalogRepo{anime: domain.Anime{
+			TMDBID:       256783,
+			SeasonNumber: 2,
+			Title:        "Como Você Se Atreve?",
+			PosterPath:   "https://image.tmdb.org/t/p/w500/poster.jpg",
+			Episodes: []domain.Episode{
+				{Number: 19, Title: "Episódio 19", StillPath: ""},
+			},
+		}},
+	}
+
+	meta, found, err := service.Meta(context.Background(), "tmdb:256783:2")
+	require.NoError(t, err)
+	require.True(t, found)
+	videos, ok := meta["videos"].([]map[string]any)
+	require.True(t, ok)
+	require.Len(t, videos, 1)
+	require.Equal(t, "https://image.tmdb.org/t/p/w500/poster.jpg", videos[0]["thumbnail"])
+}
+
 func TestMetaFallsBackToTMDBDetailsAndPersists(t *testing.T) {
 	repo := &fakeCatalogRepo{anime: domain.Anime{
 		TMDBID:       273467,

@@ -368,6 +368,7 @@ func (s *Service) Meta(ctx context.Context, id string) (map[string]any, bool, er
 		}
 	}
 	videos := make([]map[string]any, 0, len(anime.Episodes))
+	episodeFallbackImage := fallbackEpisodeThumbnail(anime)
 	for _, ep := range anime.Episodes {
 		video := map[string]any{
 			"id":       domain.EpisodeStremioID(anime.TMDBID, anime.SeasonNumber, ep.Number),
@@ -384,6 +385,8 @@ func (s *Service) Meta(ctx context.Context, id string) (map[string]any, bool, er
 		// Add episode image if available
 		if strings.TrimSpace(ep.StillPath) != "" {
 			video["thumbnail"] = ep.StillPath
+		} else if episodeFallbackImage != "" {
+			video["thumbnail"] = episodeFallbackImage
 		}
 		// Add episode description if available
 		if strings.TrimSpace(ep.Overview) != "" {
@@ -432,6 +435,7 @@ func (s *Service) aggregateMeta(ctx context.Context, tmdbID int) (map[string]any
 	primary := chooseAggregateMetaPrimary(animes)
 	videos := make([]map[string]any, 0)
 	for _, anime := range animes {
+		episodeFallbackImage := fallbackEpisodeThumbnail(anime)
 		for _, ep := range anime.Episodes {
 			video := map[string]any{
 				"id":       domain.EpisodeStremioID(anime.TMDBID, anime.SeasonNumber, ep.Number),
@@ -446,6 +450,8 @@ func (s *Service) aggregateMeta(ctx context.Context, tmdbID int) (map[string]any
 			}
 			if strings.TrimSpace(ep.StillPath) != "" {
 				video["thumbnail"] = ep.StillPath
+			} else if episodeFallbackImage != "" {
+				video["thumbnail"] = episodeFallbackImage
 			}
 			if strings.TrimSpace(ep.Overview) != "" {
 				video["overview"] = ep.Overview
@@ -514,6 +520,13 @@ func episodeReleasedAt(ep domain.Episode) string {
 		return airDate.Format(time.RFC3339)
 	}
 	return ep.AddedAt.Format(time.RFC3339)
+}
+
+func fallbackEpisodeThumbnail(anime domain.Anime) string {
+	if backdrop := strings.TrimSpace(anime.BackdropPath); backdrop != "" {
+		return backdrop
+	}
+	return strings.TrimSpace(anime.PosterPath)
 }
 
 func needsMetaDetails(anime domain.Anime) bool {
