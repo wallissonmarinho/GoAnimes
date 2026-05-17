@@ -2,6 +2,7 @@ package sync
 
 import (
 	"net/url"
+	"path"
 	"regexp"
 	"strings"
 )
@@ -15,6 +16,7 @@ var (
 	seasonWordRe    = regexp.MustCompile(`(?i)\bseason\s+(\d{1,2})\b`)
 	shortSeasonRe   = regexp.MustCompile(`(?i)\bs(\d{1,2})\b`)
 	epRe           = regexp.MustCompile(`(?i)(?:s\d{1,2})?e(\d{1,3})\b|(?:ep|e)\s?(\d{1,3})\b`)
+	explicitEpisodeStandaloneRe = regexp.MustCompile(`(?i)(?:^|[^a-z0-9])(?:ep|e)\s?(\d{1,3})\b`)
 	numDashRe      = regexp.MustCompile(`\s-\s(\d{1,4})\b`)
 	qualityBlockRe = regexp.MustCompile(`(?i)\[([^\]]*\b(?:480p|720p|1080p|2160p)\b[^\]]*)\]`)
 	qualityRe      = regexp.MustCompile(`(?i)\b(?:480p|720p|1080p|2160p)\b`)
@@ -74,12 +76,21 @@ func ExtractSeasonHint(raw string) int {
 }
 
 func ExtractExplicitEpisode(raw string) int {
-	clean := strings.TrimSpace(raw)
+	clean := explicitEpisodeSubject(raw)
 	if clean == "" {
 		return 0
 	}
-	if decoded, err := url.QueryUnescape(clean); err == nil && strings.TrimSpace(decoded) != "" {
-		clean = decoded
+	if match := numDashRe.FindStringSubmatch(clean); len(match) > 0 {
+		return atoi(match[1])
+	}
+	if match := seasonEpisodeRe.FindStringSubmatch(clean); len(match) > 0 {
+		full := match[0]
+		if epMatch := regexp.MustCompile(`(?i)e(\d{1,3})\b`).FindStringSubmatch(full); len(epMatch) > 1 {
+			return atoi(epMatch[1])
+		}
+	}
+	if match := explicitEpisodeStandaloneRe.FindStringSubmatch(clean); len(match) > 1 {
+		return atoi(match[1])
 	}
 	if match := epRe.FindStringSubmatch(clean); len(match) > 0 {
 		if match[1] != "" {
@@ -89,10 +100,36 @@ func ExtractExplicitEpisode(raw string) int {
 			return atoi(match[2])
 		}
 	}
-	if match := numDashRe.FindStringSubmatch(clean); len(match) > 0 {
-		return atoi(match[1])
-	}
 	return 0
+}
+
+func explicitEpisodeSubject(raw string) string {
+	clean := strings.TrimSpace(raw)
+	if clean == "" {
+		return ""
+	}
+	if parsed, err := url.Parse(clean); err == nil {
+		switch {
+		case strings.EqualFold(parsed.Scheme, "magnet"):
+			if dn := strings.TrimSpace(parsed.Query().Get("dn")); dn != "" {
+				if decoded, decErr := url.QueryUnescape(dn); decErr == nil && strings.TrimSpace(decoded) != "" {
+					return decoded
+				}
+				return dn
+			}
+			return ""
+		case parsed.Scheme == "http" || parsed.Scheme == "https":
+			base := strings.TrimSpace(path.Base(parsed.Path))
+			if decoded, decErr := url.QueryUnescape(base); decErr == nil && strings.TrimSpace(decoded) != "" {
+				return decoded
+			}
+			return base
+		}
+	}
+	if decoded, err := url.QueryUnescape(clean); err == nil && strings.TrimSpace(decoded) != "" {
+		clean = decoded
+	}
+	return clean
 }
 
 func atoi(s string) int {

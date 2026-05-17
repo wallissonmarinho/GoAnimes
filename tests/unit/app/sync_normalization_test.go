@@ -220,3 +220,9 @@ func TestExtractSeasonHint(t *testing.T) {
 	require.Equal(t, 2, sync.ExtractSeasonHint("Show Name S2 - 04 1080p"))
 	require.Equal(t, 0, sync.ExtractSeasonHint("[Magnet] One Piece - 1105 (Multi) [Airing]"))
 }
+
+func TestExtractExplicitEpisode(t *testing.T) {
+	require.Equal(t, 7, sync.ExtractExplicitEpisode("magnet:?xt=urn:btih:720fa76de70d4f7bc4edc883069ff99949bc2417&dn=%5BToonsHub%5D%20MAO%20S01E07%201080p%20DSNP%20WEB-DL%20AAC2.0%20H.264"))
+	require.Equal(t, 6, sync.ExtractExplicitEpisode("https://t.erai-raws.info/Torrent/2026/Spring/Mao/[Erai-raws] Mao - 06 [1080p DSNP WEB-DL AVC AAC][MultiSub].mkv.torrent"))
+	require.Equal(t, 0, sync.ExtractExplicitEpisode("magnet:?xt=urn:btih:1987F994195C7056F8EEAFC3629E334DAA49FE71"))
+}
