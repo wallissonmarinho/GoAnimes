@@ -1,6 +1,7 @@
 package sync
 
 import (
+	"net/url"
 	"regexp"
 	"strings"
 )
@@ -67,6 +68,28 @@ func ExtractSeasonHint(raw string) int {
 		return atoi(match[1])
 	}
 	if match := shortSeasonRe.FindStringSubmatch(clean); len(match) > 1 {
+		return atoi(match[1])
+	}
+	return 0
+}
+
+func ExtractExplicitEpisode(raw string) int {
+	clean := strings.TrimSpace(raw)
+	if clean == "" {
+		return 0
+	}
+	if decoded, err := url.QueryUnescape(clean); err == nil && strings.TrimSpace(decoded) != "" {
+		clean = decoded
+	}
+	if match := epRe.FindStringSubmatch(clean); len(match) > 0 {
+		if match[1] != "" {
+			return atoi(match[1])
+		}
+		if len(match) > 2 && match[2] != "" {
+			return atoi(match[2])
+		}
+	}
+	if match := numDashRe.FindStringSubmatch(clean); len(match) > 0 {
 		return atoi(match[1])
 	}
 	return 0

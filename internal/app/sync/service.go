@@ -179,6 +179,9 @@ func (s *Service) processItem(ctx context.Context, res Result, item ports.Releas
 	if !ok || tmdbID <= 0 || season <= 0 {
 		return res
 	}
+	if !matchesExplicitSourceEpisode(norm, mappedEpisode) {
+		return s.addUnmatched(ctx, res, norm, item)
+	}
 	season, err = s.resolveSeasonByEpisodeRange(ctx, tmdbID, season, mappedEpisode)
 	if err != nil {
 		span.RecordError(err)
@@ -838,4 +841,15 @@ func normalizeItem(item ports.ReleaseItem) NormalizedRelease {
 		Provider:   item.Provider,
 		Published:  item.Published,
 	}
+}
+
+func matchesExplicitSourceEpisode(norm NormalizedRelease, mappedEpisode int) bool {
+	if mappedEpisode <= 0 {
+		return false
+	}
+	explicit := ExtractExplicitEpisode(norm.MagnetLink)
+	if explicit == 0 {
+		return true
+	}
+	return explicit == norm.Episode
 }
