@@ -268,6 +268,97 @@ func TestSyncRunAddsUnmatchedWhenNoTMDB(t *testing.T) {
 	}
 }
 
+func TestSyncRunExpandsBatchEpisodes(t *testing.T) {
+	feeds := []domain.Feed{{ID: "f1", Name: "SavI0r", URL: "http://example", Type: domain.FeedTypeRSS, Enabled: true}}
+	reader := &fakeFeedReader{items: []ports.ReleaseItem{{
+		Title:     "[SavI0r] Isekai Nonbiri Nouka 01-03 [BD][1080p][Multi Dual Audio][pt-br]",
+		Link:      "magnet:?xt=urn:btih:abc&dn=batch",
+		Provider:  "SavI0r",
+		Published: time.Now(),
+	}}}
+	mapping := &fakeMappingRepo{overrides: map[string]domain.MappingOverride{
+		"isekai nonbiri nouka": {TMDBID: 196285, Season: 1},
+	}}
+	catalog := &fakeCatalogRepo{}
+	service := &sync.Service{
+		Feeds:   &fakeFeedRepo{feeds: feeds},
+		Mapping: mapping,
+		Catalog: catalog,
+		Reader:  reader,
+		Guard:   &sync.Guard{},
+	}
+
+	res := service.Run(context.Background())
+	if len(res.Errors) > 0 {
+		t.Fatalf("unexpected errors: %v", res.Errors)
+	}
+	if res.Processed != 3 {
+		t.Fatalf("expected processed 3, got %d", res.Processed)
+	}
+	anime, found, _ := catalog.GetByTMDBSeason(context.Background(), 196285, 1)
+	if !found {
+		t.Fatal("expected season to be created")
+	}
+	if len(anime.Episodes) != 3 {
+		t.Fatalf("expected 3 episodes, got %d", len(anime.Episodes))
+	}
+	for i, ep := range anime.Episodes {
+		want := i + 1
+		if ep.Number != want {
+			t.Fatalf("expected episode %d, got %d", want, ep.Number)
+		}
+		if len(ep.Sources) != 1 {
+			t.Fatalf("expected one source on episode %d, got %d", want, len(ep.Sources))
+		}
+	}
+}
+
+func TestSyncRunSupportsBatchAndUnitaryEpisodesTogether(t *testing.T) {
+	feeds := []domain.Feed{{ID: "f1", Name: "SavI0r", URL: "http://example", Type: domain.FeedTypeRSS, Enabled: true}}
+	reader := &fakeFeedReader{items: []ports.ReleaseItem{
+		{
+			Title:     "[SavI0r] Isekai Nonbiri Nouka 01-03 [BD][1080p][Multi Dual Audio][pt-br]",
+			Link:      "magnet:?xt=urn:btih:abc&dn=batch",
+			Provider:  "SavI0r",
+			Published: time.Now(),
+		},
+		{
+			Title:     "[Erai-raws] Isekai Nonbiri Nouka 2 - 07 [1080p][pt-br]",
+			Link:      "magnet:?xt=urn:btih:def&dn=unit",
+			Provider:  "Erai-raws",
+			Published: time.Now(),
+		},
+	}}
+	mapping := &fakeMappingRepo{overrides: map[string]domain.MappingOverride{
+		"isekai nonbiri nouka":   {TMDBID: 196285, Season: 1},
+		"isekai nonbiri nouka 2": {TMDBID: 196285, Season: 2},
+	}}
+	catalog := &fakeCatalogRepo{}
+	service := &sync.Service{
+		Feeds:   &fakeFeedRepo{feeds: feeds},
+		Mapping: mapping,
+		Catalog: catalog,
+		Reader:  reader,
+		Guard:   &sync.Guard{},
+	}
+
+	res := service.Run(context.Background())
+	if len(res.Errors) > 0 {
+		t.Fatalf("unexpected errors: %v", res.Errors)
+	}
+	if res.Processed != 4 {
+		t.Fatalf("expected processed 4, got %d", res.Processed)
+	}
+	season1, found, _ := catalog.GetByTMDBSeason(context.Background(), 196285, 1)
+	if !found || len(season1.Episodes) != 3 {
+		t.Fatalf("expected season 1 with 3 episodes, got %+v", season1.Episodes)
+	}
+	season2, found, _ := catalog.GetByTMDBSeason(context.Background(), 196285, 2)
+	if !found || len(season2.Episodes) != 1 || season2.Episodes[0].Number != 7 {
+		t.Fatalf("expected season 2 episode 7, got %+v", season2.Episodes)
+	}
+}
+
 func TestSyncRunAddsUnmatchedWhenAutomaticTMDBMatchLooksIncoherent(t *testing.T) {
 	reader := &fakeFeedReader{items: []ports.ReleaseItem{{
 		Title:     "[Erai] Kanojo Okarishimasu 2nd Season - 03",

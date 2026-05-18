@@ -14,6 +14,8 @@ type NormalizedRelease struct {
 	Title      string
 	Season     int
 	Episode    int
+	BatchStart int
+	BatchEnd   int
 	Quality    string
 	MagnetLink string
 	Provider   string

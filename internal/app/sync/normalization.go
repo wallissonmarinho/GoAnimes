@@ -18,6 +18,7 @@ var (
 	epRe           = regexp.MustCompile(`(?i)(?:s\d{1,2})?e(\d{1,3})\b|(?:ep|e)\s?(\d{1,3})\b`)
 	explicitEpisodeStandaloneRe = regexp.MustCompile(`(?i)(?:^|[^a-z0-9])(?:ep|e)\s?(\d{1,3})\b`)
 	numDashRe      = regexp.MustCompile(`\s-\s(\d{1,4})\b`)
+	rangeRe        = regexp.MustCompile(`(?i)\b(\d{1,4})\s*(?:~|-)\s*(\d{1,4})\b`)
 	qualityBlockRe = regexp.MustCompile(`(?i)\[([^\]]*\b(?:480p|720p|1080p|2160p)\b[^\]]*)\]`)
 	qualityRe      = regexp.MustCompile(`(?i)\b(?:480p|720p|1080p|2160p)\b`)
 	noiseTokenRe   = regexp.MustCompile(`(?i)\b(?:web[\s-]?dl|web[\s-]?rip|webrip|bluray|bdrip|hevc|x265|x264|h\.?264|h\.?265|avc|aac\d?(?:\.\d)?|eac3|ddp\d(?:\.\d)?|multi(?:-audio|-subs)?|dual(?:-audio)?|repack|end|finale|uncensored|encoded|more|nf|cr|dsnp|amzn|iq|tver|bili|viki|adn)\b`)
@@ -47,6 +48,7 @@ func NormalizeTitle(raw string) (nameKey string, episode int, quality string) {
 	clean = qualityRe.ReplaceAllString(clean, " ")
 	clean = epRe.ReplaceAllString(clean, " ")
 	clean = numDashRe.ReplaceAllString(clean, " ")
+	clean = rangeRe.ReplaceAllString(clean, " ")
 	clean = noiseTokenRe.ReplaceAllString(clean, " ")
 	clean = leadingProviderRe.ReplaceAllString(clean, " ")
 	clean = strings.ToLower(spaceRe.ReplaceAllString(clean, " "))
@@ -101,6 +103,29 @@ func ExtractExplicitEpisode(raw string) int {
 		}
 	}
 	return 0
+}
+
+func ExtractEpisodeRange(raw string) (int, int) {
+	clean := strings.TrimSpace(raw)
+	if clean == "" {
+		return 0, 0
+	}
+	clean = tagRe.ReplaceAllString(clean, " ")
+	clean = parenRe.ReplaceAllString(clean, " ")
+	clean = braceRe.ReplaceAllString(clean, " ")
+	match := rangeRe.FindStringSubmatch(clean)
+	if len(match) < 3 {
+		return 0, 0
+	}
+	start := atoi(match[1])
+	end := atoi(match[2])
+	if start <= 0 || end <= 0 || end < start {
+		return 0, 0
+	}
+	if start == end {
+		return 0, 0
+	}
+	return start, end
 }
 
 func explicitEpisodeSubject(raw string) string {

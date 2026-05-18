@@ -159,6 +159,9 @@ func (s *Service) processItem(ctx context.Context, res Result, item ports.Releas
 	if shouldIgnoreRelease(item, norm) {
 		return res
 	}
+	if isBatchRelease(norm) {
+		return s.processBatchItem(ctx, res, norm, item)
+	}
 	if !s.isValidNormalized(norm) {
 		return s.addUnmatched(ctx, res, norm, item)
 	}
@@ -208,8 +211,51 @@ func (s *Service) processItem(ctx context.Context, res Result, item ports.Releas
 	return res
 }
 
+func (s *Service) processBatchItem(ctx context.Context, res Result, norm NormalizedRelease, item ports.ReleaseItem) Result {
+	if !s.isValidNormalized(norm) {
+		return s.addUnmatched(ctx, res, norm, item)
+	}
+	mapping, ok, err := s.Mapping.FindOverride(ctx, norm.RSSNameKey)
+	if err != nil {
+		res.Errors = append(res.Errors, err)
+		return res
+	}
+	tmdbID, season, _, ok, err := s.resolveMapping(ctx, norm, item, mapping, ok)
+	if err != nil {
+		res.Errors = append(res.Errors, err)
+		return res
+	}
+	if !ok || tmdbID <= 0 || season <= 0 {
+		return res
+	}
+	for episode := norm.BatchStart; episode <= norm.BatchEnd; episode++ {
+		resolvedSeason, rangeErr := s.resolveSeasonByEpisodeRange(ctx, tmdbID, season, episode)
+		if rangeErr != nil {
+			res.Errors = append(res.Errors, rangeErr)
+			continue
+		}
+		if addErr := s.addEpisodeSource(ctx, tmdbID, resolvedSeason, episode, norm); addErr != nil {
+			res.Errors = append(res.Errors, addErr)
+			continue
+		}
+		_ = s.enrichEpisodeDetails(ctx, tmdbID, resolvedSeason, episode)
+		if ensureErr := s.ensureSeason(ctx, tmdbID, resolvedSeason, norm); ensureErr != nil {
+			res.Errors = append(res.Errors, ensureErr)
+			continue
+		}
+		res.Processed++
+	}
+	return res
+}
+
 func (s *Service) isValidNormalized(norm NormalizedRelease) bool {
-	return norm.RSSNameKey != "" && norm.Episode > 0
+	if norm.RSSNameKey == "" {
+		return false
+	}
+	if isBatchRelease(norm) {
+		return norm.BatchStart > 0 && norm.BatchEnd >= norm.BatchStart
+	}
+	return norm.Episode > 0
 }
 
 func (s *Service) addUnmatched(ctx context.Context, res Result, norm NormalizedRelease, item ports.ReleaseItem) Result {
@@ -331,6 +377,9 @@ func shouldIgnoreRelease(item ports.ReleaseItem, norm NormalizedRelease) bool {
 }
 
 func isReleaseWithoutEpisodeNoise(rawTitle string, norm NormalizedRelease) bool {
+	if isBatchRelease(norm) {
+		return false
+	}
 	if strings.Contains(rawTitle, "movie or special episode") || strings.Contains(rawTitle, "batch") {
 		return true
 	}
@@ -827,6 +876,10 @@ func slugify(value string) string {
 
 func normalizeItem(item ports.ReleaseItem) NormalizedRelease {
 	key, ep, quality := NormalizeTitle(item.Title)
+	start, end := 0, 0
+	if ep == 0 {
+		start, end = ExtractEpisodeRange(item.Title)
+	}
 	magnet := item.Magnet
 	if magnet == "" {
 		magnet = item.Link
@@ -836,11 +889,17 @@ func normalizeItem(item ports.ReleaseItem) NormalizedRelease {
 		Title:      item.Title,
 		Season:     ExtractSeasonHint(item.Title),
 		Episode:    ep,
+		BatchStart: start,
+		BatchEnd:   end,
 		Quality:    quality,
 		MagnetLink: magnet,
 		Provider:   item.Provider,
 		Published:  item.Published,
 	}
+}
+
+func isBatchRelease(norm NormalizedRelease) bool {
+	return norm.BatchStart > 0 && norm.BatchEnd > norm.BatchStart
 }
 
 func matchesExplicitSourceEpisode(norm NormalizedRelease, mappedEpisode int) bool {
