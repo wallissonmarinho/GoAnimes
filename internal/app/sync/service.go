@@ -172,7 +172,7 @@ func (s *Service) processItem(ctx context.Context, res Result, item ports.Releas
 		res.Errors = append(res.Errors, err)
 		return res
 	}
-	tmdbID, season, mappedEpisode, ok, err := s.resolveMapping(ctx, norm, item, mapping, ok)
+	tmdbID, season, mappedEpisode, usedOverride, ok, err := s.resolveMapping(ctx, norm, item, mapping, ok)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
@@ -185,12 +185,14 @@ func (s *Service) processItem(ctx context.Context, res Result, item ports.Releas
 	if !matchesExplicitSourceEpisode(norm, mappedEpisode) {
 		return s.addUnmatched(ctx, res, norm, item)
 	}
-	season, err = s.resolveSeasonByEpisodeRange(ctx, tmdbID, season, mappedEpisode)
-	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		res.Errors = append(res.Errors, err)
-		return res
+	if !usedOverride {
+		season, err = s.resolveSeasonByEpisodeRange(ctx, tmdbID, season, mappedEpisode)
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			res.Errors = append(res.Errors, err)
+			return res
+		}
 	}
 	addedErr := s.addEpisodeSource(ctx, tmdbID, season, mappedEpisode, norm)
 	if addedErr != nil {
@@ -220,7 +222,7 @@ func (s *Service) processBatchItem(ctx context.Context, res Result, norm Normali
 		res.Errors = append(res.Errors, err)
 		return res
 	}
-	tmdbID, season, _, ok, err := s.resolveMapping(ctx, norm, item, mapping, ok)
+	tmdbID, season, _, usedOverride, ok, err := s.resolveMapping(ctx, norm, item, mapping, ok)
 	if err != nil {
 		res.Errors = append(res.Errors, err)
 		return res
@@ -229,10 +231,14 @@ func (s *Service) processBatchItem(ctx context.Context, res Result, norm Normali
 		return res
 	}
 	for episode := norm.BatchStart; episode <= norm.BatchEnd; episode++ {
-		resolvedSeason, rangeErr := s.resolveSeasonByEpisodeRange(ctx, tmdbID, season, episode)
-		if rangeErr != nil {
-			res.Errors = append(res.Errors, rangeErr)
-			continue
+		resolvedSeason := season
+		if !usedOverride {
+			var rangeErr error
+			resolvedSeason, rangeErr = s.resolveSeasonByEpisodeRange(ctx, tmdbID, season, episode)
+			if rangeErr != nil {
+				res.Errors = append(res.Errors, rangeErr)
+				continue
+			}
 		}
 		if addErr := s.addEpisodeSource(ctx, tmdbID, resolvedSeason, episode, norm); addErr != nil {
 			res.Errors = append(res.Errors, addErr)
@@ -336,7 +342,7 @@ func (s *Service) resolveMapping(
 	item ports.ReleaseItem,
 	override domain.MappingOverride,
 	matched bool,
-) (tmdbID int, season int, mappedEpisode int, ok bool, err error) {
+) (tmdbID int, season int, mappedEpisode int, usedOverride bool, ok bool, err error) {
 	// Default mappedEpisode is the normalized episode
 	mappedEpisode = norm.Episode
 	if matched {
@@ -344,31 +350,31 @@ func (s *Service) resolveMapping(
 		if override.EpisodeOffset > 0 {
 			mappedEpisode = norm.Episode + override.EpisodeOffset
 		}
-		return override.TMDBID, override.Season, mappedEpisode, true, nil
+		return override.TMDBID, override.Season, mappedEpisode, true, true, nil
 	}
 	if s.TMDB == nil {
 		s.addUnmatched(ctx, Result{}, norm, item)
-		return 0, 0, 0, false, nil
+		return 0, 0, 0, false, false, nil
 	}
 	search, found, searchErr := s.TMDB.SearchSeries(ctx, norm.RSSNameKey)
 	if searchErr != nil {
-		return 0, 0, 0, false, searchErr
+		return 0, 0, 0, false, false, searchErr
 	}
 	if !found {
 		s.addUnmatched(ctx, Result{}, norm, item)
-		return 0, 0, 0, false, nil
+		return 0, 0, 0, false, false, nil
 	}
 	if details, detErr := s.TMDB.GetSeasonDetails(ctx, search.TMDBID, 1); detErr == nil {
 		if !matchesResolvedAnime(norm.RSSNameKey, details.Title, details.OriginalTitle) {
 			s.addUnmatched(ctx, Result{}, norm, item)
-			return 0, 0, 0, false, nil
+			return 0, 0, 0, false, false, nil
 		}
 	}
 	if norm.Season > 0 && norm.Season != 1 {
 		s.addUnmatched(ctx, Result{}, norm, item)
-		return 0, 0, 0, false, nil
+		return 0, 0, 0, false, false, nil
 	}
-	return search.TMDBID, 1, mappedEpisode, true, nil
+	return search.TMDBID, 1, mappedEpisode, false, true, nil
 }
 
 func shouldIgnoreRelease(item ports.ReleaseItem, norm NormalizedRelease) bool {

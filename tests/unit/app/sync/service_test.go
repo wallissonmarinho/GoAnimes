@@ -359,6 +359,53 @@ func TestSyncRunSupportsBatchAndUnitaryEpisodesTogether(t *testing.T) {
 	}
 }
 
+func TestSyncRunRespectsOverrideSeasonEvenWhenAnotherSeasonHasSameEpisodeNumber(t *testing.T) {
+	feeds := []domain.Feed{{ID: "f1", Name: "Erai", URL: "http://example", Type: domain.FeedTypeRSS, Enabled: true}}
+	reader := &fakeFeedReader{items: []ports.ReleaseItem{{
+		Title:     "[Erai-raws] Dr Stone - Science Future - 12 [1080p][br]",
+		Link:      "magnet:?xt=urn:btih:abc&dn=Dr%20Stone%20-%20Science%20Future%20-%2012",
+		Provider:  "Erai Dr. Stone: Science Future",
+		Published: time.Now(),
+	}}}
+	mapping := &fakeMappingRepo{overrides: map[string]domain.MappingOverride{
+		"dr stone - science future": {TMDBID: 86031, Season: 4},
+	}}
+	catalog := &fakeCatalogRepo{
+		items: map[string]domain.Anime{
+			catalogKey(86031, 1): {
+				TMDBID:       86031,
+				SeasonNumber: 1,
+				Episodes: []domain.Episode{
+					{Number: 12, Sources: []domain.Source{{Provider: "old"}}},
+				},
+			},
+		},
+	}
+	service := &sync.Service{
+		Feeds:   &fakeFeedRepo{feeds: feeds},
+		Mapping: mapping,
+		Catalog: catalog,
+		Reader:  reader,
+		Guard:   &sync.Guard{},
+	}
+
+	res := service.Run(context.Background())
+	if len(res.Errors) > 0 {
+		t.Fatalf("unexpected errors: %v", res.Errors)
+	}
+	season1, found, _ := catalog.GetByTMDBSeason(context.Background(), 86031, 1)
+	if !found || len(season1.Episodes) != 1 || len(season1.Episodes[0].Sources) != 1 {
+		t.Fatalf("season 1 should remain unchanged, got %+v", season1.Episodes)
+	}
+	season4, found, _ := catalog.GetByTMDBSeason(context.Background(), 86031, 4)
+	if !found {
+		t.Fatal("expected season 4 to be created")
+	}
+	if len(season4.Episodes) != 1 || season4.Episodes[0].Number != 12 || len(season4.Episodes[0].Sources) != 1 {
+		t.Fatalf("expected season 4 episode 12 with one source, got %+v", season4.Episodes)
+	}
+}
+
 func TestSyncRunAddsUnmatchedWhenAutomaticTMDBMatchLooksIncoherent(t *testing.T) {
 	reader := &fakeFeedReader{items: []ports.ReleaseItem{{
 		Title:     "[Erai] Kanojo Okarishimasu 2nd Season - 03",
