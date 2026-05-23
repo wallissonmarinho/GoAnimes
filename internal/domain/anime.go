@@ -2,8 +2,17 @@ package domain
 
 import (
 	"errors"
+	"net/url"
+	"path"
+	"regexp"
 	"strings"
 	"time"
+)
+
+var (
+	eraiProviderRe       = regexp.MustCompile(`(?i)\berai(?:-raws)?\b`)
+	trailingHashTagRe    = regexp.MustCompile(`\[[A-F0-9]{8}\]$`)
+	repeatedWhitespaceRe = regexp.MustCompile(`\s+`)
 )
 
 type MappingStatus string
@@ -88,11 +97,62 @@ func (e *Episode) AddSource(src Source) bool {
 	if src.MagnetLink == "" || src.Provider == "" {
 		return false
 	}
+	newProviderKey := canonicalProviderKey(src.Provider)
+	newReleaseKey := canonicalReleaseKey(src.MagnetLink)
 	for _, existing := range e.Sources {
 		if strings.EqualFold(existing.MagnetLink, src.MagnetLink) && strings.EqualFold(existing.Provider, src.Provider) {
+			return false
+		}
+		if newProviderKey != "" && newReleaseKey != "" &&
+			newProviderKey == canonicalProviderKey(existing.Provider) &&
+			newReleaseKey == canonicalReleaseKey(existing.MagnetLink) {
 			return false
 		}
 	}
 	e.Sources = append(e.Sources, src)
 	return true
+}
+
+func canonicalProviderKey(provider string) string {
+	provider = strings.TrimSpace(strings.ToLower(provider))
+	if provider == "" {
+		return ""
+	}
+	if eraiProviderRe.MatchString(provider) {
+		return "erai"
+	}
+	return provider
+}
+
+func canonicalReleaseKey(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	parsed, err := url.Parse(raw)
+	if err == nil {
+		switch {
+		case strings.EqualFold(parsed.Scheme, "magnet"):
+			if dn := strings.TrimSpace(parsed.Query().Get("dn")); dn != "" {
+				if decoded, decErr := url.QueryUnescape(dn); decErr == nil && strings.TrimSpace(decoded) != "" {
+					raw = decoded
+				} else {
+					raw = dn
+				}
+			}
+		case parsed.Scheme == "http" || parsed.Scheme == "https":
+			base := strings.TrimSpace(path.Base(parsed.Path))
+			if decoded, decErr := url.QueryUnescape(base); decErr == nil && strings.TrimSpace(decoded) != "" {
+				raw = decoded
+			} else {
+				raw = base
+			}
+		}
+	}
+	raw = strings.TrimSpace(raw)
+	raw = strings.TrimSuffix(raw, ".torrent")
+	raw = strings.TrimSuffix(raw, ".mkv")
+	raw = trailingHashTagRe.ReplaceAllString(raw, "")
+	raw = repeatedWhitespaceRe.ReplaceAllString(strings.TrimSpace(raw), " ")
+	return strings.ToLower(raw)
 }

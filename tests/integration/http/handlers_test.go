@@ -274,3 +274,36 @@ func TestSyncEndpoint_Accepted(t *testing.T) {
 	require.True(t, response["accepted"].(bool))
 	require.Equal(t, "force sync scheduled", response["message"])
 }
+
+func TestRefreshEpisodeMetadataEndpoint_Accepted(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+
+	deps := api.Deps{
+		Stremio: &stremio.Service{Repo: &mockCatalogRepository{}},
+		Sync: &syncsvc.Service{
+			Feeds:   &mockFeedRepository{},
+			Mapping: &mockMappingRepository{},
+			Catalog: &mockCatalogRepository{},
+			Reader:  &mockFeedReader{},
+			TMDB:    &mockTMDBClient{},
+		},
+		Admin:    &admin.Service{Feeds: &mockFeedRepository{}, Mapping: &mockMappingRepository{}, Catalog: &mockCatalogRepository{}},
+		AdminKey: "test-key",
+	}
+
+	api.Register(engine, deps)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/admin/refresh-episode-metadata", nil)
+	req.Header.Set("X-Admin-Key", "test-key")
+	engine.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusAccepted, w.Code)
+
+	var response map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	require.NoError(t, err)
+	require.True(t, response["accepted"].(bool))
+	require.Equal(t, "episode metadata refresh scheduled", response["message"])
+}

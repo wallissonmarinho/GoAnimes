@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -25,6 +27,12 @@ type Service struct {
 }
 
 var tracer = otel.Tracer("goanimes/sync")
+var genericEpisodeTitleRe = regexp.MustCompile(`(?i)^(epis[oó]dio|episode)\s+\d+$`)
+
+const (
+	metadataRefreshLookbackDays = 14
+	metadataRefreshPageSize     = 200
+)
 
 func (s *Service) Run(ctx context.Context) Result {
 	res := s.startResult()
@@ -114,6 +122,41 @@ func (s *Service) RequestAsync(force bool) bool {
 	return true
 }
 
+func (s *Service) RefreshEpisodeMetadata(ctx context.Context) Result {
+	res := s.startResult()
+	if s.Guard != nil && !s.Guard.TryStart() {
+		_, span := tracer.Start(ctx, "sync.refresh_episode_metadata")
+		defer span.End()
+		err := errors.New("sync already running")
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return s.finishResult(res, err)
+	}
+	defer func() {
+		if s.Guard != nil {
+			s.Guard.Finish()
+		}
+	}()
+	return s.refreshEpisodeMetadataInner(ctx)
+}
+
+func (s *Service) RequestMetadataRefreshAsync() bool {
+	if s.Guard == nil {
+		go func() {
+			_ = s.refreshEpisodeMetadataInner(context.Background())
+		}()
+		return true
+	}
+	if !s.Guard.TryStart() {
+		return false
+	}
+	go func() {
+		defer s.Guard.Finish()
+		_ = s.refreshEpisodeMetadataInner(context.Background())
+	}()
+	return true
+}
+
 func (s *Service) startResult() Result {
 	return Result{StartedAt: time.Now().UTC()}
 }
@@ -124,6 +167,125 @@ func (s *Service) finishResult(res Result, err error) Result {
 	}
 	res.FinishedAt = time.Now().UTC()
 	return res
+}
+
+func (s *Service) refreshEpisodeMetadataInner(ctx context.Context) Result {
+	ctx, span := tracer.Start(ctx, "sync.refresh_episode_metadata")
+	defer span.End()
+
+	res := s.startResult()
+	defer func() {
+		res.FinishedAt = time.Now().UTC()
+	}()
+
+	if s.Catalog == nil || s.TMDB == nil {
+		return res
+	}
+
+	for skip := 0; ; skip += metadataRefreshPageSize {
+		animes, err := s.Catalog.ListAll(ctx, metadataRefreshPageSize, skip)
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			res.Errors = append(res.Errors, err)
+			return res
+		}
+		if len(animes) == 0 {
+			break
+		}
+		for _, anime := range animes {
+			for _, episode := range anime.Episodes {
+				if !shouldRefreshEpisodeMetadata(episode) {
+					continue
+				}
+				details, err := s.TMDB.GetEpisodeDetails(ctx, anime.TMDBID, anime.SeasonNumber, episode.Number)
+				if err != nil {
+					res.Errors = append(res.Errors, err)
+					continue
+				}
+				title := chooseEpisodeTitle(details.Title)
+				if title == "" {
+					title = strings.TrimSpace(episode.Title)
+				}
+				overview := strings.TrimSpace(details.Overview)
+				if overview == "" {
+					overview = strings.TrimSpace(episode.Overview)
+				}
+				stillPath := strings.TrimSpace(details.StillPath)
+				if stillPath == "" {
+					stillPath = strings.TrimSpace(episode.StillPath)
+				}
+				airDate := strings.TrimSpace(details.AirDate)
+				if airDate == "" {
+					airDate = strings.TrimSpace(episode.AirDate)
+				}
+				if err := s.Catalog.UpdateEpisodeDetails(ctx, anime.TMDBID, anime.SeasonNumber, episode.Number, airDate, title, overview, stillPath); err != nil {
+					res.Errors = append(res.Errors, err)
+					continue
+				}
+				res.Processed++
+			}
+		}
+		if len(animes) < metadataRefreshPageSize {
+			break
+		}
+	}
+	return res
+}
+
+func shouldRefreshEpisodeMetadata(ep domain.Episode) bool {
+	if ep.Number <= 0 {
+		return false
+	}
+	if !isRecentEpisodeAirDate(ep.AirDate, metadataRefreshLookbackDays) {
+		return false
+	}
+	if strings.TrimSpace(ep.Overview) == "" {
+		return true
+	}
+	if strings.TrimSpace(ep.StillPath) == "" {
+		return true
+	}
+	return isGenericEpisodeTitle(strings.TrimSpace(ep.Title))
+}
+
+func isRecentEpisodeAirDate(airDate string, lookbackDays int) bool {
+	airDate = strings.TrimSpace(airDate)
+	if airDate == "" {
+		return false
+	}
+	t, err := time.Parse("2006-01-02", airDate)
+	if err != nil {
+		return false
+	}
+	cutoff := time.Now().UTC().AddDate(0, 0, -lookbackDays)
+	return !t.Before(cutoff)
+}
+
+func chooseEpisodeTitle(title string) string {
+	title = strings.TrimSpace(title)
+	if title == "" || isGenericEpisodeTitle(title) {
+		return ""
+	}
+	return title
+}
+
+func isGenericEpisodeTitle(title string) bool {
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return false
+	}
+	if genericEpisodeTitleRe.MatchString(title) {
+		return true
+	}
+	lower := strings.ToLower(title)
+	if strings.HasPrefix(lower, "capítulo ") {
+		n := strings.TrimSpace(strings.TrimPrefix(lower, "capítulo "))
+		if _, err := strconv.Atoi(n); err == nil {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Service) processFeed(ctx context.Context, res Result, feed domain.Feed) Result {

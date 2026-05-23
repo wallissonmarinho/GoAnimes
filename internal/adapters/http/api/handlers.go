@@ -36,6 +36,7 @@ func Register(engine *gin.Engine, deps Deps) {
 	adminGroup.Use(h.requireAdminKey)
 	adminGroup.POST("/sync", h.sync)
 	adminGroup.DELETE("/clean/:feedId", h.cleanFeedSources)
+	adminGroup.POST("/refresh-episode-metadata", h.refreshEpisodeMetadata)
 	adminGroup.GET("/feeds", h.listFeeds)
 	adminGroup.POST("/feeds", h.createFeed)
 	adminGroup.PUT("/feeds/:id", h.updateFeed)
@@ -145,6 +146,20 @@ func (h *handlers) sync(c *gin.Context) {
 			}
 			return "sync scheduled"
 		}(),
+	})
+}
+
+func (h *handlers) refreshEpisodeMetadata(c *gin.Context) {
+	if !h.deps.Sync.RequestMetadataRefreshAsync() {
+		c.JSON(http.StatusOK, gin.H{
+			"accepted": false,
+			"reason":   "sync already running",
+		})
+		return
+	}
+	c.JSON(http.StatusAccepted, gin.H{
+		"accepted": true,
+		"message":  "episode metadata refresh scheduled",
 	})
 }
 

@@ -540,7 +540,7 @@ func TestSyncRunMapsOnePieceEpisodesWithoutManualOverride(t *testing.T) {
 				OriginalTitle: "ワンピース",
 			},
 		},
-		Guard:   &sync.Guard{},
+		Guard: &sync.Guard{},
 	}
 
 	key, ep, _ := sync.NormalizeTitle("[Magnet] One Piece - 1105 (Multi) [SD][us][br][mx][es][sa][fr][de][it][ru][Airing]")
@@ -748,11 +748,11 @@ func TestSyncForceBackfillsMissingAnimeDetails(t *testing.T) {
 		}},
 		items: map[string]domain.Anime{
 			catalogKey(300126, 1): {
-				TMDBID:       300126,
-				SeasonNumber: 1,
-				Title:        "Old Title",
-				Status:       "ended",
-				LastEpisodeAt:"2026-04-01",
+				TMDBID:        300126,
+				SeasonNumber:  1,
+				Title:         "Old Title",
+				Status:        "ended",
+				LastEpisodeAt: "2026-04-01",
 			},
 		},
 	}
@@ -762,19 +762,19 @@ func TestSyncForceBackfillsMissingAnimeDetails(t *testing.T) {
 		Catalog: catalog,
 		Reader:  &fakeFeedReader{},
 		TMDB: &fakeTMDBClient{details: ports.TMDBSeasonDetails{
-			Title:             "Liar Game",
-			Overview:          "Sinopse preenchida",
-			PosterPath:        "/poster.jpg",
-			BackdropPath:      "/backdrop.jpg",
-			Genres:            []string{"Drama"},
-			Rating:            8.7,
-			Status:            "Returning Series",
-			InProduction:      true,
-			HasNextEpisode:    true,
-			LastEpisodeAirDate:"2026-05-05",
-			LastEpisodeNumber: 4,
-			NextEpisodeAirDate:"2026-05-12",
-			NextEpisodeNumber: 5,
+			Title:              "Liar Game",
+			Overview:           "Sinopse preenchida",
+			PosterPath:         "/poster.jpg",
+			BackdropPath:       "/backdrop.jpg",
+			Genres:             []string{"Drama"},
+			Rating:             8.7,
+			Status:             "Returning Series",
+			InProduction:       true,
+			HasNextEpisode:     true,
+			LastEpisodeAirDate: "2026-05-05",
+			LastEpisodeNumber:  4,
+			NextEpisodeAirDate: "2026-05-12",
+			NextEpisodeNumber:  5,
 		}},
 		Guard: &sync.Guard{},
 	}
@@ -867,14 +867,14 @@ func TestSyncForceDoesNotAdvanceLastBeyondSavedEpisodes(t *testing.T) {
 		Catalog: catalog,
 		Reader:  &fakeFeedReader{},
 		TMDB: &fakeTMDBClient{details: ports.TMDBSeasonDetails{
-			Title:             "Ascendance of a Bookworm",
-			Status:            "Returning Series",
-			InProduction:      true,
-			HasNextEpisode:    true,
-			LastEpisodeAirDate:"2026-05-16",
-			LastEpisodeNumber: 6,
-			NextEpisodeAirDate:"2026-05-23",
-			NextEpisodeNumber: 7,
+			Title:              "Ascendance of a Bookworm",
+			Status:             "Returning Series",
+			InProduction:       true,
+			HasNextEpisode:     true,
+			LastEpisodeAirDate: "2026-05-16",
+			LastEpisodeNumber:  6,
+			NextEpisodeAirDate: "2026-05-23",
+			NextEpisodeNumber:  7,
 		}},
 		Guard: &sync.Guard{},
 	}
@@ -941,6 +941,77 @@ func TestSyncRunSkipsGenericEpisodeTitleFromTMDB(t *testing.T) {
 	}
 	if anime.Episodes[0].StillPath != "/still.jpg" {
 		t.Fatalf("expected still path to be kept, got %q", anime.Episodes[0].StillPath)
+	}
+}
+
+func TestRefreshEpisodeMetadataUpdatesRecentPlaceholderEpisodesOnly(t *testing.T) {
+	now := time.Now().UTC()
+	recent := now.AddDate(0, 0, -1).Format("2006-01-02")
+	old := now.AddDate(0, 0, -30).Format("2006-01-02")
+
+	catalog := &fakeCatalogRepo{
+		items: map[string]domain.Anime{
+			catalogKey(82684, 4): {
+				TMDBID:       82684,
+				SeasonNumber: 4,
+				Title:        "That Time I Got Reincarnated as a Slime",
+				Episodes: []domain.Episode{
+					{Number: 7, AirDate: recent, Title: "Episódio 7", Overview: "", StillPath: ""},
+					{Number: 6, AirDate: old, Title: "Episódio 6", Overview: "", StillPath: ""},
+				},
+			},
+		},
+		listAll: []domain.Anime{
+			{
+				TMDBID:       82684,
+				SeasonNumber: 4,
+				Title:        "That Time I Got Reincarnated as a Slime",
+				Episodes: []domain.Episode{
+					{Number: 7, AirDate: recent, Title: "Episódio 7", Overview: "", StillPath: ""},
+					{Number: 6, AirDate: old, Title: "Episódio 6", Overview: "", StillPath: ""},
+				},
+			},
+		},
+	}
+	service := &sync.Service{
+		Catalog: catalog,
+		TMDB: &fakeTMDBClient{
+			episodeDetails: ports.TMDBEpisodeDetails{
+				AirDate:   recent,
+				Title:     "A New Beginning",
+				Overview:  "Fresh overview",
+				StillPath: "/still-new.jpg",
+			},
+		},
+		Guard: &sync.Guard{},
+	}
+
+	res := service.RefreshEpisodeMetadata(context.Background())
+	if len(res.Errors) != 0 {
+		t.Fatalf("unexpected errors: %v", res.Errors)
+	}
+	if res.Processed != 1 {
+		t.Fatalf("expected 1 processed episode, got %d", res.Processed)
+	}
+
+	anime, found, _ := catalog.GetByTMDBSeason(context.Background(), 82684, 4)
+	if !found {
+		t.Fatal("expected anime to exist")
+	}
+	var ep7, ep6 domain.Episode
+	for _, ep := range anime.Episodes {
+		if ep.Number == 7 {
+			ep7 = ep
+		}
+		if ep.Number == 6 {
+			ep6 = ep
+		}
+	}
+	if ep7.Title != "A New Beginning" || ep7.Overview != "Fresh overview" || ep7.StillPath != "/still-new.jpg" {
+		t.Fatalf("expected recent placeholder episode to be refreshed, got %+v", ep7)
+	}
+	if ep6.Title != "Episódio 6" {
+		t.Fatalf("expected old episode to remain unchanged, got %+v", ep6)
 	}
 }
 
