@@ -103,9 +103,13 @@ func (e *Episode) AddSource(src Source) bool {
 		if strings.EqualFold(existing.MagnetLink, src.MagnetLink) && strings.EqualFold(existing.Provider, src.Provider) {
 			return false
 		}
+		existingReleaseKey := canonicalReleaseKey(existing.MagnetLink)
+		if newReleaseKey != "" && existingReleaseKey != "" && newReleaseKey == existingReleaseKey {
+			return false
+		}
 		if newProviderKey != "" && newReleaseKey != "" &&
 			newProviderKey == canonicalProviderKey(existing.Provider) &&
-			newReleaseKey == canonicalReleaseKey(existing.MagnetLink) {
+			newReleaseKey == existingReleaseKey {
 			return false
 		}
 	}
