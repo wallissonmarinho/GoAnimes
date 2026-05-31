@@ -1087,5 +1087,5 @@ func matchesExplicitSourceEpisode(norm NormalizedRelease, mappedEpisode int) boo
 	if explicit == 0 {
 		return true
 	}
-	return explicit == norm.Episode
+	return explicit == mappedEpisode
 }

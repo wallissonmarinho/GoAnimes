@@ -517,6 +517,41 @@ func TestSyncRunAddsUnmatchedWhenSourceEpisodeDisagreesWithReleaseEpisode(t *tes
 	}
 }
 
+func TestSyncRunAddsUnmatchedWhenSourceEpisodeDisagreesWithMappedEpisode(t *testing.T) {
+	reader := &fakeFeedReader{items: []ports.ReleaseItem{{
+		Title:     "[Erai] Daemons of the Shadow Realm - 06 [1080p][MultiSub]",
+		Link:      "https://t.erai-raws.info/Torrent/2026/Spring/Yomi no Tsugai/[Erai-raws] Yomi no Tsugai - 06 [1080p CR WEB-DL AVC AAC][MultiSub].mkv.torrent",
+		Provider:  "Erai",
+		Published: time.Now(),
+	}}}
+	mapping := &fakeMappingRepo{overrides: map[string]domain.MappingOverride{
+		"daemons of the shadow realm": {TMDBID: 260463, Season: 1, EpisodeOffset: 1},
+	}}
+	catalog := &fakeCatalogRepo{}
+	service := &sync.Service{
+		Feeds:   &fakeFeedRepo{feeds: []domain.Feed{{ID: "f1", Name: "Erai", URL: "http://example", Type: domain.FeedTypeRSS, Enabled: true}}},
+		Mapping: mapping,
+		Catalog: catalog,
+		Reader:  reader,
+		TMDB:    nil,
+		Guard:   &sync.Guard{},
+	}
+
+	res := service.Run(context.Background())
+	if len(res.Errors) != 0 {
+		t.Fatalf("unexpected errors: %v", res.Errors)
+	}
+	if res.Processed != 0 {
+		t.Fatalf("expected processed 0, got %d", res.Processed)
+	}
+	if len(mapping.unmatched) != 1 {
+		t.Fatalf("expected 1 unmatched, got %d", len(mapping.unmatched))
+	}
+	if len(catalog.items) != 0 {
+		t.Fatalf("expected no catalog writes, got %d", len(catalog.items))
+	}
+}
+
 func TestSyncRunMapsOnePieceEpisodesWithoutManualOverride(t *testing.T) {
 	feeds := []domain.Feed{{ID: "f1", Name: "Erai One Piece", URL: "http://example", Type: domain.FeedTypeRSS, Enabled: true}}
 	reader := &fakeFeedReader{items: []ports.ReleaseItem{{
