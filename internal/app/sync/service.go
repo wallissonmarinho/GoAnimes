@@ -32,6 +32,7 @@ var genericEpisodeTitleRe = regexp.MustCompile(`(?i)^(epis[oó]dio|episode)\s+\d
 const (
 	metadataRefreshLookbackDays = 14
 	metadataRefreshPageSize     = 200
+	feedFetchTimeout            = 90 * time.Second
 )
 
 func (s *Service) Run(ctx context.Context) Result {
@@ -296,7 +297,9 @@ func (s *Service) processFeed(ctx context.Context, res Result, feed domain.Feed)
 		attribute.String("feed.type", string(feed.Type)),
 	)
 	defer span.End()
-	items, fetchErr := s.Reader.Fetch(ctx, feed)
+	fetchCtx, cancel := context.WithTimeout(ctx, feedFetchTimeout)
+	defer cancel()
+	items, fetchErr := s.Reader.Fetch(fetchCtx, feed)
 	if fetchErr != nil {
 		span.RecordError(fetchErr)
 		span.SetStatus(codes.Error, fetchErr.Error())
@@ -356,11 +359,14 @@ func (s *Service) processItem(ctx context.Context, res Result, item ports.Releas
 			return res
 		}
 	}
-	addedErr := s.addEpisodeSource(ctx, tmdbID, season, mappedEpisode, norm)
+	added, addedErr := s.addEpisodeSource(ctx, tmdbID, season, mappedEpisode, norm)
 	if addedErr != nil {
 		span.RecordError(addedErr)
 		span.SetStatus(codes.Error, addedErr.Error())
 		res.Errors = append(res.Errors, addedErr)
+		return res
+	}
+	if !added {
 		return res
 	}
 	// Fetch episode details from TMDB if available
@@ -402,8 +408,12 @@ func (s *Service) processBatchItem(ctx context.Context, res Result, norm Normali
 				continue
 			}
 		}
-		if addErr := s.addEpisodeSource(ctx, tmdbID, resolvedSeason, episode, norm); addErr != nil {
+		added, addErr := s.addEpisodeSource(ctx, tmdbID, resolvedSeason, episode, norm)
+		if addErr != nil {
 			res.Errors = append(res.Errors, addErr)
+			continue
+		}
+		if !added {
 			continue
 		}
 		_ = s.enrichEpisodeDetails(ctx, tmdbID, resolvedSeason, episode)
@@ -564,13 +574,12 @@ func isReleaseWithoutEpisodeNoise(rawTitle string, norm NormalizedRelease) bool 
 	return strings.Contains(rawTitle, "(19") || strings.Contains(rawTitle, "(20")
 }
 
-func (s *Service) addEpisodeSource(ctx context.Context, tmdbID, season, episode int, norm NormalizedRelease) error {
-	_, addErr := s.Catalog.AddEpisodeSource(ctx, tmdbID, season, episode, domain.Source{
+func (s *Service) addEpisodeSource(ctx context.Context, tmdbID, season, episode int, norm NormalizedRelease) (bool, error) {
+	return s.Catalog.AddEpisodeSource(ctx, tmdbID, season, episode, domain.Source{
 		Provider:   norm.Provider,
 		MagnetLink: norm.MagnetLink,
 		Quality:    norm.Quality,
 	})
-	return addErr
 }
 
 func (s *Service) enrichEpisodeDetails(ctx context.Context, tmdbID, season, episodeNum int) error {

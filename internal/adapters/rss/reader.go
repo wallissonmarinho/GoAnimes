@@ -2,6 +2,7 @@ package rss
 
 import (
 	"context"
+	"net/http"
 	"regexp"
 	"strings"
 	"time"
@@ -15,11 +16,15 @@ type Reader struct {
 	Parser *gofeed.Parser
 }
 
+const defaultHTTPTimeout = 45 * time.Second
+
 // Match common Portuguese subtitle markers: pt, pt-br, ptbr, pt_pt, ptpt, portuguese, brazilian portuguese, [br]
 var portugueseSubtitleRe = regexp.MustCompile(`(?i)(\[br\]|\bpt(?:[-_ ]?br|[-_ ]?pt)?\b|\bportuguese\b|\bbrazilian portuguese\b)`)
 
 func NewReader() *Reader {
-	return &Reader{Parser: gofeed.NewParser()}
+	parser := gofeed.NewParser()
+	parser.Client = &http.Client{Timeout: defaultHTTPTimeout}
+	return &Reader{Parser: parser}
 }
 
 func (r *Reader) Fetch(ctx context.Context, feed domain.Feed) ([]ports.ReleaseItem, error) {
@@ -29,6 +34,9 @@ func (r *Reader) Fetch(ctx context.Context, feed domain.Feed) ([]ports.ReleaseIt
 	fp := r.Parser
 	if fp == nil {
 		fp = gofeed.NewParser()
+	}
+	if fp.Client == nil {
+		fp.Client = &http.Client{Timeout: defaultHTTPTimeout}
 	}
 	parsed, err := fp.ParseURLWithContext(feed.URL, ctx)
 	if err != nil {
