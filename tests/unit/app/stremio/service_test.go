@@ -446,6 +446,50 @@ func TestCatalogTopAiringUsesLastWhenNextIsInFuture(t *testing.T) {
 	require.Equal(t, "Older Last", metas[1]["name"])
 }
 
+func TestCatalogTopAiringPrefersLatestEpisodeWithSource(t *testing.T) {
+	now := time.Now().UTC()
+	service := &stremio.Service{
+		Repo: &fakeCatalogRepo{
+			list: []domain.Anime{
+				{
+					TMDBID:        1,
+					SeasonNumber:  1,
+					Title:         "Stale TMDB Metadata",
+					Status:        "current",
+					LastEpisodeAt: "2026-05-17",
+					NextEpisodeAt: "2026-05-24",
+					Episodes: []domain.Episode{{
+						Number:  9,
+						AirDate: "2026-05-31",
+						Sources: []domain.Source{{Provider: "Erai", MagnetLink: "magnet:new"}},
+						AddedAt: now,
+					}},
+				},
+				{
+					TMDBID:        2,
+					SeasonNumber:  1,
+					Title:         "Fresh TMDB Metadata",
+					Status:        "current",
+					LastEpisodeAt: "2026-05-28",
+					NextEpisodeAt: "2026-05-28",
+					Episodes: []domain.Episode{{
+						Number:  8,
+						AirDate: "2026-05-28",
+						Sources: []domain.Source{{Provider: "Erai", MagnetLink: "magnet:old"}},
+						AddedAt: now.Add(-72 * time.Hour),
+					}},
+				},
+			},
+		},
+	}
+
+	metas, err := service.Catalog(context.Background(), stremio.CatalogIDTopAiring, nil, 20, 0)
+	require.NoError(t, err)
+	require.Len(t, metas, 2)
+	require.Equal(t, "Stale TMDB Metadata", metas[0]["name"])
+	require.Equal(t, "Fresh TMDB Metadata", metas[1]["name"])
+}
+
 func TestCatalogTrendingUsesPopularityAndCurrentSignals(t *testing.T) {
 	service := &stremio.Service{
 		Repo: &fakeCatalogRepo{

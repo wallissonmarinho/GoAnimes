@@ -4,8 +4,8 @@ import (
 	"context"
 	"math"
 	"net/url"
-	"sort"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -193,8 +193,14 @@ func compareTrending(a domain.Anime, b domain.Anime) bool {
 }
 
 func compareTopAiring(a domain.Anime, b domain.Anime) bool {
-	aLatest := latestEpisodeReleaseAt(a)
-	bLatest := latestEpisodeReleaseAt(b)
+	aLatest := latestSourcedEpisodeReleaseAt(a)
+	if aLatest.IsZero() {
+		aLatest = latestEpisodeReleaseAt(a)
+	}
+	bLatest := latestSourcedEpisodeReleaseAt(b)
+	if bLatest.IsZero() {
+		bLatest = latestEpisodeReleaseAt(b)
+	}
 	if !aLatest.Equal(bLatest) {
 		return aLatest.After(bLatest)
 	}
@@ -254,7 +260,27 @@ func latestEpisodeReleaseAt(anime domain.Anime) time.Time {
 	return time.Time{}
 }
 
+func latestSourcedEpisodeReleaseAt(anime domain.Anime) time.Time {
+	var latest time.Time
+	for _, ep := range anime.Episodes {
+		if len(ep.Sources) == 0 {
+			continue
+		}
+		releasedAt := parseDate(ep.AirDate)
+		if releasedAt.IsZero() || !sameOrBeforeToday(releasedAt) {
+			releasedAt = ep.AddedAt
+		}
+		if releasedAt.After(latest) {
+			latest = releasedAt
+		}
+	}
+	return latest
+}
+
 func lastRelevantCatalogTime(anime domain.Anime) time.Time {
+	if releasedAt := latestSourcedEpisodeReleaseAt(anime); !releasedAt.IsZero() {
+		return releasedAt
+	}
 	if releasedAt := latestEpisodeReleaseAt(anime); !releasedAt.IsZero() {
 		return releasedAt
 	}
