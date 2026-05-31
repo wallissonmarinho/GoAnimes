@@ -193,16 +193,13 @@ func compareTrending(a domain.Anime, b domain.Anime) bool {
 }
 
 func compareTopAiring(a domain.Anime, b domain.Anime) bool {
-	aLatest := latestSourcedEpisodeReleaseAt(a)
-	if aLatest.IsZero() {
-		aLatest = latestEpisodeReleaseAt(a)
+	aRank := topAiringRank(a)
+	bRank := topAiringRank(b)
+	if !aRank.releaseDay.Equal(bRank.releaseDay) {
+		return aRank.releaseDay.After(bRank.releaseDay)
 	}
-	bLatest := latestSourcedEpisodeReleaseAt(b)
-	if bLatest.IsZero() {
-		bLatest = latestEpisodeReleaseAt(b)
-	}
-	if !aLatest.Equal(bLatest) {
-		return aLatest.After(bLatest)
+	if !aRank.addedAt.Equal(bRank.addedAt) {
+		return aRank.addedAt.After(bRank.addedAt)
 	}
 	return compareTimesDesc(lastRelevantCatalogTime(a), lastRelevantCatalogTime(b), a, b)
 }
@@ -260,6 +257,33 @@ func latestEpisodeReleaseAt(anime domain.Anime) time.Time {
 	return time.Time{}
 }
 
+type topAiringSortRank struct {
+	releaseDay time.Time
+	addedAt    time.Time
+}
+
+func topAiringRank(anime domain.Anime) topAiringSortRank {
+	rank := topAiringSortRank{releaseDay: latestEpisodeReleaseAt(anime)}
+	for _, ep := range anime.Episodes {
+		if len(ep.Sources) == 0 {
+			continue
+		}
+		releasedAt := parseDate(ep.AirDate)
+		if releasedAt.IsZero() || !sameOrBeforeToday(releasedAt) {
+			releasedAt = dateOnly(ep.AddedAt)
+		}
+		if releasedAt.After(rank.releaseDay) {
+			rank.releaseDay = releasedAt
+			rank.addedAt = ep.AddedAt
+			continue
+		}
+		if releasedAt.Equal(rank.releaseDay) && ep.AddedAt.After(rank.addedAt) {
+			rank.addedAt = ep.AddedAt
+		}
+	}
+	return rank
+}
+
 func latestSourcedEpisodeReleaseAt(anime domain.Anime) time.Time {
 	var latest time.Time
 	for _, ep := range anime.Episodes {
@@ -275,6 +299,14 @@ func latestSourcedEpisodeReleaseAt(anime domain.Anime) time.Time {
 		}
 	}
 	return latest
+}
+
+func dateOnly(value time.Time) time.Time {
+	if value.IsZero() {
+		return time.Time{}
+	}
+	value = value.UTC()
+	return time.Date(value.Year(), value.Month(), value.Day(), 0, 0, 0, 0, time.UTC)
 }
 
 func lastRelevantCatalogTime(anime domain.Anime) time.Time {

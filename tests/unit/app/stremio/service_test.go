@@ -490,6 +490,49 @@ func TestCatalogTopAiringPrefersLatestEpisodeWithSource(t *testing.T) {
 	require.Equal(t, "Fresh TMDB Metadata", metas[1]["name"])
 }
 
+func TestCatalogTopAiringUsesAddedAtAsSameDayTieBreaker(t *testing.T) {
+	now := time.Now().UTC()
+	today := now.Format("2006-01-02")
+	service := &stremio.Service{
+		Repo: &fakeCatalogRepo{
+			list: []domain.Anime{
+				{
+					TMDBID:        1,
+					SeasonNumber:  1,
+					Title:         "Earlier Added",
+					Status:        "current",
+					LastEpisodeAt: today,
+					Episodes: []domain.Episode{{
+						Number:  8,
+						AirDate: today,
+						Sources: []domain.Source{{Provider: "Erai", MagnetLink: "magnet:old"}},
+						AddedAt: now.Add(-2 * time.Hour),
+					}},
+				},
+				{
+					TMDBID:        2,
+					SeasonNumber:  1,
+					Title:         "Latest Added",
+					Status:        "current",
+					LastEpisodeAt: today,
+					Episodes: []domain.Episode{{
+						Number:  9,
+						AirDate: today,
+						Sources: []domain.Source{{Provider: "Erai", MagnetLink: "magnet:new"}},
+						AddedAt: now,
+					}},
+				},
+			},
+		},
+	}
+
+	metas, err := service.Catalog(context.Background(), stremio.CatalogIDTopAiring, nil, 20, 0)
+	require.NoError(t, err)
+	require.Len(t, metas, 2)
+	require.Equal(t, "Latest Added", metas[0]["name"])
+	require.Equal(t, "Earlier Added", metas[1]["name"])
+}
+
 func TestCatalogTrendingUsesPopularityAndCurrentSignals(t *testing.T) {
 	service := &stremio.Service{
 		Repo: &fakeCatalogRepo{
