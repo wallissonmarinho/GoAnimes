@@ -131,6 +131,35 @@ func TestStreamsConvertsTorrentURLToMagnet(t *testing.T) {
 	require.Equal(t, "tmdb:288551:1:5", hints["bingeGroup"])
 }
 
+func TestStreamsKeepsTorrentURLWhenMagnetConversionFails(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "blocked", http.StatusBadGateway)
+	}))
+	defer server.Close()
+
+	torrentURL := server.URL + "/release.torrent"
+	service := &stremio.Service{Repo: &fakeCatalogRepo{anime: domain.Anime{
+		TMDBID:       196950,
+		SeasonNumber: 1,
+		Episodes: []domain.Episode{{
+			Number: 10,
+			Sources: []domain.Source{{
+				Provider:   "Erai",
+				MagnetLink: torrentURL,
+				Quality:    "1080p CR WEB-DL AVC AAC",
+			}},
+		}},
+	}}}
+
+	streams, err := service.Streams(context.Background(), "tmdb:196950:1:10")
+	require.NoError(t, err)
+	require.Len(t, streams, 1)
+	require.Equal(t, torrentURL, streams[0]["externalUrl"])
+	require.NotContains(t, streams[0], "infoHash")
+	require.Equal(t, "Torrent · 1080p", streams[0]["name"])
+	require.Equal(t, "Episódio 10 · [Torrent] /release.torrent", streams[0]["title"])
+}
+
 func TestStreamsUsesQualityFromMagnetDnWhenMissing(t *testing.T) {
 	service := &stremio.Service{Repo: &fakeCatalogRepo{anime: domain.Anime{
 		TMDBID:       300126,

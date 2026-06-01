@@ -886,10 +886,16 @@ func (s *Service) Streams(ctx context.Context, id string) ([]map[string]any, err
 		for _, src := range ep.Sources {
 			magnet, err := resolvePlaybackURL(ctx, src.MagnetLink)
 			if err != nil || strings.TrimSpace(magnet) == "" {
+				if fallback := unresolvedTorrentStream(id, episode, src); fallback != nil {
+					streams = append(streams, fallback)
+				}
 				continue
 			}
 			infoHash := magnetInfoHash(magnet)
 			if strings.TrimSpace(infoHash) == "" {
+				if fallback := unresolvedTorrentStream(id, episode, src); fallback != nil {
+					streams = append(streams, fallback)
+				}
 				continue
 			}
 			streams = append(streams, map[string]any{
@@ -905,6 +911,21 @@ func (s *Service) Streams(ctx context.Context, id string) ([]map[string]any, err
 		return streams, nil
 	}
 	return []map[string]any{}, nil
+}
+
+func unresolvedTorrentStream(id string, episode int, src domain.Source) map[string]any {
+	raw := strings.TrimSpace(src.MagnetLink)
+	if raw == "" || !looksLikeTorrentURL(raw) {
+		return nil
+	}
+	return map[string]any{
+		"behaviorHints": map[string]any{
+			"bingeGroup": id,
+		},
+		"externalUrl": raw,
+		"name":        buildStreamName(src.Quality, raw),
+		"title":       streamTitle(episode, raw),
+	}
 }
 
 func parseCatalogExtras(catalogPath string) (string, map[string]string, bool) {

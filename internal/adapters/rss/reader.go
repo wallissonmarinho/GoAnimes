@@ -20,6 +20,7 @@ const defaultHTTPTimeout = 45 * time.Second
 
 // Match common Portuguese subtitle markers: pt, pt-br, ptbr, pt_pt, ptpt, portuguese, brazilian portuguese, [br]
 var portugueseSubtitleRe = regexp.MustCompile(`(?i)(\[br\]|\bpt(?:[-_ ]?br|[-_ ]?pt)?\b|\bportuguese\b|\bbrazilian portuguese\b)`)
+var magnetURLRe = regexp.MustCompile(`magnet:\?xt=urn:btih:[^\s<>"']+`)
 
 func NewReader() *Reader {
 	parser := gofeed.NewParser()
@@ -67,12 +68,57 @@ func pickDownloadURL(item *gofeed.Item) string {
 	if item == nil {
 		return ""
 	}
+	if magnet := pickMagnetURL(item); magnet != "" {
+		return magnet
+	}
 	for _, enclosure := range item.Enclosures {
 		if url := strings.TrimSpace(enclosure.URL); url != "" {
 			return url
 		}
 	}
 	return strings.TrimSpace(item.Link)
+}
+
+func pickMagnetURL(item *gofeed.Item) string {
+	for _, enclosure := range item.Enclosures {
+		if url := cleanMagnetURL(enclosure.URL); url != "" {
+			return url
+		}
+	}
+	for _, extensionGroup := range item.Extensions {
+		for _, extensions := range extensionGroup {
+			for _, extension := range extensions {
+				for key, value := range extension.Attrs {
+					if strings.EqualFold(strings.TrimSpace(key), "magneturl") {
+						if url := cleanMagnetURL(value); url != "" {
+							return url
+						}
+					}
+				}
+				if url := cleanMagnetURL(extension.Value); url != "" {
+					return url
+				}
+			}
+		}
+	}
+	if url := cleanMagnetURL(strings.Join([]string{item.Link, item.Description, item.Content}, " ")); url != "" {
+		return url
+	}
+	return ""
+}
+
+func cleanMagnetURL(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	if strings.HasPrefix(strings.ToLower(value), "magnet:") {
+		return strings.TrimRight(value, ".,;")
+	}
+	if match := magnetURLRe.FindString(value); match != "" {
+		return strings.TrimRight(match, ".,;")
+	}
+	return ""
 }
 
 func hasPortugueseSubtitle(item *gofeed.Item) bool {

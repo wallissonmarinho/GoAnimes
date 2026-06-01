@@ -93,3 +93,33 @@ func TestFetchSupportsTorznabEnclosures(t *testing.T) {
 	require.Len(t, items, 1)
 	require.Equal(t, "magnet:?xt=urn:btih:c493466b9fdf12429b4383aecbdd75a52f55bc98&dn=Test", items[0].Link)
 }
+
+func TestFetchPrefersMagnetOverTorrentEnclosure(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/rss+xml")
+		_, _ = fmt.Fprint(w, `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:torznab="http://torznab.com/schemas/2015/feed">
+  <channel>
+    <title>Example</title>
+    <item>
+      <title>[Erai-raws] Witch Hat Atelier - 10 [1080p CR WEB-DL AVC AAC][MultiSub]</title>
+      <link>https://t.erai-raws.info/Torrent/2026/Spring/Witch/release.torrent</link>
+      <description><![CDATA[Subtitles: [br] <a href="magnet:?xt=urn:btih:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&dn=Witch">Magnet</a>]]></description>
+      <enclosure url="https://t.erai-raws.info/Torrent/2026/Spring/Witch/release.torrent" type="application/x-bittorrent"/>
+      <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb&amp;dn=WitchAttr"/>
+    </item>
+  </channel>
+</rss>`)
+	}))
+	defer server.Close()
+
+	reader := rss.NewReader()
+	items, err := reader.Fetch(context.Background(), domain.Feed{
+		Name: "Erai",
+		URL:  server.URL,
+		Type: domain.FeedTypeRSS,
+	})
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	require.Equal(t, "magnet:?xt=urn:btih:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&dn=Witch", items[0].Link)
+}

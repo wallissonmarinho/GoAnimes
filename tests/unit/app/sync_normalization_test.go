@@ -155,6 +155,11 @@ func TestNormalizeTitle_toonshubTagsAndTechNoise(t *testing.T) {
 	require.Equal(t, "witch hat atelier", name)
 	require.Equal(t, 6, ep)
 	require.Equal(t, "1080p", quality)
+
+	name, ep, quality = sync.NormalizeTitle("[ToonsHub] Witch Hat Atelier S01E06 1080p CR WEB-DL DUAL AAC2.0 H.264 (Dual-Audio, Multi-Subs) {Tags:L0;V9;C1;A=ja,en;S=en,ar,frfr,de,it,ptbr,ru,es419,eses;}")
+	require.Equal(t, "witch hat atelier", name)
+	require.Equal(t, 6, ep)
+	require.Equal(t, "1080p", quality)
 }
 
 func TestNormalizeTitle_realWorldUnmatchedNoise(t *testing.T) {
