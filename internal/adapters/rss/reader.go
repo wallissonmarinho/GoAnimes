@@ -22,9 +22,21 @@ const defaultHTTPTimeout = 45 * time.Second
 var portugueseSubtitleRe = regexp.MustCompile(`(?i)(\[br\]|\bpt(?:[-_ ]?br|[-_ ]?pt)?\b|\bportuguese\b|\bbrazilian portuguese\b)`)
 var magnetURLRe = regexp.MustCompile(`magnet:\?xt=urn:btih:[^\s<>"']+`)
 
+type userAgentTransport struct {
+	rt http.RoundTripper
+}
+
+func (t *userAgentTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+	return t.rt.RoundTrip(req)
+}
+
 func NewReader() *Reader {
 	parser := gofeed.NewParser()
-	parser.Client = &http.Client{Timeout: defaultHTTPTimeout}
+	parser.Client = &http.Client{
+		Timeout:   defaultHTTPTimeout,
+		Transport: &userAgentTransport{rt: http.DefaultTransport},
+	}
 	return &Reader{Parser: parser}
 }
 
@@ -37,7 +49,10 @@ func (r *Reader) Fetch(ctx context.Context, feed domain.Feed) ([]ports.ReleaseIt
 		fp = gofeed.NewParser()
 	}
 	if fp.Client == nil {
-		fp.Client = &http.Client{Timeout: defaultHTTPTimeout}
+		fp.Client = &http.Client{
+			Timeout:   defaultHTTPTimeout,
+			Transport: &userAgentTransport{rt: http.DefaultTransport},
+		}
 	}
 	parsed, err := fp.ParseURLWithContext(feed.URL, ctx)
 	if err != nil {
