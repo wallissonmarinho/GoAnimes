@@ -18,8 +18,8 @@ type Reader struct {
 
 const defaultHTTPTimeout = 45 * time.Second
 
-// Match common Portuguese subtitle markers: pt, pt-br, ptbr, pt_pt, ptpt, portuguese, brazilian portuguese, [br]
-var portugueseSubtitleRe = regexp.MustCompile(`(?i)(\[br\]|\bpt(?:[-_ ]?br|[-_ ]?pt)?\b|\bportuguese\b|\bbrazilian portuguese\b)`)
+// Match common Portuguese subtitle markers: pt, pt-br, ptbr, pt_pt, ptpt, portuguese, brazilian portuguese, [br], multi-subs, multiple subtitles
+var portugueseSubtitleRe = regexp.MustCompile(`(?i)(\[br\]|\bpt(?:[-_ ]?br|[-_ ]?pt)?\b|\bportuguese\b|\bbrazilian portuguese\b|multi(?:[-_ ]?)?sub(?:s)?\b|multiple subtitle(?:s)?\b)`)
 var magnetURLRe = regexp.MustCompile(`magnet:\?xt=urn:btih:[^\s<>"']+`)
 
 type userAgentTransport struct {
